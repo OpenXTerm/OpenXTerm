@@ -24,6 +24,8 @@ npm install
 ./script/build_and_run.sh
 ```
 
+`npm install` now provisions the local `@tauri-apps/cli` binary used by `npm run tauri:dev` / `npm run tauri:build`, so the repo no longer assumes a globally installed Tauri CLI.
+
 Useful checks:
 
 ```bash
@@ -34,6 +36,12 @@ cargo build --manifest-path src-tauri/Cargo.toml
 ```
 
 `./script/build_and_run.sh` kills old Vite / Tauri / debug app processes before starting a fresh dev run.
+
+CI/CD workflow:
+
+- [`.github/workflows/ci-cd.yml`](/Volumes/EXT/Projects/OpenXTerm/.github/workflows/ci-cd.yml) runs verification plus a five-platform bundle matrix
+- matrix targets currently are Linux X64, Windows X64, Windows ARM64, macOS ARM64, and macOS X64
+- tags matching `v*` publish GitHub Release assets from those bundle outputs
 
 ## Repo Map
 
@@ -66,6 +74,10 @@ cargo build --manifest-path src-tauri/Cargo.toml
 - [`src-tauri/src/native_drag_macos.m`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/native_drag_macos.m): macOS AppKit drag implementation
 - [`src-tauri/src/storage.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/storage.rs): persistence
 - [`src-tauri/src/models.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/models.rs): serde models mirrored from TS
+
+### CI/CD
+
+- [`.github/workflows/ci-cd.yml`](/Volumes/EXT/Projects/OpenXTerm/.github/workflows/ci-cd.yml): GitHub Actions verification/build/release pipeline
 
 ## Core Architecture
 
@@ -372,11 +384,13 @@ This is the practical feature state as of April 16, 2026:
 - Windows SSH status fallback through native `ssh2` exists
 - non-macOS topbar menus are clickable dropdowns
 - frontend error-only console logging exists for status, transfers, terminal launch/input, and file-browser flows
+- GitHub Actions CI/CD exists for Linux X64, Windows X64, Windows ARM64, macOS ARM64, and macOS X64
 
 Important caveats:
 
 - built-in X11 forwarding still depends on a working local X server and correct remote `sshd` behavior
 - on Windows, interactive terminal password entry alone is not enough for linked SFTP/status reuse; those helper connections need saved password, key, or agent auth
+- GitHub Actions currently publishes unsigned / unnotarized bundles unless release signing secrets are added in the future
 
 Some startup transcript copy still exists in helpers like [`sessionUtils.ts`](/Volumes/EXT/Projects/OpenXTerm/src/lib/sessionUtils.ts). Do not assume every “preview” string means the feature is fake.
 
@@ -455,6 +469,21 @@ npm run check
 For anything touching native drag or transfers, do at least one manual pass in the running app.
 
 There is no broad automated test suite yet. In practice, `npm run check`, Rust build, and a real app smoke test are the main safety net.
+
+For release-pipeline changes:
+
+```bash
+npm run check
+cargo check --manifest-path src-tauri/Cargo.toml
+```
+
+Then inspect [`.github/workflows/ci-cd.yml`](/Volumes/EXT/Projects/OpenXTerm/.github/workflows/ci-cd.yml) carefully for:
+
+- runner label correctness
+- target triple correctness
+- Linux package dependencies
+- release trigger scope
+- asset upload paths
 
 ## Notes For Future Agents
 

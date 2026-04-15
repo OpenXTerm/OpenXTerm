@@ -55,6 +55,7 @@ OpenXTerm is independent software. It is not affiliated with, endorsed by, or co
 - Agent documentation in `AGENTS.md`.
 - Public README refresh.
 - Contributing guide.
+- GitHub Actions CI/CD for Linux X64, Windows X64, Windows ARM64, macOS ARM64, and macOS X64.
 
 ### In Progress
 
@@ -64,6 +65,7 @@ OpenXTerm is independent software. It is not affiliated with, endorsed by, or co
 - Polishing compact UI density.
 - Cleaning up remaining demo/dev wording in user-facing UI.
 - Stabilizing X11 diagnostics and guidance.
+- Adding signing/notarization/secrets to the release pipeline.
 
 ### Known Gaps
 
@@ -71,6 +73,7 @@ OpenXTerm is independent software. It is not affiliated with, endorsed by, or co
 - SFTP authentication reuse needs more real-world hardening, especially on Windows where interactive password entry cannot be reused by helper connections.
 - File transfer cancel/retry/overwrite conflict handling needs a dedicated pass.
 - Packaging/signing/notarization is not release-ready.
+- GitHub Releases are currently expected to ship unsigned / unnotarized artifacts until signing secrets and release hardening are added.
 - Storage migrations need versioning before stable release.
 - Automated tests are still minimal.
 - Public screenshots and demo clips are not prepared.
@@ -263,10 +266,11 @@ Goal: users should be able to install OpenXTerm without building from source.
 - macOS `.dmg`.
 - macOS signing.
 - macOS notarization.
+- Windows signing.
 - Linux AppImage.
 - Linux `.deb`.
-- Release CI.
-- GitHub Releases workflow.
+- Release hardening in CI.
+- GitHub Releases workflow polish.
 - Changelog generation.
 - Decide updater strategy.
 

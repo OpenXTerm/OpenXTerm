@@ -67,6 +67,8 @@ Install dependencies:
 npm install
 ```
 
+`npm install` also provisions the local `@tauri-apps/cli` binary used by the `tauri:dev` and `tauri:build` scripts, so CI and local builds do not depend on a globally installed Tauri CLI.
+
 Run the desktop app:
 
 ```bash
@@ -92,6 +94,32 @@ cargo build --manifest-path src-tauri/Cargo.toml
 ```
 
 On Windows, if `cargo build` fails with `LNK1104` against `target\\debug\\deps\\openxterm.exe`, a previously launched debug binary is still locked by the OS. Close the running app or build into a different target directory before retrying.
+
+## GitHub Actions
+
+The repository now includes a single CI/CD workflow at [`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml).
+
+It currently does:
+
+- `pull_request` and `push` to `main`:
+  - runs `npm run check`
+  - runs `cargo check --manifest-path src-tauri/Cargo.toml`
+  - builds Tauri bundles for:
+    - Linux X64
+    - Windows X64
+    - Windows ARM64
+    - macOS ARM64
+    - macOS X64
+- tag push matching `v*`:
+  - runs the same verification/build matrix
+  - publishes bundled artifacts to a GitHub Release
+- `workflow_dispatch`:
+  - allows manual execution of the same pipeline
+
+Current release behavior:
+
+- artifacts are uploaded unsigned unless platform signing/notarization secrets are added later
+- the workflow publishes the contents of each platform bundle directory as release assets
 
 ## Development Notes
 
