@@ -1,0 +1,34 @@
+[package]
+name = "openxterm"
+version = "0.1.0"
+description = "OpenXTerm desktop MVP"
+authors = ["OpenXTerm"]
+license = "MIT"
+repository = ""
+edition = "2021"
+rust-version = "1.77.2"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "openxterm_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.5.6", features = [] }
+cc = "1.2"
+
+[dependencies]
+portable-pty = "0.9"
+serialport = "4.8"
+ssh2 = { version = "0.9", features = ["vendored-openssl"] }
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+time = { version = "0.3", features = ["formatting"] }
+log = "0.4"
+tauri = { version = "2.10.3", features = [] }
+tauri-plugin-log = "2"
+font-kit = "0.14"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.61", features = ["Security_Credentials_UI"] }

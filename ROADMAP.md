@@ -1,0 +1,362 @@
+# OpenXTerm Roadmap
+
+OpenXTerm is an early-stage open-source terminal workspace for macOS and Linux.
+
+The goal for the first stable release is not to copy every MobaXterm feature. The goal is to provide a reliable daily workflow for saved terminal sessions, linked SFTP, file transfers, local shells, session organization, live status, and standard SSH X11 forwarding.
+
+## Release Positioning
+
+Target statement for v1.0:
+
+> OpenXTerm is a stable open-source terminal workspace for macOS and Linux with saved SSH/local sessions, folders, linked SFTP, batch transfers, live status, session import, terminal customization, and standard SSH X11 forwarding diagnostics.
+
+OpenXTerm is independent software. It is not affiliated with, endorsed by, or connected to MobaXterm, Mobatek, or any other terminal product.
+
+## Current Status
+
+### Done
+
+- Tauri 2 desktop app shell.
+- React + TypeScript UI.
+- Rust backend command layer.
+- xterm.js terminal surface.
+- Saved sessions.
+- Session folders and tree view.
+- Session and folder drag/drop in the sidebar.
+- Multiple simultaneous connections to the same saved session.
+- Local shell terminal sessions.
+- Live SSH terminal sessions.
+- Telnet terminal sessions.
+- Serial terminal sessions.
+- SSH sessions without saved username can prompt for login in the terminal.
+- Restart/save prompt when terminal sessions stop.
+- Linked SFTP sidebar discovery for live SSH tabs.
+- Remote file listing.
+- Remote folder creation.
+- Remote delete.
+- Upload and download flows.
+- Batch transfer aggregation for multi-file operations.
+- Native macOS drag-out from remote file browser to Finder.
+- MobaXterm `.mxtsessions` import for common session types.
+- Per-session terminal font, font size, foreground color, and background color.
+- System font enumeration for the terminal editor.
+- Compact tabbed session editor.
+- Live lower status bar with host/user/uptime/CPU/memory/disk/network/latency when available.
+- CPU history graph in the status bar.
+- App lock via platform authentication where supported.
+- Standard SSH X11 forwarding settings.
+- X11 runtime diagnostics for common `sshd` and `xauth` issues.
+- MIT license.
+- Agent documentation in `AGENTS.md`.
+- Public README refresh.
+- Contributing guide.
+
+### In Progress
+
+- Hardening linked SFTP behavior through active SSH sessions.
+- Improving SSH authentication edge cases.
+- Improving remote status polling reliability across Linux/macOS/BSD-like targets.
+- Polishing compact UI density.
+- Cleaning up remaining demo/dev wording in user-facing UI.
+- Stabilizing X11 diagnostics and guidance.
+
+### Known Gaps
+
+- Secrets are not yet stored through platform credential stores.
+- SFTP authentication reuse needs more real-world hardening.
+- File transfer cancel/retry/overwrite conflict handling needs a dedicated pass.
+- Packaging/signing/notarization is not release-ready.
+- Storage migrations need versioning before stable release.
+- Automated tests are still minimal.
+- Public screenshots and demo clips are not prepared.
+- Dependency and license audit still needs to be done before stable release.
+
+## Stable Release Blockers
+
+These must be handled before calling OpenXTerm stable.
+
+- Platform secret storage:
+  - macOS Keychain.
+  - Linux Secret Service or compatible backend.
+  - Windows Credential Manager if Windows remains in release scope.
+- SSH/SFTP auth reuse:
+  - linked SFTP should not ask for the same password again in the normal active SSH flow.
+  - control socket lifecycle must be reliable.
+  - errors must be understandable.
+- Packaging:
+  - macOS signed and notarized build.
+  - Linux AppImage and/or `.deb`.
+  - repeatable release workflow.
+- Storage migrations:
+  - versioned storage schema.
+  - safe migration path for existing users.
+  - backup/export story.
+- Crash audit:
+  - native macOS drag.
+  - transfer queue.
+  - terminal lifecycle.
+  - app restart/reconnect flows.
+- Public documentation:
+  - install guide.
+  - security guide.
+  - troubleshooting guide.
+  - X11 guide.
+  - known limitations.
+- QA matrix:
+  - SSH password auth.
+  - SSH key auth.
+  - SSH agent auth.
+  - username prompt flow.
+  - linked SFTP.
+  - large remote directory.
+  - large upload/download.
+  - interrupted network.
+  - session import.
+  - native drag.
+  - X11 with XQuartz/Xorg/XWayland.
+
+## Milestones
+
+## v0.2 Alpha: Core Reliability
+
+Goal: terminal sessions and linked SFTP should become predictable enough for daily testing.
+
+### Done
+
+- Local shell sessions.
+- SSH terminal runtime.
+- Telnet terminal runtime.
+- Serial terminal runtime.
+- Restart flow for stopped sessions.
+- Username prompt flow for SSH profiles without saved username.
+- Multiple concurrent tabs for the same saved session.
+
+### In Progress
+
+- SSH edge-case cleanup.
+- SFTP reuse through active SSH sessions.
+- Remote status polling accuracy.
+
+### TODO
+
+- Harden host key prompt behavior.
+- Improve SSH error messages.
+- Add terminal search.
+- Add clear/reset terminal actions.
+- Add shell working-directory support for local sessions.
+- Verify copy/paste and resize across macOS and Linux.
+
+## v0.3 Alpha: File Browser Polish
+
+Goal: SFTP should cover common daily file-management tasks.
+
+### Done
+
+- Remote list.
+- Create folder.
+- Delete remote entry.
+- Upload.
+- Download.
+- Batch progress for multiple files.
+- Native macOS drag-out.
+
+### In Progress
+
+- Linked SFTP auth reuse.
+- Transfer progress polish.
+
+### TODO
+
+- Rename remote files/folders.
+- Chmod support.
+- Copy remote path.
+- Hidden files toggle.
+- Sort by name, size, date, and type.
+- Breadcrumb with manual path input.
+- Remote folder download hardening.
+- Overwrite/skip/rename conflict handling.
+- Cancel transfer.
+- Retry failed transfer.
+- Better permission/no-space/disconnect errors.
+
+## v0.4 Alpha: Sessions And Productivity
+
+Goal: working with many sessions should feel fast and organized.
+
+### Done
+
+- Session folders.
+- Tree view.
+- Drag/drop organization.
+- Create session inside folder.
+- Move session to folder.
+- MobaXterm import.
+- Session duplication by opening the same saved profile multiple times.
+
+### In Progress
+
+- UI density polish.
+- Session editor polish.
+
+### TODO
+
+- Global session search.
+- Favorites.
+- Recent sessions.
+- Duplicate/clone session action.
+- Session templates.
+- Bulk edit for folders or selected sessions.
+- Export OpenXTerm sessions.
+- Import OpenXTerm sessions.
+- Safer import conflict UI.
+
+## v0.5 Beta: Security And Secrets
+
+Goal: credentials and host trust should be release-worthy.
+
+### Done
+
+- Optional app lock through system authentication where supported.
+- Password/key fields exist in session definitions.
+
+### In Progress
+
+- None yet.
+
+### TODO
+
+- Store saved passwords in platform credential storage.
+- Add "ask every time" behavior.
+- Add "save password" behavior.
+- Add SSH agent-first behavior controls.
+- Add host key verification UI.
+- Add changed host key warning.
+- Add security documentation.
+- Add idle auto-lock option.
+- Add lock-on-start option.
+
+## v0.6 Beta: Cross-Platform Packaging
+
+Goal: users should be able to install OpenXTerm without building from source.
+
+### Done
+
+- Tauri bundle config exists.
+- Build script exists.
+
+### In Progress
+
+- None yet.
+
+### TODO
+
+- macOS `.dmg`.
+- macOS signing.
+- macOS notarization.
+- Linux AppImage.
+- Linux `.deb`.
+- Release CI.
+- GitHub Releases workflow.
+- Changelog generation.
+- Decide updater strategy.
+
+## v0.7 Beta: X11 And Remote GUI
+
+Goal: standard SSH X11 forwarding should be understandable and debuggable.
+
+### Done
+
+- Per-session X11 enable/disable.
+- Trusted/untrusted forwarding toggle.
+- Local display override.
+- Local X11 detection.
+- X11 failure detection from terminal output.
+- Remote diagnostics for `xauth`, `sshd -T`, effective `sshd -T -C`, HOME, `.Xauthority`, and IPv6-disabled cases.
+
+### In Progress
+
+- Guidance wording and troubleshooting quality.
+
+### TODO
+
+- Dedicated X11 troubleshooting documentation.
+- Manual test matrix with `xclock`, `xeyes`, `glxgears`, and Chromium caveats.
+- Better UI hint when XQuartz is not running on macOS.
+- Better Linux Wayland/XWayland guidance.
+- Make it obvious that changes to `sshd_config` require a new SSH login.
+
+## v0.8 Beta: UI Polish
+
+Goal: the app should no longer feel like a development prototype.
+
+### Done
+
+- Compact session editor.
+- Terminal appearance presets.
+- System font picker.
+- Status bar icons and CPU graph.
+- Sidebar resize behavior.
+
+### In Progress
+
+- Density tuning.
+- Removing leftover demo wording.
+
+### TODO
+
+- App settings screen.
+- Default terminal theme settings.
+- Default font settings.
+- Status bar visibility setting.
+- Transfer behavior settings.
+- Keyboard shortcuts.
+- Command palette.
+- Better empty states.
+- Better confirmations.
+- Accessibility pass for focus, labels, keyboard navigation, and contrast.
+
+## v0.9 Release Candidate
+
+Goal: feature freeze and stabilization.
+
+### TODO
+
+- No major new features.
+- Full manual QA matrix.
+- Memory and CPU profiling.
+- Crash report review.
+- Documentation freeze.
+- Public screenshots.
+- Public demo clips.
+- Dependency audit.
+- License audit.
+- Release notes.
+- Upgrade/migration test from previous alpha/beta storage.
+
+## v1.0 Stable
+
+Goal: first stable public release.
+
+### Required
+
+- SSH is stable enough for daily use.
+- Linked SFTP does not require duplicate password entry in normal active SSH flows.
+- Sessions and folders survive restart and migration.
+- Imports do not lose structure.
+- Secrets are stored through platform credential storage.
+- macOS and Linux packages are available.
+- Known limitations are documented.
+- Troubleshooting docs exist for SSH, SFTP, transfers, and X11.
+- No mock/demo/stub wording appears in user-facing UI.
+- The app handles reconnects, failed transfers, and bad networks without getting stuck in confusing states.
+
+## Explicitly Not Required For v1.0
+
+- RDP.
+- VNC.
+- Cloud sync.
+- Collaboration features.
+- Plugin system.
+- Full Windows parity.
+- Built-in remote file editor.
+- Replacing every advanced feature from commercial terminal suites.
