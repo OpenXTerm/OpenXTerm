@@ -20,6 +20,7 @@ import {
   uploadLocalFile,
   uploadRemoteFile,
 } from '../../lib/bridge'
+import { logOpenXTermError } from '../../lib/errorLog'
 import { createBatchChildTransferId, createBatchTransferId } from '../../lib/transferBatch'
 import type { RemoteDirectorySnapshot, RemoteFileEntry, SessionDefinition } from '../../types/domain'
 import { useOpenXTermStore } from '../../state/useOpenXTermStore'
@@ -58,6 +59,18 @@ function itemCountLabel(count: number) {
   return count === 1 ? '1 item' : `${count} items`
 }
 
+function fileBrowserErrorContext(session: SessionDefinition, action: string, path: string) {
+  return {
+    action,
+    path,
+    sessionId: session.id,
+    sessionName: session.name,
+    host: session.host,
+    kind: session.kind,
+    linkedSshTabId: session.linkedSshTabId,
+  }
+}
+
 export function FileBrowserView({ session }: FileBrowserViewProps) {
   const uploadInputRef = useRef<HTMLInputElement | null>(null)
   const filePaneRef = useRef<HTMLDivElement | null>(null)
@@ -86,6 +99,7 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
       setSelectedPath(null)
       setMessage(`Loaded ${nextSnapshot.path}`)
     } catch (error) {
+      logOpenXTermError('file-browser.load-directory', error, fileBrowserErrorContext(session, 'load', targetPath))
       setMessage(error instanceof Error ? error.message : 'Unable to load remote directory.')
     } finally {
       setBusy(false)
@@ -186,6 +200,10 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
           setMessage(`Uploaded ${droppedPaths.length} file${droppedPaths.length > 1 ? 's' : ''} to ${currentPath}`)
           await loadDirectory(currentPath)
         } catch (error) {
+          logOpenXTermError('file-browser.drop-upload', error, {
+            ...fileBrowserErrorContext(session, 'drop-upload', currentPath),
+            droppedPaths,
+          })
           setMessage(error instanceof Error ? error.message : 'Unable to upload dropped file.')
         } finally {
           setBusy(false)
@@ -216,6 +234,10 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
       setMessage(`Created folder ${name.trim()}`)
       await loadDirectory(currentPath)
     } catch (error) {
+      logOpenXTermError('file-browser.create-folder', error, {
+        ...fileBrowserErrorContext(session, 'create-folder', currentPath),
+        folderName: name.trim(),
+      })
       setMessage(error instanceof Error ? error.message : 'Unable to create remote folder.')
       setBusy(false)
     }
@@ -237,6 +259,10 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
       setMessage(`Deleted ${selectedEntry.name}`)
       await loadDirectory(currentPath)
     } catch (error) {
+      logOpenXTermError('file-browser.delete-entry', error, {
+        ...fileBrowserErrorContext(session, 'delete', selectedEntry.path),
+        entryKind: selectedEntry.kind,
+      })
       setMessage(error instanceof Error ? error.message : 'Unable to delete remote entry.')
       setBusy(false)
     }
@@ -264,6 +290,7 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
       const result = await downloadRemoteFile(session, selectedEntry.path, transferId)
       setMessage(`Downloaded ${result.fileName} -> ${result.savedTo}`)
     } catch (error) {
+      logOpenXTermError('file-browser.download-file', error, fileBrowserErrorContext(session, 'download', selectedEntry.path))
       setMessage(error instanceof Error ? error.message : 'Unable to download remote file.')
     } finally {
       setBusy(false)
@@ -316,6 +343,10 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
       setMessage(`Uploaded ${files.length} file${files.length > 1 ? 's' : ''} to ${currentPath}`)
       await loadDirectory(currentPath)
     } catch (error) {
+      logOpenXTermError('file-browser.upload-file', error, {
+        ...fileBrowserErrorContext(session, 'upload', currentPath),
+        files: files.map((file) => ({ name: file.name, size: file.size })),
+      })
       setMessage(error instanceof Error ? error.message : 'Unable to upload file.')
       setBusy(false)
     }
@@ -376,6 +407,7 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
           }
         })
         .catch((error) => {
+          logOpenXTermError('file-browser.native-drag', error, fileBrowserErrorContext(session, 'native-drag', entry.path))
           setMessage(error instanceof Error ? error.message : 'Native macOS drag-out failed.')
         })
     }

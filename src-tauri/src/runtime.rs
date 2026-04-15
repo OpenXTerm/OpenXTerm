@@ -15,6 +15,7 @@ use std::{
 
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 use serialport::{DataBits, Parity, StopBits};
+use ssh2::Session as Ssh2Session;
 use tauri::{AppHandle, Emitter};
 
 use crate::models::{
@@ -135,13 +136,21 @@ impl AppRuntime {
             (None, Some(auth)) => Some(auth),
             (None, None) => None,
         };
+        let notice_message = if ssh_control_master_supported() {
+            notice_message
+        } else {
+            Some(format!(
+                "{}\r\n[information] Windows OpenSSH does not support OpenXTerm's control-socket reuse path; linked SFTP and remote status will use separate saved password/key/agent connections when available.\r\n",
+                notice_message.unwrap_or_default()
+            ))
+        };
 
         self.start_pty_session(
       app,
-      tab_id,
+      tab_id.clone(),
       session.clone(),
       command,
-      true,
+      ssh_status_poller_supported(&session),
       if username_missing {
         format!(
           "\r\n[information] Launching SSH transport to {}:{}\r\n[information] No username is saved in this profile. Enter the remote login in the terminal.\r\n",
@@ -152,7 +161,9 @@ impl AppRuntime {
       },
       notice_message.as_deref(),
       "SSH session closed.".into(),
-    )
+    )?;
+
+        Ok(true)
     }
 
     pub fn start_telnet_session(
@@ -729,6 +740,13 @@ fn spawn_status_poller(
                     emit_status(&app, &tab_id, snapshot);
                 }
                 Err(error) => {
+                    if error.contains("waiting for SSH login")
+                        || error.contains("waiting for SSH username")
+                    {
+                        thread::sleep(STATUS_POLL_INTERVAL);
+                        continue;
+                    }
+
                     failed_polls += 1;
                     if failed_polls >= STATUS_ERROR_AFTER_FAILURES {
                         emit_status(
@@ -774,6 +792,10 @@ fn fetch_ssh_status(
     session: &SessionDefinition,
     tab_id: &str,
 ) -> Result<SessionStatusSnapshot, String> {
+    if !ssh_control_master_supported() {
+        return fetch_ssh_status_with_native_session(session, tab_id);
+    }
+
     let output = run_ssh_control_command(session, tab_id, remote_status_script())
         .map_err(|error| format!("failed to launch SSH status probe: {error}"))?;
 
@@ -793,20 +815,124 @@ fn fetch_ssh_status(
     Ok(parsed)
 }
 
+fn fetch_ssh_status_with_native_session(
+    session: &SessionDefinition,
+    tab_id: &str,
+) -> Result<SessionStatusSnapshot, String> {
+    let username = ssh_status_username(session, tab_id)?;
+    let ssh = connect_native_ssh(session, &username)?;
+    let mut channel = ssh
+        .channel_session()
+        .map_err(|error| format!("failed to open SSH status channel: {error}"))?;
+    channel
+        .exec(&format!("sh -lc {}", shell_quote(remote_status_script())))
+        .map_err(|error| format!("failed to execute SSH status probe: {error}"))?;
+
+    let mut stdout = String::new();
+    channel
+        .read_to_string(&mut stdout)
+        .map_err(|error| format!("failed to read SSH status output: {error}"))?;
+    let mut stderr = String::new();
+    channel
+        .stderr()
+        .read_to_string(&mut stderr)
+        .map_err(|error| format!("failed to read SSH status error output: {error}"))?;
+    channel
+        .wait_close()
+        .map_err(|error| format!("failed to close SSH status channel: {error}"))?;
+
+    let exit_status = channel
+        .exit_status()
+        .map_err(|error| format!("failed to read SSH status exit code: {error}"))?;
+    if exit_status != 0 {
+        let detail = stderr.trim();
+        return Err(if detail.is_empty() {
+            format!("SSH status probe failed with exit code {exit_status}")
+        } else {
+            detail.to_string()
+        });
+    }
+
+    let mut parsed = parse_status_output(&stdout, session);
+    parsed.mode = "live".into();
+    parsed.latency = measure_latency(&session.host).unwrap_or_else(|_| "--".into());
+    Ok(parsed)
+}
+
+fn connect_native_ssh(session: &SessionDefinition, username: &str) -> Result<Ssh2Session, String> {
+    let tcp = TcpStream::connect((session.host.as_str(), session.port)).map_err(|error| {
+        format!(
+            "failed to connect to {}:{} for SSH status: {error}",
+            session.host, session.port
+        )
+    })?;
+    let mut ssh = Ssh2Session::new()
+        .map_err(|error| format!("failed to create SSH status session: {error}"))?;
+    ssh.set_tcp_stream(tcp);
+    ssh.handshake()
+        .map_err(|error| format!("SSH status handshake failed: {error}"))?;
+
+    match session.auth_type.as_str() {
+        "password" => {
+            let password = session
+                .password
+                .as_deref()
+                .filter(|value| !value.is_empty())
+                .ok_or_else(windows_credential_reuse_message)?;
+            ssh.userauth_password(username, password)
+                .map_err(|error| format!("SSH status password authentication failed: {error}"))?;
+        }
+        "key" => {
+            let key_path = session
+                .key_path
+                .as_ref()
+                .filter(|value| !value.trim().is_empty())
+                .ok_or_else(|| "SSH status key authentication requires a key path".to_string())?;
+            let expanded = expand_tilde(key_path);
+            let passphrase = session
+                .password
+                .as_deref()
+                .filter(|value| !value.is_empty());
+            ssh.userauth_pubkey_file(username, None, expanded.as_ref(), passphrase)
+                .map_err(|error| format!("SSH status key authentication failed: {error}"))?;
+        }
+        _ => {
+            ssh.userauth_agent(username)
+                .map_err(|error| format!("SSH status agent authentication failed: {error}"))?;
+        }
+    }
+
+    if !ssh.authenticated() {
+        return Err("SSH status authentication was rejected by the remote host".into());
+    }
+
+    Ok(ssh)
+}
+
 fn run_ssh_control_command(
     session: &SessionDefinition,
     tab_id: &str,
     remote_script: &str,
 ) -> Result<std::process::Output, String> {
-    let control_path = ssh_control_path_for_tab(tab_id);
-    if !control_path.exists() {
-        return Err("waiting for SSH login".into());
+    let target = ssh_status_target(session, tab_id)?;
+    let mut command = std::process::Command::new("ssh");
+
+    if ssh_control_master_supported() {
+        let control_path = ssh_control_path_for_tab(tab_id);
+        if !control_path.exists() {
+            return Err("waiting for SSH login".into());
+        }
+
+        command.arg("-S").arg(&control_path);
+    } else if let Some(key_path) = session
+        .key_path
+        .as_ref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        command.arg("-i").arg(expand_tilde(key_path));
     }
 
-    let target = ssh_status_target(session, tab_id)?;
-    std::process::Command::new("ssh")
-        .arg("-S")
-        .arg(&control_path)
+    command
         .arg("-x")
         .arg("-o")
         .arg("BatchMode=yes")
@@ -823,10 +949,18 @@ fn run_ssh_control_command(
         .arg("-lc")
         .arg(shell_quote(remote_script))
         .output()
-        .map_err(|error| format!("failed to execute SSH control command: {error}"))
+        .map_err(|error| format!("failed to execute SSH status command: {error}"))
 }
 
 fn ssh_status_target(session: &SessionDefinition, tab_id: &str) -> Result<String, String> {
+    Ok(format!(
+        "{}@{}",
+        ssh_status_username(session, tab_id)?,
+        session.host
+    ))
+}
+
+fn ssh_status_username(session: &SessionDefinition, tab_id: &str) -> Result<String, String> {
     let username = if session.username.trim().is_empty() {
         fs::read_to_string(ssh_control_user_path_for_tab(tab_id))
             .map_err(|_| "waiting for SSH username".to_string())?
@@ -840,7 +974,7 @@ fn ssh_status_target(session: &SessionDefinition, tab_id: &str) -> Result<String
         return Err("waiting for SSH username".into());
     }
 
-    Ok(format!("{}@{}", username, session.host))
+    Ok(username)
 }
 
 fn fetch_local_status(session: &SessionDefinition) -> Result<SessionStatusSnapshot, String> {
@@ -1393,10 +1527,20 @@ fn local_home_dir() -> Option<String> {
     }
 }
 
+#[cfg(not(windows))]
 pub fn ssh_control_path_for_tab(tab_id: &str) -> PathBuf {
     let mut hasher = DefaultHasher::new();
     tab_id.hash(&mut hasher);
     PathBuf::from("/tmp")
+        .join(SSH_CONTROL_DIR)
+        .join(format!("{:016x}.sock", hasher.finish()))
+}
+
+#[cfg(windows)]
+pub fn ssh_control_path_for_tab(tab_id: &str) -> PathBuf {
+    let mut hasher = DefaultHasher::new();
+    tab_id.hash(&mut hasher);
+    std::env::temp_dir()
         .join(SSH_CONTROL_DIR)
         .join(format!("{:016x}.sock", hasher.finish()))
 }
@@ -1452,12 +1596,14 @@ fn build_interactive_ssh_command(
     }
 
     let mut command = CommandBuilder::new("ssh");
-    apply_common_ssh_args(&mut command, session, false, Some(control_path));
+    let control_path = ssh_control_master_supported().then_some(control_path);
+    apply_common_ssh_args(&mut command, session, false, control_path);
     command.env("TERM", "xterm-256color");
     let x11_display = apply_local_x11_environment(&mut command, session)?;
     Ok((command, x11_display))
 }
 
+#[cfg(not(windows))]
 fn build_prompted_ssh_command(
     session: &SessionDefinition,
     control_path: &PathBuf,
@@ -1503,6 +1649,66 @@ set -- "$@" -p "$OPENXTERM_SSH_PORT" "$OPENXTERM_SSH_LOGIN@$OPENXTERM_SSH_HOST"
 exec ssh "$@"
 "#,
     ]);
+    configure_prompted_ssh_environment(command, session, control_path)
+}
+
+#[cfg(windows)]
+fn build_prompted_ssh_command(
+    session: &SessionDefinition,
+    control_path: &PathBuf,
+) -> Result<(CommandBuilder, Option<String>), String> {
+    let mut command = CommandBuilder::new("powershell.exe");
+    command.args([
+        "-NoLogo",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        r#"Write-Host -NoNewline 'login as: '
+$openxtermSshLogin = [Console]::ReadLine()
+if ([string]::IsNullOrWhiteSpace($openxtermSshLogin)) {
+  Write-Host "`r`n[error] Username is required.`r`n"
+  exit 1
+}
+[System.IO.File]::WriteAllText($env:OPENXTERM_SSH_LOGIN_PATH, "$openxtermSshLogin`n")
+$sshArgs = @(
+  '-o', 'BatchMode=no',
+  '-o', 'NumberOfPasswordPrompts=1',
+  '-o', 'PreferredAuthentications=publickey,keyboard-interactive,password',
+  '-o', 'PubkeyAuthentication=yes',
+  '-o', 'KbdInteractiveAuthentication=yes',
+  '-o', 'StrictHostKeyChecking=accept-new',
+  '-o', 'ConnectTimeout=5',
+  '-o', 'ServerAliveInterval=30',
+  '-o', 'ServerAliveCountMax=3',
+  '-o', 'LogLevel=ERROR'
+)
+if ($env:OPENXTERM_SSH_X11 -eq '1') {
+  if ($env:OPENXTERM_SSH_X11_TRUSTED -eq '1') {
+    $sshArgs += @('-Y', '-o', 'ForwardX11=yes', '-o', 'ForwardX11Trusted=yes')
+  } else {
+    $sshArgs += @('-X', '-o', 'ForwardX11=yes', '-o', 'ForwardX11Trusted=no', '-o', 'ForwardX11Timeout=0')
+  }
+  if (![string]::IsNullOrWhiteSpace($env:OPENXTERM_SSH_XAUTH_LOCATION)) {
+    $sshArgs += @('-o', "XAuthLocation=$env:OPENXTERM_SSH_XAUTH_LOCATION")
+  }
+}
+if (![string]::IsNullOrWhiteSpace($env:OPENXTERM_SSH_KEY)) {
+  $sshArgs += @('-i', $env:OPENXTERM_SSH_KEY)
+}
+$sshArgs += @('-p', $env:OPENXTERM_SSH_PORT, "$openxtermSshLogin@$($env:OPENXTERM_SSH_HOST)")
+& ssh @sshArgs
+exit $LASTEXITCODE
+"#,
+    ]);
+    configure_prompted_ssh_environment(command, session, control_path)
+}
+
+fn configure_prompted_ssh_environment(
+    mut command: CommandBuilder,
+    session: &SessionDefinition,
+    control_path: &PathBuf,
+) -> Result<(CommandBuilder, Option<String>), String> {
     command.env("TERM", "xterm-256color");
     command.env("OPENXTERM_SSH_HOST", &session.host);
     command.env("OPENXTERM_SSH_PORT", &session.port.to_string());
@@ -1617,6 +1823,14 @@ fn apply_common_ssh_args(
     command.arg(build_target(session));
 }
 
+fn ssh_control_master_supported() -> bool {
+    !cfg!(windows)
+}
+
+fn ssh_status_poller_supported(session: &SessionDefinition) -> bool {
+    session.kind == "ssh"
+}
+
 fn build_target(session: &SessionDefinition) -> String {
     if session.username.trim().is_empty() {
         session.host.clone()
@@ -1627,12 +1841,19 @@ fn build_target(session: &SessionDefinition) -> String {
 
 fn expand_tilde(value: &str) -> String {
     if let Some(stripped) = value.strip_prefix("~/") {
-        if let Some(home_dir) = std::env::var_os("HOME") {
-            return format!("{}/{}", home_dir.to_string_lossy(), stripped);
+        if let Some(home_dir) = local_home_dir() {
+            return PathBuf::from(home_dir)
+                .join(stripped)
+                .to_string_lossy()
+                .to_string();
         }
     }
 
     value.to_string()
+}
+
+fn windows_credential_reuse_message() -> String {
+    "Windows cannot reuse the password typed into the interactive SSH terminal. Save a password in the session, use a key, or use SSH agent authentication for live status and linked SFTP.".into()
 }
 
 fn apply_local_x11_environment(

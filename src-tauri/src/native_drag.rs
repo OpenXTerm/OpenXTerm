@@ -1,8 +1,11 @@
 use std::{
-    ffi::{c_char, c_void, CStr},
+    ffi::{c_char, CStr},
     path::PathBuf,
     sync::OnceLock,
 };
+
+#[cfg(target_os = "macos")]
+use std::ffi::c_void;
 
 use tauri::{AppHandle, Window};
 
@@ -178,6 +181,7 @@ fn write_promised_file(
     .map(|_| ())
 }
 
+#[cfg(target_os = "macos")]
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct NativePromiseEntry {
@@ -206,6 +210,7 @@ fn remote_file_name(path: &str) -> String {
         .to_string()
 }
 
+#[cfg(target_os = "macos")]
 fn uuid_like_stamp() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
 

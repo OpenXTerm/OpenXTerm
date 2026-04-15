@@ -82,7 +82,7 @@ export interface WorkspaceTab {
 }
 
 export interface SessionStatusSnapshot {
-  mode: 'live' | 'offline' | 'error'
+  mode: 'live' | 'limited' | 'offline' | 'error'
   host: string
   user: string
   remoteOs: string
@@ -107,7 +107,7 @@ export interface TerminalExitPayload {
 
 export interface SessionStatusPayload {
   tabId: string
-  mode: 'live' | 'offline' | 'error'
+  mode: 'live' | 'limited' | 'offline' | 'error'
   host: string
   user: string
   remoteOs: string

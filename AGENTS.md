@@ -179,12 +179,43 @@ If `session.username` is empty, OpenSSH cannot “just ask for login” on its o
 
 Current behavior in [`runtime.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/runtime.rs):
 
-- local PTY script prints `login as:`
+- local PTY wrapper prints `login as:`
 - entered value is used to `exec ssh user@host`
 - password is then entered normally in terminal
 - automatic password handler is disabled for this mode
 
+Important platform nuance:
+
+- on Unix-like targets, the prompt wrapper is `sh -lc`
+- on Windows, the prompt wrapper is `powershell.exe -Command`
+- the selected login is persisted in per-tab metadata so later status/SFTP helpers can resolve the real remote username
+
 Do not change this back to plain `ssh host` if the goal is MobaXterm-like login behavior.
+
+### Windows SSH status and linked SFTP do not reuse OpenSSH control sockets
+
+Windows OpenSSH does not provide the Unix control-socket reuse path that OpenXTerm uses on macOS/Linux.
+
+Current behavior:
+
+- terminal SSH sessions still launch through system `ssh`
+- live status on Windows uses a separate native `ssh2` session
+- linked SFTP on Windows uses a separate native `ssh2` SFTP connection
+- the effective username can come from the interactive `login as:` prompt metadata when the saved profile leaves `username` empty
+
+Operational consequence:
+
+- if the user typed a password only into the interactive terminal and did not save credentials in the session, Windows cannot reuse that password for status polling or linked SFTP
+- live status / linked SFTP on Windows therefore require one of:
+  - saved password in the profile
+  - private key auth
+  - working SSH agent auth
+- if none of those are available, the UI should surface a clear error instead of pretending the connection is “limited”
+
+Relevant files:
+
+- [`src-tauri/src/runtime.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/runtime.rs)
+- [`src-tauri/src/file_ops.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/file_ops.rs)
 
 ### X11 forwarding is built-in SSH forwarding only
 
@@ -253,11 +284,51 @@ The lower bar is no longer a mock/preview strip. It is driven by live state:
 - error after repeated failed polls, but polling keeps retrying
 - CPU history is real per-tab history, not a fabricated graph
 
+Current Windows nuance:
+
+- Windows SSH status should attempt a real status probe through a separate native `ssh2` connection
+- showing `limited` is not the steady-state success path anymore; missing saved credentials should become an explicit error instead
+
 Relevant files:
 
 - [`src/components/status/StatusBar.tsx`](/Volumes/EXT/Projects/OpenXTerm/src/components/status/StatusBar.tsx)
 - [`src/state/useOpenXTermStore.ts`](/Volumes/EXT/Projects/OpenXTerm/src/state/useOpenXTermStore.ts)
 - [`src-tauri/src/runtime.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/runtime.rs)
+
+### Console logging is error-only and intentional
+
+Frontend console logging is now deliberately scoped to errors.
+
+Current rule:
+
+- use [`src/lib/errorLog.ts`](/Volumes/EXT/Projects/OpenXTerm/src/lib/errorLog.ts) for UI/runtime error reporting
+- log only through `console.error`
+- do not add ambient info/debug noise to the console just to trace normal flow
+- repeated status/transfer poller failures should be deduplicated so the console is still usable during retries
+
+Relevant files:
+
+- [`src/lib/errorLog.ts`](/Volumes/EXT/Projects/OpenXTerm/src/lib/errorLog.ts)
+- [`src/state/useOpenXTermStore.ts`](/Volumes/EXT/Projects/OpenXTerm/src/state/useOpenXTermStore.ts)
+- [`src/components/sidebar/Sidebar.tsx`](/Volumes/EXT/Projects/OpenXTerm/src/components/sidebar/Sidebar.tsx)
+- [`src/components/workspace/FileBrowserView.tsx`](/Volumes/EXT/Projects/OpenXTerm/src/components/workspace/FileBrowserView.tsx)
+
+### Non-macOS topbar menus are app-owned UI, not native shell menus
+
+On macOS the app still uses the native menu integration from Tauri. On non-macOS platforms, the visible topbar menu row is a React-owned control surface and must remain clickable.
+
+Current rule:
+
+- do not treat the whole topbar as a drag region
+- only non-interactive portions such as the breadcrumb should carry `data-tauri-drag-region`
+- topbar dropdown actions should route through the same handler path as native menu actions so behavior stays consistent across platforms
+
+Relevant files:
+
+- [`src/components/layout/TopBar.tsx`](/Volumes/EXT/Projects/OpenXTerm/src/components/layout/TopBar.tsx)
+- [`src/App.tsx`](/Volumes/EXT/Projects/OpenXTerm/src/App.tsx)
+- [`src-tauri/src/native_menu.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/native_menu.rs)
+- [`src/index.css`](/Volumes/EXT/Projects/OpenXTerm/src/index.css)
 
 ### MobaXterm import support
 
@@ -280,7 +351,7 @@ Current unsupported examples seen in real data:
 
 ## Current Feature Snapshot
 
-This is the practical feature state as of April 15, 2026:
+This is the practical feature state as of April 16, 2026:
 
 - local shell transport exists
 - live SSH / Telnet / Serial transports exist
@@ -291,16 +362,21 @@ This is the practical feature state as of April 15, 2026:
 - MobaXterm import exists
 - terminal stopped footer with restart/save shortcuts exists
 - linked SFTP session discovery from live SSH tabs exists
+- Windows linked SFTP fallback through native `ssh2` exists
 - app lock via system auth exists
 - X11 session settings and runtime diagnostics exist
 - per-session terminal font / size / foreground / background exist
 - session editor is compact and tabbed
 - system font enumeration for the terminal editor exists
 - status bar is live and session-aware
+- Windows SSH status fallback through native `ssh2` exists
+- non-macOS topbar menus are clickable dropdowns
+- frontend error-only console logging exists for status, transfers, terminal launch/input, and file-browser flows
 
 Important caveats:
 
 - built-in X11 forwarding still depends on a working local X server and correct remote `sshd` behavior
+- on Windows, interactive terminal password entry alone is not enough for linked SFTP/status reuse; those helper connections need saved password, key, or agent auth
 
 Some startup transcript copy still exists in helpers like [`sessionUtils.ts`](/Volumes/EXT/Projects/OpenXTerm/src/lib/sessionUtils.ts). Do not assume every “preview” string means the feature is fake.
 

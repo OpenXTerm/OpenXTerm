@@ -21,7 +21,6 @@ cc = "1.2"
 [dependencies]
 portable-pty = "0.9"
 serialport = "4.8"
-ssh2 = { version = "0.9", features = ["vendored-openssl"] }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 time = { version = "0.3", features = ["formatting"] }
@@ -30,5 +29,9 @@ tauri = { version = "2.10.3", features = [] }
 tauri-plugin-log = "2"
 font-kit = "0.14"
 
+[target.'cfg(not(windows))'.dependencies]
+ssh2 = { version = "0.9", features = ["vendored-openssl"] }
+
 [target.'cfg(target_os = "windows")'.dependencies]
+ssh2 = "0.9"
 windows = { version = "0.61", features = ["Security_Credentials_UI"] }

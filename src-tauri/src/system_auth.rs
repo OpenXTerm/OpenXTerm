@@ -136,7 +136,6 @@ pub fn request_system_unlock(reason: Option<String>) -> Result<bool, String> {
         return match result {
             UserConsentVerificationResult::Verified => Ok(true),
             UserConsentVerificationResult::Canceled
-            | UserConsentVerificationResult::Timeout
             | UserConsentVerificationResult::RetriesExhausted
             | UserConsentVerificationResult::DeviceBusy => Ok(false),
             UserConsentVerificationResult::DeviceNotPresent => {

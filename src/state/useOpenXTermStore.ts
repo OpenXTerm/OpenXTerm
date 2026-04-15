@@ -4,6 +4,7 @@ import {
   aggregateBatchProgress,
   rememberBatchTransfer,
 } from '../lib/transferBatch'
+import { logOpenXTermError } from '../lib/errorLog'
 import { parseMobaXtermSessionsFile, type MobaXtermImportResult } from '../lib/mobaxtermImport'
 import {
   bootstrapState,
@@ -99,6 +100,8 @@ type StoreSetter = (
 let transportListenersReady: Promise<void> | null = null
 let transferFlushScheduled = false
 const pendingTransferPayloads = new Map<string, TransferProgressPayload>()
+const loggedSessionStatusErrors = new Map<string, string>()
+const loggedTransferErrors = new Map<string, string>()
 const CPU_HISTORY_SIZE = 22
 
 export interface SessionImportSummary {
@@ -274,6 +277,7 @@ function applyTerminalLaunchError(
   tabId: string,
   error: unknown,
 ) {
+  logOpenXTermError('terminal.launch', error, { tabId })
   set((state) => ({
     terminalFeeds: {
       ...state.terminalFeeds,
@@ -425,6 +429,19 @@ function ensureTransportListeners(set: StoreSetter) {
 
     await listenSessionStatus((payload) => {
       const nextStatus = mapStatusPayload(payload)
+      if (nextStatus.mode === 'error') {
+        const signature = `${nextStatus.remoteOs}|${nextStatus.host}|${nextStatus.user}`
+        if (loggedSessionStatusErrors.get(payload.tabId) !== signature) {
+          loggedSessionStatusErrors.set(payload.tabId, signature)
+          logOpenXTermError('session.status', nextStatus.remoteOs, {
+            tabId: payload.tabId,
+            host: nextStatus.host,
+            user: nextStatus.user,
+          })
+        }
+      } else {
+        loggedSessionStatusErrors.delete(payload.tabId)
+      }
       set((state) => ({
         sessionStatusByTabId: {
           ...state.sessionStatusByTabId,
@@ -439,6 +456,22 @@ function ensureTransportListeners(set: StoreSetter) {
 
     await listenTransferProgress((payload) => {
       const transferPayload = aggregateBatchProgress(payload) ?? payload
+      if (transferPayload.state === 'error') {
+        const signature = `${transferPayload.message}|${transferPayload.remotePath}|${transferPayload.localPath ?? ''}`
+        if (loggedTransferErrors.get(transferPayload.transferId) !== signature) {
+          loggedTransferErrors.set(transferPayload.transferId, signature)
+          logOpenXTermError('transfer.progress', transferPayload.message, {
+            transferId: transferPayload.transferId,
+            fileName: transferPayload.fileName,
+            remotePath: transferPayload.remotePath,
+            localPath: transferPayload.localPath,
+            direction: transferPayload.direction,
+            purpose: transferPayload.purpose,
+          })
+        }
+      } else if (transferPayload.state === 'completed') {
+        loggedTransferErrors.delete(transferPayload.transferId)
+      }
       scheduleTransferFlush(set, transferPayload)
       requestTransferWindow(transferPayload)
     })
@@ -916,6 +949,10 @@ export const useOpenXTermStore = create<OpenXTermState>((set, get) => ({
         await sendTerminalInput(activeTab.id, `${command}\n`)
         return
       } catch (error) {
+        logOpenXTermError('macro.send-input', error, {
+          tabId: activeTab.id,
+          sessionId: activeSession?.id,
+        })
         set((state) => ({
           terminalFeeds: {
             ...state.terminalFeeds,
@@ -951,6 +988,7 @@ export const useOpenXTermStore = create<OpenXTermState>((set, get) => ({
     }
 
     void sendTerminalInput(tabId, data).catch((error) => {
+      logOpenXTermError('terminal.input', error, { tabId, sessionId: session.id })
       set((state) => ({
         terminalFeeds: {
           ...state.terminalFeeds,

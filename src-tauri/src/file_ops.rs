@@ -26,9 +26,10 @@ const MUX_FIELD_SEPARATOR: char = '\x1f';
 const MUX_RECORD_SEPARATOR: char = '\x1e';
 
 struct LinkedSshMux {
-    control_path: PathBuf,
+    control_path: Option<PathBuf>,
     target: String,
     port: u16,
+    key_path: Option<PathBuf>,
 }
 
 pub fn list_remote_directory(
@@ -1124,10 +1125,11 @@ fn list_sftp_directory(
 }
 
 fn uses_linked_ssh_mux(session: &SessionDefinition) -> bool {
-    session
-        .linked_ssh_tab_id
-        .as_ref()
-        .is_some_and(|tab_id| !tab_id.trim().is_empty())
+    ssh_control_master_supported()
+        && session
+            .linked_ssh_tab_id
+            .as_ref()
+            .is_some_and(|tab_id| !tab_id.trim().is_empty())
 }
 
 fn linked_ssh_mux(session: &SessionDefinition) -> Result<LinkedSshMux, String> {
@@ -1136,19 +1138,30 @@ fn linked_ssh_mux(session: &SessionDefinition) -> Result<LinkedSshMux, String> {
         .as_deref()
         .filter(|value| !value.trim().is_empty())
         .ok_or_else(|| "SFTP is not linked to a live SSH terminal".to_string())?;
-    let control_path = ssh_control_path_for_tab(tab_id);
     let target = build_linked_ssh_target(session, tab_id)?;
+    let control_path = if ssh_control_master_supported() {
+        let control_path = ssh_control_path_for_tab(tab_id);
 
-    if !control_path.exists() {
-        return Err(
+        if !control_path.exists() {
+            return Err(
       "The linked SSH terminal is not authenticated yet. Finish the SSH login in the terminal, then refresh SFTP.".into(),
     );
-    }
+        }
+
+        Some(control_path)
+    } else {
+        None
+    };
 
     Ok(LinkedSshMux {
         control_path,
         target,
         port: session.port,
+        key_path: session
+            .key_path
+            .as_ref()
+            .filter(|value| !value.trim().is_empty())
+            .map(|value| expand_tilde(value)),
     })
 }
 
@@ -1295,9 +1308,9 @@ fn download_mux_path(
 
 fn run_mux_ssh(session: &SessionDefinition, remote_script: &str) -> Result<Vec<u8>, String> {
     let mux = linked_ssh_mux(session)?;
-    let output = Command::new("ssh")
-        .arg("-S")
-        .arg(&mux.control_path)
+    let mut command = Command::new("ssh");
+    apply_linked_ssh_transport_args(&mut command, &mux);
+    let output = command
         .arg("-o")
         .arg("BatchMode=yes")
         .arg("-o")
@@ -1329,19 +1342,16 @@ fn run_mux_scp(
     args: &[String],
 ) -> Result<(), String> {
     let mux = linked_ssh_mux(session)?;
-    let control_option = format!("ControlPath={}", mux.control_path.display());
     let mut command = Command::new("scp");
     if recursive {
         command.arg("-r");
     }
+    apply_linked_ssh_transport_args(&mut command, &mux);
     command
-        .arg("-q")
         .arg("-o")
         .arg("BatchMode=yes")
         .arg("-o")
         .arg("ControlMaster=no")
-        .arg("-o")
-        .arg(control_option)
         .arg("-o")
         .arg("LogLevel=ERROR")
         .arg("-P")
@@ -1368,6 +1378,20 @@ fn run_mux_scp(
 fn mux_remote_spec(session: &SessionDefinition, remote_path: &str) -> Result<String, String> {
     let mux = linked_ssh_mux(session)?;
     Ok(format!("{}:{remote_path}", mux.target))
+}
+
+fn apply_linked_ssh_transport_args(command: &mut Command, mux: &LinkedSshMux) {
+    command.arg("-q");
+
+    if let Some(control_path) = &mux.control_path {
+        command.arg("-S").arg(control_path);
+    } else if let Some(key_path) = &mux.key_path {
+        command.arg("-i").arg(key_path);
+    }
+}
+
+fn ssh_control_master_supported() -> bool {
+    !cfg!(windows)
 }
 
 fn shell_quote(value: &str) -> String {
@@ -1401,6 +1425,7 @@ fn list_ftp_directory(
 }
 
 fn connect_ssh(session: &SessionDefinition) -> Result<Session, String> {
+    let username = effective_ssh_username(session)?;
     let tcp = TcpStream::connect((session.host.as_str(), session.port)).map_err(|error| {
         format!(
             "failed to connect to {}:{}: {error}",
@@ -1419,8 +1444,8 @@ fn connect_ssh(session: &SessionDefinition) -> Result<Session, String> {
                 .password
                 .clone()
                 .filter(|value| !value.is_empty())
-                .ok_or_else(|| "password authentication requires a password".to_string())?;
-            ssh.userauth_password(&session.username, &password)
+                .ok_or_else(windows_credential_reuse_message)?;
+            ssh.userauth_password(&username, &password)
                 .map_err(|error| format!("SSH password authentication failed: {error}"))?;
         }
         "key" => {
@@ -1430,16 +1455,11 @@ fn connect_ssh(session: &SessionDefinition) -> Result<Session, String> {
                 .filter(|value| !value.trim().is_empty())
                 .ok_or_else(|| "key authentication requires a key path".to_string())?;
             let expanded = expand_tilde(&key_path);
-            ssh.userauth_pubkey_file(
-                &session.username,
-                None,
-                &expanded,
-                session.password.as_deref(),
-            )
-            .map_err(|error| format!("SSH key authentication failed: {error}"))?;
+            ssh.userauth_pubkey_file(&username, None, &expanded, session.password.as_deref())
+                .map_err(|error| format!("SSH key authentication failed: {error}"))?;
         }
         _ => {
-            ssh.userauth_agent(&session.username)
+            ssh.userauth_agent(&username)
                 .map_err(|error| format!("SSH agent authentication failed: {error}"))?;
         }
     }
@@ -1449,6 +1469,38 @@ fn connect_ssh(session: &SessionDefinition) -> Result<Session, String> {
     }
 
     Ok(ssh)
+}
+
+fn effective_ssh_username(session: &SessionDefinition) -> Result<String, String> {
+    let username = session.username.trim();
+    if !username.is_empty() {
+        return Ok(username.to_string());
+    }
+
+    if let Some(tab_id) = session
+        .linked_ssh_tab_id
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        let login_path = ssh_control_user_path_for_tab(tab_id);
+        let linked_username = fs::read_to_string(&login_path)
+            .map(|value| value.trim().to_string())
+            .unwrap_or_default();
+        if !linked_username.is_empty() {
+            return Ok(linked_username);
+        }
+
+        return Err(
+            "The linked SSH login name is not available yet. Enter the SSH username in the terminal, then refresh SFTP."
+                .into(),
+        );
+    }
+
+    Err("SFTP requires a username in the session profile.".into())
+}
+
+fn windows_credential_reuse_message() -> String {
+    "Windows cannot reuse the password typed into the interactive SSH terminal. Save a password in the session, use a key, or use SSH agent authentication for live status and linked SFTP.".into()
 }
 
 fn run_ftp_list(session: &SessionDefinition, path: &str) -> Result<Vec<u8>, String> {
@@ -1696,12 +1748,24 @@ fn is_directory(perm: Option<u32>) -> bool {
 
 fn expand_tilde(path: &str) -> PathBuf {
     if let Some(stripped) = path.strip_prefix("~/") {
-        if let Some(home) = std::env::var_os("HOME") {
+        if let Some(home) = local_home_dir() {
             return PathBuf::from(home).join(stripped);
         }
     }
 
     PathBuf::from(path)
+}
+
+fn local_home_dir() -> Option<std::ffi::OsString> {
+    #[cfg(windows)]
+    {
+        std::env::var_os("USERPROFILE")
+    }
+
+    #[cfg(not(windows))]
+    {
+        std::env::var_os("HOME")
+    }
 }
 
 fn sanitize_file_name(file_name: &str) -> String {

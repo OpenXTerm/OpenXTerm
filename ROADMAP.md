@@ -1,6 +1,6 @@
 # OpenXTerm Roadmap
 
-OpenXTerm is an early-stage open-source terminal workspace for macOS and Linux.
+OpenXTerm is an early-stage open-source terminal workspace for macOS, Linux, and Windows.
 
 The goal for the first stable release is not to copy every MobaXterm feature. The goal is to provide a reliable daily workflow for saved terminal sessions, linked SFTP, file transfers, local shells, session organization, live status, and standard SSH X11 forwarding.
 
@@ -8,7 +8,7 @@ The goal for the first stable release is not to copy every MobaXterm feature. Th
 
 Target statement for v1.0:
 
-> OpenXTerm is a stable open-source terminal workspace for macOS and Linux with saved SSH/local sessions, folders, linked SFTP, batch transfers, live status, session import, terminal customization, and standard SSH X11 forwarding diagnostics.
+> OpenXTerm is a stable open-source terminal workspace for macOS, Linux, and Windows with saved SSH/local sessions, folders, linked SFTP, batch transfers, live status, session import, terminal customization, and standard SSH X11 forwarding diagnostics.
 
 OpenXTerm is independent software. It is not affiliated with, endorsed by, or connected to MobaXterm, Mobatek, or any other terminal product.
 
@@ -29,8 +29,10 @@ OpenXTerm is independent software. It is not affiliated with, endorsed by, or co
 - Telnet terminal sessions.
 - Serial terminal sessions.
 - SSH sessions without saved username can prompt for login in the terminal.
+- Windows prompt-wrapper support for SSH profiles without saved username.
 - Restart/save prompt when terminal sessions stop.
 - Linked SFTP sidebar discovery for live SSH tabs.
+- Windows linked SFTP fallback through native `ssh2` when control-socket reuse is unavailable.
 - Remote file listing.
 - Remote folder creation.
 - Remote delete.
@@ -43,9 +45,12 @@ OpenXTerm is independent software. It is not affiliated with, endorsed by, or co
 - Compact tabbed session editor.
 - Live lower status bar with host/user/uptime/CPU/memory/disk/network/latency when available.
 - CPU history graph in the status bar.
+- Windows SSH status fallback through native `ssh2` when control-socket reuse is unavailable.
 - App lock via platform authentication where supported.
 - Standard SSH X11 forwarding settings.
 - X11 runtime diagnostics for common `sshd` and `xauth` issues.
+- Clickable non-macOS topbar menus.
+- Error-only frontend console logging for operational failures.
 - MIT license.
 - Agent documentation in `AGENTS.md`.
 - Public README refresh.
@@ -53,7 +58,7 @@ OpenXTerm is independent software. It is not affiliated with, endorsed by, or co
 
 ### In Progress
 
-- Hardening linked SFTP behavior through active SSH sessions.
+- Hardening linked SFTP behavior through active SSH sessions, especially Windows auth reuse expectations.
 - Improving SSH authentication edge cases.
 - Improving remote status polling reliability across Linux/macOS/BSD-like targets.
 - Polishing compact UI density.
@@ -63,7 +68,7 @@ OpenXTerm is independent software. It is not affiliated with, endorsed by, or co
 ### Known Gaps
 
 - Secrets are not yet stored through platform credential stores.
-- SFTP authentication reuse needs more real-world hardening.
+- SFTP authentication reuse needs more real-world hardening, especially on Windows where interactive password entry cannot be reused by helper connections.
 - File transfer cancel/retry/overwrite conflict handling needs a dedicated pass.
 - Packaging/signing/notarization is not release-ready.
 - Storage migrations need versioning before stable release.
@@ -81,7 +86,8 @@ These must be handled before calling OpenXTerm stable.
   - Windows Credential Manager if Windows remains in release scope.
 - SSH/SFTP auth reuse:
   - linked SFTP should not ask for the same password again in the normal active SSH flow.
-  - control socket lifecycle must be reliable.
+  - Unix control socket lifecycle must be reliable.
+  - Windows fallback behavior must clearly explain when saved password/key/agent auth is required.
   - errors must be understandable.
 - Packaging:
   - macOS signed and notarized build.
@@ -108,6 +114,9 @@ These must be handled before calling OpenXTerm stable.
   - SSH agent auth.
   - username prompt flow.
   - linked SFTP.
+  - Windows linked SFTP with saved password.
+  - Windows linked SFTP with key auth.
+  - Windows live status with saved password/key/agent.
   - large remote directory.
   - large upload/download.
   - interrupted network.
@@ -144,7 +153,7 @@ Goal: terminal sessions and linked SFTP should become predictable enough for dai
 - Add terminal search.
 - Add clear/reset terminal actions.
 - Add shell working-directory support for local sessions.
-- Verify copy/paste and resize across macOS and Linux.
+- Verify copy/paste and resize across macOS, Linux, and Windows.
 
 ## v0.3 Alpha: File Browser Polish
 
@@ -162,7 +171,7 @@ Goal: SFTP should cover common daily file-management tasks.
 
 ### In Progress
 
-- Linked SFTP auth reuse.
+- Linked SFTP auth reuse and Windows fallback clarity.
 - Transfer progress polish.
 
 ### TODO
@@ -178,6 +187,7 @@ Goal: SFTP should cover common daily file-management tasks.
 - Cancel transfer.
 - Retry failed transfer.
 - Better permission/no-space/disconnect errors.
+- Better Windows auth guidance when terminal password entry cannot be reused.
 
 ## v0.4 Alpha: Sessions And Productivity
 
@@ -314,6 +324,7 @@ Goal: the app should no longer feel like a development prototype.
 - Better empty states.
 - Better confirmations.
 - Accessibility pass for focus, labels, keyboard navigation, and contrast.
+- Decide whether topbar search/play actions become functional controls or are removed.
 
 ## v0.9 Release Candidate
 
@@ -344,7 +355,7 @@ Goal: first stable public release.
 - Sessions and folders survive restart and migration.
 - Imports do not lose structure.
 - Secrets are stored through platform credential storage.
-- macOS and Linux packages are available.
+- macOS, Linux, and Windows packages are available if Windows remains in release scope.
 - Known limitations are documented.
 - Troubleshooting docs exist for SSH, SFTP, transfers, and X11.
 - No mock/demo/stub wording appears in user-facing UI.
@@ -357,6 +368,6 @@ Goal: first stable public release.
 - Cloud sync.
 - Collaboration features.
 - Plugin system.
-- Full Windows parity.
+- Full Windows parity beyond the supported SSH/SFTP/status baseline.
 - Built-in remote file editor.
 - Replacing every advanced feature from commercial terminal suites.

@@ -1,13 +1,13 @@
-use tauri::{
-    menu::{AboutMetadata, MenuBuilder, SubmenuBuilder},
-    AppHandle, Emitter, Runtime,
-};
+#[cfg(target_os = "macos")]
+use tauri::menu::{AboutMetadata, MenuBuilder, SubmenuBuilder};
+use tauri::{AppHandle, Emitter, Runtime};
 
 const MENU_ACTION_EVENT: &str = "openxterm://menu-action";
 
-pub fn install_macos_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
+pub fn install_macos_menu<R: Runtime>(_app: &AppHandle<R>) -> tauri::Result<()> {
     #[cfg(target_os = "macos")]
     {
+        let app = _app;
         let app_menu = SubmenuBuilder::new(app, "OpenXTerm")
             .about(Some(AboutMetadata {
                 name: Some("OpenXTerm".into()),

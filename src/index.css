@@ -77,6 +77,14 @@ button {
   gap: 2px;
 }
 
+.topbar-menuitems {
+  position: relative;
+}
+
+.topbar-menu-group {
+  position: relative;
+}
+
 .topbar-menuitem,
 .chrome-action {
   border: 0;
@@ -85,10 +93,16 @@ button {
   height: 22px;
   padding: 0 8px;
   border-radius: 6px;
+  cursor: pointer;
 }
 
 .topbar-menuitem {
   font-size: 12px;
+}
+
+.topbar-menuitem.active {
+  background: #20282c;
+  color: #eef3f4;
 }
 
 .chrome-action {
@@ -98,12 +112,40 @@ button {
   min-width: 24px;
 }
 
+.topbar-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 180px;
+  display: grid;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid #273034;
+  border-radius: 10px;
+  background: rgba(9, 18, 20, 0.98);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.34);
+  z-index: 120;
+}
+
+.topbar-dropdown-item {
+  border: 0;
+  background: transparent;
+  color: #cad1d4;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  text-align: left;
+  font-size: 12px;
+  cursor: pointer;
+}
+
 .chrome-action.accent {
   background: #1a4035;
   color: #7df0b5;
 }
 
 .topbar-menuitem:hover,
+.topbar-dropdown-item:hover,
 .chrome-action:hover,
 .sidebar-header-button:hover,
 .sidebar-icon-button:hover,

@@ -45,6 +45,7 @@ import {
   uploadLocalPath,
   uploadRemoteFile,
 } from '../../lib/bridge'
+import { logOpenXTermError } from '../../lib/errorLog'
 import type { SessionImportSummary } from '../../state/useOpenXTermStore'
 import { splitSessionFolderPath } from '../../lib/sessionUtils'
 import { createBatchChildTransferId, createBatchTransferId, rememberBatchTransfer } from '../../lib/transferBatch'
@@ -91,6 +92,18 @@ const tools = [
   { name: 'Ping', note: 'Quick latency and packet-loss checks.' },
   { name: 'Network Tools', note: 'DNS, traceroute and capture helpers.' },
 ]
+
+function sidebarSftpErrorContext(session: SessionDefinition, action: string, path: string) {
+  return {
+    action,
+    path,
+    sessionId: session.id,
+    sessionName: session.name,
+    host: session.host,
+    kind: session.kind,
+    linkedSshTabId: session.linkedSshTabId,
+  }
+}
 
 function getSessionIcon(kind: SessionDefinition['kind']) {
   switch (kind) {
@@ -298,6 +311,7 @@ export function Sidebar({
       }))
       setSftpMessage(`Loaded ${snapshot.path}`)
     } catch (error) {
+      logOpenXTermError('sidebar.sftp.load-directory', error, sidebarSftpErrorContext(session, 'load', path))
       setSftpMessage(error instanceof Error ? error.message : 'Unable to load remote directory.')
     } finally {
       setSftpLoading(false)
@@ -843,6 +857,10 @@ export function Sidebar({
           setSftpMessage(`Uploaded ${droppedPaths.length} file${droppedPaths.length > 1 ? 's' : ''} to ${currentSftpPath}`)
           await loadSelectedSftpDirectory(currentSftpPath)
         } catch (error) {
+          logOpenXTermError('sidebar.sftp.drop-upload', error, {
+            ...sidebarSftpErrorContext(selectedSftpSession, 'drop-upload', currentSftpPath),
+            droppedPaths,
+          })
           setSftpMessage(error instanceof Error ? error.message : 'Unable to upload dropped file.')
         } finally {
           setSftpLoading(false)
@@ -909,6 +927,10 @@ export function Sidebar({
       setSftpMessage(`Uploaded ${fileList.length} file${fileList.length > 1 ? 's' : ''} to ${currentSftpPath}`)
       await loadSelectedSftpDirectory(currentSftpPath)
     } catch (error) {
+      logOpenXTermError('sidebar.sftp.upload-file', error, {
+        ...sidebarSftpErrorContext(selectedSftpSession, 'upload', currentSftpPath),
+        files: Array.from(fileList).map((file) => ({ name: file.name, size: file.size })),
+      })
       setSftpMessage(error instanceof Error ? error.message : 'Unable to upload file.')
     } finally {
       setSftpLoading(false)
@@ -990,6 +1012,14 @@ export function Sidebar({
       setSftpMessage(`Uploaded folder contents to ${currentSftpPath}`)
       await loadSelectedSftpDirectory(currentSftpPath)
     } catch (error) {
+      logOpenXTermError('sidebar.sftp.upload-folder', error, {
+        ...sidebarSftpErrorContext(selectedSftpSession, 'upload-folder', currentSftpPath),
+        files: Array.from(fileList).map((file) => ({
+          name: file.name,
+          relativePath: file.webkitRelativePath,
+          size: file.size,
+        })),
+      })
       setSftpMessage(error instanceof Error ? error.message : 'Unable to upload folder.')
     } finally {
       setSftpLoading(false)
@@ -1013,6 +1043,10 @@ export function Sidebar({
       setSftpMessage(`Created folder ${name.trim()}`)
       await loadSelectedSftpDirectory(currentSftpPath)
     } catch (error) {
+      logOpenXTermError('sidebar.sftp.create-folder', error, {
+        ...sidebarSftpErrorContext(selectedSftpSession, 'create-folder', currentSftpPath),
+        folderName: name.trim(),
+      })
       setSftpMessage(error instanceof Error ? error.message : 'Unable to create remote folder.')
     } finally {
       setSftpLoading(false)
@@ -1041,6 +1075,10 @@ export function Sidebar({
       setSftpMessage(entries.length === 1 ? `Deleted ${entries[0].name}` : `Deleted ${entries.length} items`)
       await loadSelectedSftpDirectory(currentSftpPath)
     } catch (error) {
+      logOpenXTermError('sidebar.sftp.delete-entry', error, {
+        ...sidebarSftpErrorContext(selectedSftpSession, 'delete', currentSftpPath),
+        entries: entries.map((entry) => ({ path: entry.path, kind: entry.kind })),
+      })
       setSftpMessage(error instanceof Error ? error.message : 'Unable to delete remote entry.')
     } finally {
       setSftpLoading(false)
@@ -1100,6 +1138,10 @@ export function Sidebar({
           : `Downloaded ${selectedSftpEntries.length} item${selectedSftpEntries.length > 1 ? 's' : ''}`,
       )
     } catch (error) {
+      logOpenXTermError('sidebar.sftp.download-entry', error, {
+        ...sidebarSftpErrorContext(selectedSftpSession, 'download', currentSftpPath),
+        entries: selectedSftpEntries.map((entry) => ({ path: entry.path, kind: entry.kind })),
+      })
       setSftpMessage(error instanceof Error ? error.message : 'Unable to download remote item.')
     } finally {
       setSftpLoading(false)

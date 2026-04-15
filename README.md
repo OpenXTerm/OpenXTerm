@@ -1,6 +1,6 @@
 # OpenXTerm
 
-OpenXTerm is an early-stage open-source desktop terminal workspace for macOS and Linux.
+OpenXTerm is an early-stage open-source desktop terminal workspace for macOS, Linux, and Windows.
 
 It is inspired by the session-first workflow popularized by tools like MobaXterm: saved connections, folders, terminal tabs, SFTP sidebars, file transfers, macros, and live host status in one compact app.
 
@@ -21,7 +21,7 @@ The current focus is:
 
 ## Features
 
-- Local shell sessions for macOS, Linux, and Windows-compatible runtime paths
+- Local shell sessions for macOS, Linux, and Windows
 - SSH, Telnet, and Serial terminal transports
 - Session folders with tree view and drag/drop organization
 - Multiple simultaneous connections to the same saved session
@@ -34,15 +34,20 @@ The current focus is:
 - Per-session terminal font, size, foreground color, and background color
 - System font picker in the session editor
 - Live lower status bar with host, user, uptime, CPU history, memory, disk, network, and latency when available
+- Windows SSH status fallback through a separate native `ssh2` probe when control-socket reuse is unavailable
+- Windows linked SFTP fallback through native `ssh2` when OpenSSH control-socket reuse is unavailable
+- Clickable non-macOS topbar menus with app-level actions for Terminal, Sessions, View, Tools, Macros, and Help
 - Optional app lock through platform authentication where supported
 - SSH X11 forwarding settings and diagnostics for local X server setups
+- Error-only frontend console logging for status, transfers, terminal launch/input, and file-browser failures
 
 ## Known Limits
 
 - The app is not a finished MobaXterm clone. It covers a focused subset and is evolving quickly.
 - X11 forwarding uses standard OpenSSH `-X` / `-Y`; it still requires a working local X server such as XQuartz on macOS, Xorg/XWayland on Linux, or a Windows X server.
 - Remote status metrics are best-effort and depend on the remote OS and available shell tools.
-- SFTP is actively improving; password and control-socket reuse are areas to keep testing carefully.
+- On Windows, interactive password entry in the terminal is not automatically reusable for linked SFTP or live status. Those helper connections need a saved password, private key, or SSH agent auth.
+- SFTP is actively improving; authentication reuse and edge-case handling are still areas to keep testing carefully.
 - Packaging, signing, and distribution workflows still need a dedicated release pass.
 - There is no broad automated test suite yet.
 
@@ -85,6 +90,8 @@ Build the Rust backend:
 ```bash
 cargo build --manifest-path src-tauri/Cargo.toml
 ```
+
+On Windows, if `cargo build` fails with `LNK1104` against `target\\debug\\deps\\openxterm.exe`, a previously launched debug binary is still locked by the OS. Close the running app or build into a different target directory before retrying.
 
 ## Development Notes
 

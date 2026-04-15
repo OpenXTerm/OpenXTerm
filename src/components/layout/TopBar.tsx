@@ -1,23 +1,146 @@
+import { useEffect, useRef, useState } from 'react'
 import { Plus, Play, Search, Terminal } from 'lucide-react'
+
+import type { MenuActionPayload } from '../../types/domain'
+
+type MenuAction = MenuActionPayload['action']
 
 interface TopBarProps {
   activeTabTitle: string
   onCreateSession: () => void
   onCreateMacro: () => void
+  onMenuAction: (action: MenuAction) => void
 }
 
-const MENU_ITEMS = ['Terminal', 'Sessions', 'View', 'Tools', 'Macros', 'Help']
+interface TopBarMenu {
+  label: string
+  items: Array<{
+    label: string
+    action: MenuAction
+  }>
+}
 
-export function TopBar({ activeTabTitle, onCreateSession, onCreateMacro }: TopBarProps) {
+const MENUS: TopBarMenu[] = [
+  {
+    label: 'Terminal',
+    items: [
+      { label: 'New Session', action: 'new-session' },
+      { label: 'New Macro', action: 'new-macro' },
+      { label: 'Lock OpenXTerm', action: 'lock-app' },
+    ],
+  },
+  {
+    label: 'Sessions',
+    items: [
+      { label: 'Show Sessions', action: 'show-sessions' },
+    ],
+  },
+  {
+    label: 'View',
+    items: [
+      { label: 'Show Sessions', action: 'show-sessions' },
+      { label: 'Show Tools', action: 'show-tools' },
+      { label: 'Show Macros', action: 'show-macros' },
+    ],
+  },
+  {
+    label: 'Tools',
+    items: [
+      { label: 'Open Tools', action: 'show-tools' },
+    ],
+  },
+  {
+    label: 'Macros',
+    items: [
+      { label: 'New Macro', action: 'new-macro' },
+      { label: 'Show Macros', action: 'show-macros' },
+    ],
+  },
+  {
+    label: 'Help',
+    items: [
+      { label: 'Open Sessions', action: 'show-sessions' },
+    ],
+  },
+]
+
+export function TopBar({ activeTabTitle, onCreateSession, onCreateMacro, onMenuAction }: TopBarProps) {
+  const [openMenuLabel, setOpenMenuLabel] = useState<string | null>(null)
+  const menubarRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    function handlePointerDown(event: PointerEvent) {
+      if (!menubarRef.current?.contains(event.target as Node)) {
+        setOpenMenuLabel(null)
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setOpenMenuLabel(null)
+      }
+    }
+
+    window.addEventListener('pointerdown', handlePointerDown)
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown)
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [])
+
+  function handleMenuItemClick(label: string) {
+    setOpenMenuLabel((current) => current === label ? null : label)
+  }
+
+  function handleAction(action: MenuAction) {
+    setOpenMenuLabel(null)
+    onMenuAction(action)
+  }
+
   return (
-    <header className="topbar" data-tauri-drag-region>
-      <div className="topbar-menubar" data-tauri-drag-region>
-        <div className="topbar-menuitems">
-          {MENU_ITEMS.map((item) => (
-            <button key={item} className="topbar-menuitem" type="button">
-              {item}
-            </button>
-          ))}
+    <header className="topbar">
+      <div className="topbar-menubar">
+        <div ref={menubarRef} className="topbar-menuitems">
+          {MENUS.map((menu) => {
+            const expanded = openMenuLabel === menu.label
+            return (
+              <div
+                key={menu.label}
+                className="topbar-menu-group"
+                onMouseEnter={() => {
+                  if (openMenuLabel) {
+                    setOpenMenuLabel(menu.label)
+                  }
+                }}
+              >
+                <button
+                  className={`topbar-menuitem ${expanded ? 'active' : ''}`}
+                  type="button"
+                  aria-expanded={expanded}
+                  aria-haspopup="menu"
+                  onClick={() => handleMenuItemClick(menu.label)}
+                >
+                  {menu.label}
+                </button>
+                {expanded && (
+                  <div className="topbar-dropdown" role="menu" aria-label={menu.label}>
+                    {menu.items.map((item) => (
+                      <button
+                        key={`${menu.label}:${item.action}:${item.label}`}
+                        className="topbar-dropdown-item"
+                        type="button"
+                        role="menuitem"
+                        onClick={() => handleAction(item.action)}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
       </div>
 
@@ -37,7 +160,7 @@ export function TopBar({ activeTabTitle, onCreateSession, onCreateMacro }: TopBa
           </button>
         </div>
 
-        <div className="topbar-breadcrumb">{activeTabTitle}</div>
+        <div className="topbar-breadcrumb" data-tauri-drag-region>{activeTabTitle}</div>
       </div>
     </header>
   )

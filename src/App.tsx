@@ -11,7 +11,7 @@ import { StatusBar } from './components/status/StatusBar'
 import { Sidebar } from './components/sidebar/Sidebar'
 import { Workspace } from './components/workspace/Workspace'
 import { useOpenXTermStore } from './state/useOpenXTermStore'
-import type { MacroDefinition, SessionDefinition, SystemAuthSupport } from './types/domain'
+import type { MacroDefinition, MenuActionPayload, SessionDefinition, SystemAuthSupport } from './types/domain'
 
 export function App() {
   const isMacOS = navigator.userAgent.includes('Mac')
@@ -136,6 +136,33 @@ export function App() {
     }
   }, [lockSupport.available, unlockBusy])
 
+  const handleMenuAction = useCallback((action: MenuActionPayload['action']) => {
+    switch (action) {
+      case 'new-session':
+        setEditingSession(null)
+        setSessionModalOpen(true)
+        break
+      case 'new-macro':
+        setEditingMacro(null)
+        setMacroModalOpen(true)
+        break
+      case 'show-sessions':
+        void setSidebar('sessions')
+        break
+      case 'show-tools':
+        void setSidebar('tools')
+        break
+      case 'show-macros':
+        void setSidebar('macros')
+        break
+      case 'lock-app':
+        handleLockApp()
+        break
+      default:
+        break
+    }
+  }, [handleLockApp, setSidebar])
+
   useEffect(() => {
     let disposed = false
     let unlisten: (() => void) | null = null
@@ -145,30 +172,7 @@ export function App() {
         return
       }
 
-      switch (payload.action) {
-        case 'new-session':
-          setEditingSession(null)
-          setSessionModalOpen(true)
-          break
-        case 'new-macro':
-          setEditingMacro(null)
-          setMacroModalOpen(true)
-          break
-        case 'show-sessions':
-          void setSidebar('sessions')
-          break
-        case 'show-tools':
-          void setSidebar('tools')
-          break
-        case 'show-macros':
-          void setSidebar('macros')
-          break
-        case 'lock-app':
-          handleLockApp()
-          break
-        default:
-          break
-      }
+      handleMenuAction(payload.action)
     }).then((disposeListener) => {
       if (disposed) {
         void disposeListener()
@@ -186,7 +190,7 @@ export function App() {
       disposed = true
       unlisten?.()
     }
-  }, [handleLockApp, setSidebar])
+  }, [handleMenuAction])
 
   const activeTab = tabs.find((tab) => tab.id === activeTabId)
   const terminalTabsForSftp = activeTab ? [activeTab, ...tabs.filter((tab) => tab.id !== activeTab.id)] : tabs
@@ -287,6 +291,7 @@ export function App() {
             setEditingMacro(null)
             setMacroModalOpen(true)
           }}
+          onMenuAction={handleMenuAction}
           onCreateSession={() => {
             setEditingSession(null)
             setSessionModalOpen(true)
