@@ -140,6 +140,7 @@ function createDraft(session?: SessionDefinition | null, initialFolderPath?: str
       terminalFontSize: session.terminalFontSize ?? DEFAULT_TERMINAL_SIZE,
       terminalForeground: session.terminalForeground ?? DEFAULT_TERMINAL_FOREGROUND,
       terminalBackground: session.terminalBackground ?? DEFAULT_TERMINAL_BACKGROUND,
+      localWorkingDirectory: session.localWorkingDirectory ?? '',
       serialPort: session.serialPort ?? '',
       baudRate: session.baudRate ?? 115200,
       parity: session.parity,
@@ -165,6 +166,7 @@ function createDraft(session?: SessionDefinition | null, initialFolderPath?: str
     terminalFontSize: DEFAULT_TERMINAL_SIZE,
     terminalForeground: DEFAULT_TERMINAL_FOREGROUND,
     terminalBackground: DEFAULT_TERMINAL_BACKGROUND,
+    localWorkingDirectory: '',
     serialPort: '',
     baudRate: 115200,
     parity: 'none',
@@ -616,8 +618,18 @@ export function SessionEditorModal({
     if (isLocal) {
       return (
         <section className="session-editor-tab-panel">
+          <div className="session-editor-grid">
+            <label className="editor-field editor-field-wide">
+              <span>Working directory</span>
+              <input
+                placeholder="~"
+                value={draft.localWorkingDirectory}
+                onChange={(event) => updateDraft({ localWorkingDirectory: event.target.value })}
+              />
+            </label>
+          </div>
           <p className="editor-hint">
-            Local sessions open the default shell for this operating system. Use the Terminal tab if you want a different font or colors for this local profile.
+            Local sessions open the default shell for this operating system. Leave the working directory empty to start in the home directory. `~` expands to the local home folder.
           </p>
         </section>
       )

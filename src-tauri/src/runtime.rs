@@ -55,6 +55,18 @@ struct ActiveTerminal {
     stop_flag: Arc<AtomicBool>,
 }
 
+#[derive(Default)]
+struct SshRuntimeGuidanceState {
+    host_key_prompt: bool,
+    host_key_changed: bool,
+    auth_failed: bool,
+    key_permission_error: bool,
+    connection_refused: bool,
+    timeout: bool,
+    host_unreachable: bool,
+    dns_error: bool,
+}
+
 impl Default for AppRuntime {
     fn default() -> Self {
         Self {
@@ -74,7 +86,7 @@ impl AppRuntime {
             return Ok(false);
         }
 
-        let (command, shell_label) = build_local_shell_command();
+        let (command, shell_label) = build_local_shell_command(&session)?;
         self.start_pty_session(
             app,
             tab_id,
@@ -95,6 +107,12 @@ impl AppRuntime {
     ) -> Result<bool, String> {
         if session.kind != "ssh" {
             return Ok(false);
+        }
+        if session.host.trim().is_empty() {
+            return Err("SSH session requires a host or IP address.".into());
+        }
+        if session.port == 0 {
+            return Err("SSH session requires a non-zero port.".into());
         }
 
         prepare_ssh_control_socket(&tab_id)?;
@@ -144,6 +162,10 @@ impl AppRuntime {
                 notice_message.unwrap_or_default()
             ))
         };
+        let notice_message = Some(format!(
+            "{}\r\n[information] Host keys use OpenSSH known_hosts rules. New hosts are accepted automatically; changed host keys still stop the connection and require manual review.\r\n",
+            notice_message.unwrap_or_default()
+        ));
 
         self.start_pty_session(
       app,
@@ -496,6 +518,7 @@ fn spawn_pty_reader<R>(
         let mut reader = BufReader::new(reader);
         let mut buffer = [0_u8; 4096];
         let mut recent_output = String::new();
+        let mut ssh_guidance_state = SshRuntimeGuidanceState::default();
 
         loop {
             match reader.read(&mut buffer) {
@@ -503,14 +526,21 @@ fn spawn_pty_reader<R>(
                 Ok(size) => {
                     let chunk = String::from_utf8_lossy(&buffer[..size]).to_string();
                     emit_output(&app, &tab_id, &chunk);
+                    push_recent_terminal_output(&mut recent_output, &chunk);
                     handle_password_prompt(
                         &app,
                         &tab_id,
                         &writer,
                         &session,
                         &password_sent,
-                        &mut recent_output,
-                        &chunk,
+                        &recent_output,
+                    );
+                    maybe_report_ssh_runtime_guidance(
+                        &app,
+                        &tab_id,
+                        &session,
+                        &recent_output,
+                        &mut ssh_guidance_state,
                     );
                     maybe_report_x11_forwarding_failure(
                         &app,
@@ -585,14 +615,14 @@ fn spawn_telnet_reader(
                     if !display.is_empty() {
                         let chunk = String::from_utf8_lossy(&display).to_string();
                         emit_output(&app, &tab_id, &chunk);
+                        push_recent_terminal_output(&mut recent_output, &chunk);
                         handle_password_prompt(
                             &app,
                             &tab_id,
                             &writer,
                             &session,
                             &password_sent,
-                            &mut recent_output,
-                            &chunk,
+                            &recent_output,
                         );
                     }
                 }
@@ -804,7 +834,7 @@ fn fetch_ssh_status(
         return Err(if stderr.is_empty() {
             "SSH status probe failed".into()
         } else {
-            stderr
+            humanize_ssh_error_message(&stderr, session)
         });
     }
 
@@ -849,7 +879,7 @@ fn fetch_ssh_status_with_native_session(
         return Err(if detail.is_empty() {
             format!("SSH status probe failed with exit code {exit_status}")
         } else {
-            detail.to_string()
+            humanize_ssh_error_message(detail, session)
         });
     }
 
@@ -861,16 +891,19 @@ fn fetch_ssh_status_with_native_session(
 
 fn connect_native_ssh(session: &SessionDefinition, username: &str) -> Result<Ssh2Session, String> {
     let tcp = TcpStream::connect((session.host.as_str(), session.port)).map_err(|error| {
-        format!(
+        humanize_ssh_error_message(
+            &format!(
             "failed to connect to {}:{} for SSH status: {error}",
             session.host, session.port
+            ),
+            session,
         )
     })?;
     let mut ssh = Ssh2Session::new()
         .map_err(|error| format!("failed to create SSH status session: {error}"))?;
     ssh.set_tcp_stream(tcp);
     ssh.handshake()
-        .map_err(|error| format!("SSH status handshake failed: {error}"))?;
+        .map_err(|error| humanize_ssh_error_message(&format!("SSH status handshake failed: {error}"), session))?;
 
     match session.auth_type.as_str() {
         "password" => {
@@ -880,7 +913,7 @@ fn connect_native_ssh(session: &SessionDefinition, username: &str) -> Result<Ssh
                 .filter(|value| !value.is_empty())
                 .ok_or_else(windows_credential_reuse_message)?;
             ssh.userauth_password(username, password)
-                .map_err(|error| format!("SSH status password authentication failed: {error}"))?;
+                .map_err(|error| humanize_ssh_error_message(&format!("SSH status password authentication failed: {error}"), session))?;
         }
         "key" => {
             let key_path = session
@@ -894,16 +927,19 @@ fn connect_native_ssh(session: &SessionDefinition, username: &str) -> Result<Ssh
                 .as_deref()
                 .filter(|value| !value.is_empty());
             ssh.userauth_pubkey_file(username, None, expanded.as_ref(), passphrase)
-                .map_err(|error| format!("SSH status key authentication failed: {error}"))?;
+                .map_err(|error| humanize_ssh_error_message(&format!("SSH status key authentication failed: {error}"), session))?;
         }
         _ => {
             ssh.userauth_agent(username)
-                .map_err(|error| format!("SSH status agent authentication failed: {error}"))?;
+                .map_err(|error| humanize_ssh_error_message(&format!("SSH status agent authentication failed: {error}"), session))?;
         }
     }
 
     if !ssh.authenticated() {
-        return Err("SSH status authentication was rejected by the remote host".into());
+        return Err(humanize_ssh_error_message(
+            "SSH status authentication was rejected by the remote host",
+            session,
+        ));
     }
 
     Ok(ssh)
@@ -1087,8 +1123,7 @@ fn handle_password_prompt(
     writer: &SharedWriter,
     session: &SessionDefinition,
     password_sent: &Arc<AtomicBool>,
-    recent_output: &mut String,
-    chunk: &str,
+    recent_output: &str,
 ) {
     if session.auth_type != "password"
         || !matches!(session.kind.as_str(), "ssh" | "telnet")
@@ -1096,12 +1131,6 @@ fn handle_password_prompt(
         || password_sent.load(Ordering::Relaxed)
     {
         return;
-    }
-
-    recent_output.push_str(&chunk.to_ascii_lowercase());
-    if recent_output.len() > 512 {
-        let drain_len = recent_output.len() - 512;
-        recent_output.drain(..drain_len);
     }
 
     if !looks_like_password_prompt(recent_output) {
@@ -1128,6 +1157,116 @@ fn handle_password_prompt(
             app,
             tab_id,
             "\r\n[error] Password auth selected but no password is stored in session.\r\n",
+        );
+    }
+}
+
+fn push_recent_terminal_output(recent_output: &mut String, chunk: &str) {
+    recent_output.push_str(&chunk.to_ascii_lowercase());
+    if recent_output.len() > 1024 {
+        let drain_len = recent_output.len() - 1024;
+        recent_output.drain(..drain_len);
+    }
+}
+
+fn maybe_report_ssh_runtime_guidance(
+    app: &AppHandle,
+    tab_id: &str,
+    session: &SessionDefinition,
+    recent_output: &str,
+    state: &mut SshRuntimeGuidanceState,
+) {
+    if session.kind != "ssh" {
+        return;
+    }
+
+    if !state.host_key_prompt
+        && recent_output.contains("are you sure you want to continue connecting (yes/no")
+    {
+        state.host_key_prompt = true;
+        emit_output(
+            app,
+            tab_id,
+            "\r\n[information] SSH is asking to trust a new host key. Review the hostname and fingerprint, then type 'yes' in the terminal to store it in known_hosts. Type 'no' to abort.\r\n",
+        );
+    }
+
+    if !state.host_key_changed
+        && (recent_output.contains("remote host identification has changed")
+            || recent_output.contains("host key verification failed"))
+    {
+        state.host_key_changed = true;
+        emit_output(
+            app,
+            tab_id,
+            "\r\n[error] The remote host key does not match your known_hosts entry. Verify the server first, then remove the stale key with ssh-keygen -R <host> before reconnecting.\r\n",
+        );
+    }
+
+    if !state.auth_failed && recent_output.contains("permission denied") {
+        state.auth_failed = true;
+        emit_output(
+            app,
+            tab_id,
+            "\r\n[error] SSH authentication failed. Check the username, password/key selection, SSH agent state, and whether the remote server accepts that auth method.\r\n",
+        );
+    }
+
+    if !state.key_permission_error
+        && (recent_output.contains("unprotected private key file")
+            || recent_output.contains("bad permissions"))
+    {
+        state.key_permission_error = true;
+        emit_output(
+            app,
+            tab_id,
+            "\r\n[error] The SSH private key file permissions are too open for OpenSSH. Restrict the key file and its parent .ssh directory, then retry.\r\n",
+        );
+    }
+
+    if !state.connection_refused && recent_output.contains("connection refused") {
+        state.connection_refused = true;
+        emit_output(
+            app,
+            tab_id,
+            "\r\n[error] The TCP connection was refused. Verify the SSH port, firewall rules, and that sshd is listening on the remote host.\r\n",
+        );
+    }
+
+    if !state.timeout
+        && (recent_output.contains("connection timed out")
+            || recent_output.contains("operation timed out"))
+    {
+        state.timeout = true;
+        emit_output(
+            app,
+            tab_id,
+            "\r\n[error] The SSH connection timed out. Check the host/IP, VPN path, firewall, and whether the port is reachable from this machine.\r\n",
+        );
+    }
+
+    if !state.host_unreachable
+        && (recent_output.contains("no route to host")
+            || recent_output.contains("network is unreachable"))
+    {
+        state.host_unreachable = true;
+        emit_output(
+            app,
+            tab_id,
+            "\r\n[error] The remote network is unreachable from this machine. Check routing, VPN state, and the target IP/hostname.\r\n",
+        );
+    }
+
+    if !state.dns_error
+        && (recent_output.contains("could not resolve hostname")
+            || recent_output.contains("name or service not known")
+            || recent_output.contains("temporary failure in name resolution"))
+    {
+        state.dns_error = true;
+        emit_output(
+            app,
+            tab_id,
+            "\r\n[error] DNS resolution failed for this SSH target. Verify the hostname spelling or switch the session to a direct IP address.\r\n",
         );
     }
 }
@@ -1451,17 +1590,21 @@ fn measure_latency(host: &str) -> Result<String, String> {
     Ok(format!("{latency} ms"))
 }
 
-fn build_local_shell_command() -> (CommandBuilder, String) {
+fn build_local_shell_command(
+    session: &SessionDefinition,
+) -> Result<(CommandBuilder, String), String> {
     let shell = configured_local_shell();
     let mut command = CommandBuilder::new(&shell);
     command.env("TERM", "xterm-256color");
     command.env("COLORTERM", "truecolor");
 
-    if let Some(home_dir) = local_home_dir() {
+    if let Some(working_dir) = resolve_local_working_directory(session)? {
+        command.cwd(working_dir);
+    } else if let Some(home_dir) = local_home_dir() {
         command.cwd(home_dir);
     }
 
-    (command, shell)
+    Ok((command, shell))
 }
 
 fn configured_local_shell() -> String {
@@ -1525,6 +1668,36 @@ fn local_home_dir() -> Option<String> {
             .ok()
             .filter(|value| !value.trim().is_empty())
     }
+}
+
+fn resolve_local_working_directory(
+    session: &SessionDefinition,
+) -> Result<Option<String>, String> {
+    let Some(value) = session
+        .local_working_directory
+        .as_ref()
+        .map(|item| item.trim())
+        .filter(|item| !item.is_empty())
+    else {
+        return Ok(None);
+    };
+
+    let resolved = expand_tilde(value);
+    let path = PathBuf::from(&resolved);
+    if !path.exists() {
+        return Err(format!(
+            "Local working directory does not exist: {}",
+            path.display()
+        ));
+    }
+    if !path.is_dir() {
+        return Err(format!(
+            "Local working directory is not a folder: {}",
+            path.display()
+        ));
+    }
+
+    Ok(Some(path.to_string_lossy().to_string()))
 }
 
 #[cfg(not(windows))]
@@ -1625,6 +1798,7 @@ set -- \
   -o PubkeyAuthentication=yes \
   -o KbdInteractiveAuthentication=yes \
   -o StrictHostKeyChecking=accept-new \
+  -o UpdateHostKeys=yes \
   -o ConnectTimeout=5 \
   -o ServerAliveInterval=30 \
   -o ServerAliveCountMax=3 \
@@ -1678,6 +1852,7 @@ $sshArgs = @(
   '-o', 'PubkeyAuthentication=yes',
   '-o', 'KbdInteractiveAuthentication=yes',
   '-o', 'StrictHostKeyChecking=accept-new',
+  '-o', 'UpdateHostKeys=yes',
   '-o', 'ConnectTimeout=5',
   '-o', 'ServerAliveInterval=30',
   '-o', 'ServerAliveCountMax=3',
@@ -1776,6 +1951,8 @@ fn apply_common_ssh_args(
         "-o",
         "StrictHostKeyChecking=accept-new",
         "-o",
+        "UpdateHostKeys=yes",
+        "-o",
         "ConnectTimeout=5",
         "-o",
         "ServerAliveInterval=30",
@@ -1854,6 +2031,61 @@ fn expand_tilde(value: &str) -> String {
 
 fn windows_credential_reuse_message() -> String {
     "Windows cannot reuse the password typed into the interactive SSH terminal. Save a password in the session, use a key, or use SSH agent authentication for live status and linked SFTP.".into()
+}
+
+fn humanize_ssh_error_message(error: &str, session: &SessionDefinition) -> String {
+    let normalized = error.trim();
+    let lower = normalized.to_ascii_lowercase();
+
+    if lower.contains("could not resolve hostname")
+        || lower.contains("name or service not known")
+        || lower.contains("temporary failure in name resolution")
+    {
+        return format!(
+            "DNS could not resolve {}. Verify the hostname spelling or use a direct IP address.",
+            session.host
+        );
+    }
+    if lower.contains("connection refused") {
+        return format!(
+            "The SSH connection to {}:{} was refused. Verify the port, firewall, and that sshd is running.",
+            session.host, session.port
+        );
+    }
+    if lower.contains("connection timed out") || lower.contains("operation timed out") {
+        return format!(
+            "The SSH connection to {}:{} timed out. Check reachability, VPN/firewall state, and the target port.",
+            session.host, session.port
+        );
+    }
+    if lower.contains("no route to host") || lower.contains("network is unreachable") {
+        return format!(
+            "The remote host {} is unreachable from this machine. Check routing, VPN state, and the target address.",
+            session.host
+        );
+    }
+    if lower.contains("permission denied") {
+        return "SSH authentication failed. Check the username and whether the selected password, key, or agent credentials are valid.".into();
+    }
+    if lower.contains("remote host identification has changed")
+        || lower.contains("host key verification failed")
+    {
+        return format!(
+            "The SSH host key for {} no longer matches known_hosts. Verify the server first, then remove the stale key entry before reconnecting.",
+            session.host
+        );
+    }
+    if lower.contains("unprotected private key file") || lower.contains("bad permissions") {
+        return "The SSH private key permissions are too open for OpenSSH. Restrict the key file and its parent .ssh directory, then retry.".into();
+    }
+    if lower.contains("agent admitted failure to sign")
+        || lower.contains("no such identity")
+        || lower.contains("sign_and_send_pubkey")
+    {
+        return "SSH key or agent authentication failed. Verify the key path, passphrase, and whether your SSH agent is loaded with the correct identity.".into();
+    }
+
+    normalized.to_string()
 }
 
 fn apply_local_x11_environment(

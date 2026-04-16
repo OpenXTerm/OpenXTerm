@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { SearchAddon } from '@xterm/addon-search'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
 
@@ -16,6 +17,11 @@ interface TerminalSurfaceProps {
   onRestart?: () => void
   onInput?: (data: string) => void
   onResize?: (cols: number, rows: number) => void
+  commandRequest?: {
+    action: 'clear' | 'reset' | 'search'
+    nonce: number
+    tabId: string
+  } | null
 }
 
 const STOP_NOTICE = [
@@ -55,10 +61,13 @@ export function TerminalSurface({
   onRestart,
   onInput,
   onResize,
+  commandRequest,
 }: TerminalSurfaceProps) {
   const allowStoppedActions = Boolean(onExitTab || onRestart)
   const hostRef = useRef<HTMLDivElement | null>(null)
+  const searchInputRef = useRef<HTMLInputElement | null>(null)
   const terminalRef = useRef<Terminal | null>(null)
+  const searchAddonRef = useRef<SearchAddon | null>(null)
   const writtenCountRef = useRef(0)
   const inputHandlerRef = useRef<typeof onInput>(onInput)
   const resizeHandlerRef = useRef<typeof onResize>(onResize)
@@ -68,6 +77,11 @@ export function TerminalSurface({
   const titleRef = useRef(title)
   const stoppedRef = useRef(false)
   const stopNoticeShownRef = useRef(false)
+  const processedCommandNonceRef = useRef<number | null>(null)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchCaseSensitive, setSearchCaseSensitive] = useState(false)
+  const [searchFeedback, setSearchFeedback] = useState('')
 
   useEffect(() => {
     inputHandlerRef.current = onInput
@@ -107,7 +121,18 @@ export function TerminalSurface({
       },
     })
     const fit = new FitAddon()
+    const searchAddon = new SearchAddon()
     terminal.loadAddon(fit)
+    terminal.loadAddon(searchAddon)
+    terminal.attachCustomKeyEventHandler((event) => {
+      const isFindShortcut = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f'
+      if (isFindShortcut) {
+        event.preventDefault()
+        setSearchOpen(true)
+        return false
+      }
+      return true
+    })
     terminal.open(hostRef.current)
     fit.fit()
     resizeHandlerRef.current?.(terminal.cols, terminal.rows)
@@ -117,6 +142,7 @@ export function TerminalSurface({
       resizeHandlerRef.current?.(terminal.cols, terminal.rows)
     })
     observer.observe(hostRef.current)
+
     const dataDisposable = (interactive || allowStoppedActions)
       ? terminal.onData((data) => {
         if (stoppedRef.current) {
@@ -147,6 +173,7 @@ export function TerminalSurface({
     const resizeDisposable = terminal.onResize(({ cols, rows }) => resizeHandlerRef.current?.(cols, rows))
 
     terminalRef.current = terminal
+    searchAddonRef.current = searchAddon
     writtenCountRef.current = 0
     stoppedRef.current = false
     stopNoticeShownRef.current = false
@@ -156,6 +183,7 @@ export function TerminalSurface({
       dataDisposable?.dispose()
       resizeDisposable.dispose()
       terminal.dispose()
+      searchAddonRef.current = null
       terminalRef.current = null
     }
   }, [allowStoppedActions, background, fontFamily, fontSize, foreground, interactive, tabId])
@@ -189,5 +217,128 @@ export function TerminalSurface({
     }
   }, [chunks, stopped])
 
-  return <div ref={hostRef} className="terminal-surface" />
+  useEffect(() => {
+    if (!terminalRef.current || !commandRequest) {
+      return
+    }
+
+    if (processedCommandNonceRef.current === commandRequest.nonce) {
+      return
+    }
+
+    processedCommandNonceRef.current = commandRequest.nonce
+
+    if (commandRequest.action === 'search') {
+      window.requestAnimationFrame(() => {
+        setSearchOpen(true)
+      })
+      return
+    }
+
+    if (commandRequest.action === 'reset') {
+      terminalRef.current.reset()
+    } else {
+      terminalRef.current.clear()
+    }
+
+    writtenCountRef.current = chunks.length
+
+    if (stoppedRef.current) {
+      terminalRef.current.write(STOP_NOTICE)
+      stopNoticeShownRef.current = true
+      return
+    }
+
+    stopNoticeShownRef.current = false
+  }, [chunks.length, commandRequest])
+
+  useEffect(() => {
+    if (!searchOpen) {
+      return
+    }
+
+    window.requestAnimationFrame(() => {
+      searchInputRef.current?.focus()
+      searchInputRef.current?.select()
+    })
+  }, [searchOpen])
+
+  function runSearch(direction: 'next' | 'previous', queryOverride?: string) {
+    const query = (queryOverride ?? searchQuery).trim()
+    if (!query || !searchAddonRef.current) {
+      setSearchFeedback('Type a search query.')
+      return
+    }
+
+    const matched = direction === 'next'
+      ? searchAddonRef.current.findNext(query, { caseSensitive: searchCaseSensitive })
+      : searchAddonRef.current.findPrevious(query, { caseSensitive: searchCaseSensitive })
+
+    setSearchFeedback(matched ? `Match ${direction === 'next' ? 'found' : 'selected'}.` : 'No matches in this terminal buffer.')
+  }
+
+  return (
+    <div className="terminal-surface-shell">
+      {searchOpen && (
+        <div className="terminal-search-bar" role="search">
+          <input
+            ref={searchInputRef}
+            value={searchQuery}
+            placeholder="Search terminal output"
+            onChange={(event) => {
+              const nextQuery = event.target.value
+              setSearchQuery(nextQuery)
+              if (nextQuery.trim()) {
+                runSearch('next', nextQuery)
+              } else {
+                setSearchFeedback('')
+              }
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                runSearch(event.shiftKey ? 'previous' : 'next')
+                return
+              }
+              if (event.key === 'Escape') {
+                event.preventDefault()
+                setSearchOpen(false)
+                setSearchFeedback('')
+              }
+            }}
+          />
+          <label className="terminal-search-toggle">
+            <input
+              type="checkbox"
+              checked={searchCaseSensitive}
+              onChange={(event) => {
+                setSearchCaseSensitive(event.target.checked)
+                if (searchQuery.trim()) {
+                  window.requestAnimationFrame(() => runSearch('next'))
+                }
+              }}
+            />
+            <span>Case</span>
+          </label>
+          <button type="button" onClick={() => runSearch('previous')}>
+            Prev
+          </button>
+          <button type="button" onClick={() => runSearch('next')}>
+            Next
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setSearchOpen(false)
+              setSearchFeedback('')
+            }}
+          >
+            Close
+          </button>
+          {searchFeedback && <span className="terminal-search-feedback">{searchFeedback}</span>}
+        </div>
+      )}
+      <div ref={hostRef} className="terminal-surface" />
+    </div>
+  )
 }

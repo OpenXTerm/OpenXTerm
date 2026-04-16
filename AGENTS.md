@@ -368,16 +368,18 @@ This is the practical feature state as of April 16, 2026:
 - local shell transport exists
 - live SSH / Telnet / Serial transports exist
 - remote file listing / create folder / delete / upload / download exist
-- native macOS drag-out to Finder exists
+- native desktop drag-out exists
 - session folders/tree exist
 - session and folder drag/drop in sidebar exist
 - MobaXterm import exists
 - terminal stopped footer with restart/save shortcuts exists
+- terminal search exists through `Ctrl+F` / `Cmd+F`, topbar search, and terminal menu actions
 - linked SFTP session discovery from live SSH tabs exists
 - Windows linked SFTP fallback through native `ssh2` exists
 - app lock via system auth exists
 - X11 session settings and runtime diagnostics exist
 - per-session terminal font / size / foreground / background exist
+- local sessions can persist their own working directory
 - session editor is compact and tabbed
 - system font enumeration for the terminal editor exists
 - status bar is live and session-aware
@@ -390,6 +392,7 @@ Important caveats:
 
 - built-in X11 forwarding still depends on a working local X server and correct remote `sshd` behavior
 - on Windows, interactive terminal password entry alone is not enough for linked SFTP/status reuse; those helper connections need saved password, key, or agent auth
+- on Windows, drag-out starts immediately and only stages the remote file into the local temp cache lazily if the shell requests file contents on drop
 - GitHub Actions currently publishes unsigned / unnotarized bundles unless release signing secrets are added in the future
 
 Some startup transcript copy still exists in helpers like [`sessionUtils.ts`](/Volumes/EXT/Projects/OpenXTerm/src/lib/sessionUtils.ts). Do not assume every “preview” string means the feature is fake.
@@ -469,6 +472,8 @@ npm run check
 For anything touching native drag or transfers, do at least one manual pass in the running app.
 
 There is no broad automated test suite yet. In practice, `npm run check`, Rust build, and a real app smoke test are the main safety net.
+
+For v0.2 terminal copy/paste/resize QA across macOS, Linux, and Windows, use the manual checklist in `docs/qa/v0.2-core-reliability.md`.
 
 For release-pipeline changes:
 

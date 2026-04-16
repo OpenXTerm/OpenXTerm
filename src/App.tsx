@@ -11,7 +11,7 @@ import { StatusBar } from './components/status/StatusBar'
 import { Sidebar } from './components/sidebar/Sidebar'
 import { Workspace } from './components/workspace/Workspace'
 import { useOpenXTermStore } from './state/useOpenXTermStore'
-import type { MacroDefinition, MenuActionPayload, SessionDefinition, SystemAuthSupport } from './types/domain'
+import type { MacroDefinition, MenuAction, SessionDefinition, SystemAuthSupport } from './types/domain'
 
 export function App() {
   const isMacOS = navigator.userAgent.includes('Mac')
@@ -68,6 +68,8 @@ export function App() {
   const [appLocked, setAppLocked] = useState(false)
   const [unlockBusy, setUnlockBusy] = useState(false)
   const [unlockError, setUnlockError] = useState('')
+  const [terminalCommandRequest, setTerminalCommandRequest] = useState<{ action: 'clear' | 'reset' | 'search'; nonce: number; tabId: string } | null>(null)
+  const activeTab = tabs.find((tab) => tab.id === activeTabId)
 
   useEffect(() => {
     void initialize()
@@ -136,7 +138,7 @@ export function App() {
     }
   }, [lockSupport.available, unlockBusy])
 
-  const handleMenuAction = useCallback((action: MenuActionPayload['action']) => {
+  const handleMenuAction = useCallback((action: MenuAction) => {
     switch (action) {
       case 'new-session':
         setEditingSession(null)
@@ -158,10 +160,27 @@ export function App() {
       case 'lock-app':
         handleLockApp()
         break
+      case 'search-terminal':
+      case 'clear-terminal':
+      case 'reset-terminal':
+        if (activeTab?.kind !== 'terminal') {
+          break
+        }
+        setTerminalCommandRequest({
+          action:
+            action === 'search-terminal'
+              ? 'search'
+              : action === 'clear-terminal'
+                ? 'clear'
+                : 'reset',
+          nonce: Date.now(),
+          tabId: activeTab.id,
+        })
+        break
       default:
         break
     }
-  }, [handleLockApp, setSidebar])
+  }, [activeTab?.id, activeTab?.kind, handleLockApp, setSidebar])
 
   useEffect(() => {
     let disposed = false
@@ -192,7 +211,6 @@ export function App() {
     }
   }, [handleMenuAction])
 
-  const activeTab = tabs.find((tab) => tab.id === activeTabId)
   const terminalTabsForSftp = activeTab ? [activeTab, ...tabs.filter((tab) => tab.id !== activeTab.id)] : tabs
   const liveLinkedSftpSessions = Array.from(
     terminalTabsForSftp.reduce((linkedSessions, tab) => {
@@ -377,6 +395,7 @@ export function App() {
             onShowTools={() => void setSidebar('tools')}
             onTerminalInput={sendInputToTab}
             onTerminalResize={resizeTab}
+            terminalCommandRequest={terminalCommandRequest}
             sessionMap={new Map([...sessions, ...liveLinkedSftpSessions].map((session) => [session.id, session]))}
             tabs={tabs}
             terminalFeeds={terminalFeeds}

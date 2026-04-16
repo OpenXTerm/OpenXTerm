@@ -31,6 +31,7 @@ OpenXTerm is independent software. It is not affiliated with, endorsed by, or co
 - SSH sessions without saved username can prompt for login in the terminal.
 - Windows prompt-wrapper support for SSH profiles without saved username.
 - Restart/save prompt when terminal sessions stop.
+- Clear and reset actions for terminal tabs.
 - Linked SFTP sidebar discovery for live SSH tabs.
 - Windows linked SFTP fallback through native `ssh2` when control-socket reuse is unavailable.
 - Remote file listing.
@@ -38,7 +39,9 @@ OpenXTerm is independent software. It is not affiliated with, endorsed by, or co
 - Remote delete.
 - Upload and download flows.
 - Batch transfer aggregation for multi-file operations.
-- Native macOS drag-out from remote file browser to Finder.
+- Copy remote path from the file browser.
+- Hidden files toggle in the file browser.
+- Native desktop drag-out from remote file browser.
 - MobaXterm `.mxtsessions` import for common session types.
 - Per-session terminal font, font size, foreground color, and background color.
 - System font enumeration for the terminal editor.
@@ -101,7 +104,7 @@ These must be handled before calling OpenXTerm stable.
   - safe migration path for existing users.
   - backup/export story.
 - Crash audit:
-  - native macOS drag.
+  - native desktop drag.
   - transfer queue.
   - terminal lifecycle.
   - app restart/reconnect flows.
@@ -142,21 +145,19 @@ Goal: terminal sessions and linked SFTP should become predictable enough for dai
 - Restart flow for stopped sessions.
 - Username prompt flow for SSH profiles without saved username.
 - Multiple concurrent tabs for the same saved session.
+- Hardened SSH host-key guidance for interactive terminal sessions.
+- Improved SSH runtime/status error messages for common auth, DNS, reachability, and host-key failures.
+- Terminal search.
+- Local-session working-directory support.
 
 ### In Progress
 
 - SSH edge-case cleanup.
 - SFTP reuse through active SSH sessions.
 - Remote status polling accuracy.
+- Manual copy/paste and resize verification across macOS, Linux, and Windows.
 
 ### TODO
-
-- Harden host key prompt behavior.
-- Improve SSH error messages.
-- Add terminal search.
-- Add clear/reset terminal actions.
-- Add shell working-directory support for local sessions.
-- Verify copy/paste and resize across macOS, Linux, and Windows.
 
 ## v0.3 Alpha: File Browser Polish
 
@@ -170,7 +171,7 @@ Goal: SFTP should cover common daily file-management tasks.
 - Upload.
 - Download.
 - Batch progress for multiple files.
-- Native macOS drag-out.
+- Native desktop drag-out.
 
 ### In Progress
 
@@ -181,8 +182,6 @@ Goal: SFTP should cover common daily file-management tasks.
 
 - Rename remote files/folders.
 - Chmod support.
-- Copy remote path.
-- Hidden files toggle.
 - Sort by name, size, date, and type.
 - Breadcrumb with manual path input.
 - Remote folder download hardening.

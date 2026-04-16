@@ -30,6 +30,8 @@ pub struct SessionDefinition {
     pub terminal_background: Option<String>,
     #[serde(default)]
     pub linked_ssh_tab_id: Option<String>,
+    #[serde(default)]
+    pub local_working_directory: Option<String>,
     pub serial_port: Option<String>,
     pub baud_rate: Option<u32>,
     pub parity: String,

@@ -8,7 +8,7 @@ import {
   type DragEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react'
-import { ArrowDownToLine, ArrowUp, FileText, Folder, FolderPlus, LoaderCircle, RefreshCw, Trash2, Upload } from 'lucide-react'
+import { ArrowDownToLine, ArrowUp, Copy, Eye, FileText, Folder, FolderPlus, LoaderCircle, RefreshCw, Trash2, Upload } from 'lucide-react'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
 
 import {
@@ -59,6 +59,10 @@ function itemCountLabel(count: number) {
   return count === 1 ? '1 item' : `${count} items`
 }
 
+function isHiddenEntry(entry: RemoteFileEntry) {
+  return entry.name.startsWith('.')
+}
+
 function fileBrowserErrorContext(session: SessionDefinition, action: string, path: string) {
   return {
     action,
@@ -68,6 +72,32 @@ function fileBrowserErrorContext(session: SessionDefinition, action: string, pat
     host: session.host,
     kind: session.kind,
     linkedSshTabId: session.linkedSshTabId,
+  }
+}
+
+async function copyTextToClipboard(text: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text)
+    return
+  }
+
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', 'true')
+  textarea.style.position = 'fixed'
+  textarea.style.opacity = '0'
+  textarea.style.pointerEvents = 'none'
+  document.body.appendChild(textarea)
+  textarea.select()
+  textarea.setSelectionRange(0, textarea.value.length)
+
+  try {
+    const copied = document.execCommand('copy')
+    if (!copied) {
+      throw new Error('Clipboard copy failed.')
+    }
+  } finally {
+    document.body.removeChild(textarea)
   }
 }
 
@@ -81,11 +111,21 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [dropActive, setDropActive] = useState(false)
+  const [showHidden, setShowHidden] = useState(false)
+
+  const visibleEntries = useMemo(() => {
+    const entries = snapshot?.entries ?? []
+    if (showHidden) {
+      return entries
+    }
+    return entries.filter((entry) => !isHiddenEntry(entry))
+  }, [showHidden, snapshot])
 
   const selectedEntry = useMemo(
-    () => snapshot?.entries.find((entry) => entry.path === selectedPath) ?? null,
-    [selectedPath, snapshot],
+    () => visibleEntries.find((entry) => entry.path === selectedPath) ?? null,
+    [selectedPath, visibleEntries],
   )
+  const pathToCopy = selectedEntry?.path ?? snapshot?.path ?? currentPath
 
   const loadDirectory = useCallback(async (targetPath: string) => {
     setBusy(true)
@@ -112,6 +152,17 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
     setSelectedPath(null)
     void loadDirectory('/')
   }, [loadDirectory, session.id])
+
+  useEffect(() => {
+    if (!selectedPath) {
+      return
+    }
+
+    const stillVisible = visibleEntries.some((entry) => entry.path === selectedPath)
+    if (!stillVisible) {
+      setSelectedPath(null)
+    }
+  }, [selectedPath, visibleEntries])
 
   useEffect(() => {
     if (!('__TAURI_INTERNALS__' in window)) {
@@ -297,6 +348,16 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
     }
   }
 
+  async function handleCopyPath() {
+    try {
+      await copyTextToClipboard(pathToCopy)
+      setMessage(`Copied remote path: ${pathToCopy}`)
+    } catch (error) {
+      logOpenXTermError('file-browser.copy-path', error, fileBrowserErrorContext(session, 'copy-path', pathToCopy))
+      setMessage(error instanceof Error ? error.message : 'Unable to copy remote path.')
+    }
+  }
+
   async function uploadFiles(files: File[]) {
     if (files.length === 0) {
       return
@@ -403,12 +464,12 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
       void startNativeFileDrag(session, entry.path, entry.name, moveEvent.clientX, moveEvent.clientY)
         .then((dragStarted) => {
           if (!dragStarted) {
-            setMessage('Native macOS drag-out could not start for this file.')
+            setMessage('Native drag-out could not start for this file.')
           }
         })
         .catch((error) => {
           logOpenXTermError('file-browser.native-drag', error, fileBrowserErrorContext(session, 'native-drag', entry.path))
-          setMessage(error instanceof Error ? error.message : 'Native macOS drag-out failed.')
+          setMessage(error instanceof Error ? error.message : 'Native drag-out failed.')
         })
     }
 
@@ -435,6 +496,19 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
         <button type="button" onClick={() => void handleDownloadSelected()} disabled={busy || selectedEntry?.kind !== 'file'}>
           <ArrowDownToLine size={14} />
           <span>Download</span>
+        </button>
+        <button type="button" onClick={() => void handleCopyPath()} disabled={busy || !pathToCopy}>
+          <Copy size={14} />
+          <span>Copy path</span>
+        </button>
+        <button
+          type="button"
+          className={showHidden ? 'active' : undefined}
+          onClick={() => setShowHidden((value) => !value)}
+          disabled={busy}
+        >
+          <Eye size={14} />
+          <span>{showHidden ? 'Hide hidden' : 'Show hidden'}</span>
         </button>
         <button type="button" onClick={() => void loadDirectory(currentPath)} disabled={busy}>
           <RefreshCw size={14} className={busy ? 'spinning' : undefined} />
@@ -480,8 +554,8 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
             {busy && <LoaderCircle size={14} className="spinning" />}
           </div>
           <div className="file-list">
-            {snapshot?.entries.length ? (
-              snapshot.entries.map((entry) => (
+            {visibleEntries.length ? (
+              visibleEntries.map((entry) => (
                   <button
                     key={entry.path}
                     type="button"
@@ -503,7 +577,11 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
                   </button>
               ))
             ) : (
-              <div className="file-empty">This directory is empty.</div>
+              <div className="file-empty">
+                {snapshot?.entries.length && !showHidden
+                  ? 'Only hidden files are present. Turn on Show hidden to view them.'
+                  : 'This directory is empty.'}
+              </div>
             )}
           </div>
           {dropActive && (
@@ -522,7 +600,7 @@ path: ${selectedEntry.path}
 type: ${selectedEntry.kind}
 size: ${selectedEntry.sizeLabel}
 modified: ${selectedEntry.modifiedLabel}
-drag out: ${selectedEntry.kind === 'file' ? 'native macOS file promise' : 'folders are not exported'}
+drag out: ${selectedEntry.kind === 'file' ? 'native desktop drag export' : 'folders are not exported'}
 
 double-click a folder to open it`
             : `target: ${session.username ? `${session.username}@` : ''}${session.host || session.serialPort || 'remote'}

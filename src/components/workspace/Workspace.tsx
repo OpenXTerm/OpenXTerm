@@ -21,6 +21,7 @@ interface WorkspaceProps {
   onRestartTab: (tabId: string) => void
   onTerminalInput: (tabId: string, data: string) => void
   onTerminalResize: (tabId: string, cols: number, rows: number) => void
+  terminalCommandRequest: { action: 'clear' | 'reset' | 'search'; nonce: number; tabId: string } | null
 }
 
 function getTabIcon(tab: WorkspaceTab) {
@@ -60,6 +61,7 @@ export function Workspace({
   onSelectTab,
   onShowSftp,
   onShowTools,
+  terminalCommandRequest,
   onTerminalInput,
   onTerminalResize,
 }: WorkspaceProps) {
@@ -116,6 +118,7 @@ export function Workspace({
         )}
         {activeTab.kind === 'terminal' && (
           <TerminalSurface
+            key={activeTab.id}
             tabId={activeTab.id}
             title={activeTab.title}
             chunks={terminalFeeds[activeTab.id] ?? []}
@@ -129,6 +132,7 @@ export function Workspace({
             onRestart={() => onRestartTab(activeTab.id)}
             onInput={(data) => onTerminalInput(activeTab.id, data)}
             onResize={(cols, rows) => onTerminalResize(activeTab.id, cols, rows)}
+            commandRequest={terminalCommandRequest?.tabId === activeTab.id ? terminalCommandRequest : null}
           />
         )}
         {activeTab.kind === 'files' && session && <FileBrowserView session={session} />}

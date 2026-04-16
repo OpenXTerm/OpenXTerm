@@ -22,6 +22,7 @@ The current focus is:
 ## Features
 
 - Local shell sessions for macOS, Linux, and Windows
+- Per-session local working directory for local shell profiles
 - SSH, Telnet, and Serial terminal transports
 - Session folders with tree view and drag/drop organization
 - Multiple simultaneous connections to the same saved session
@@ -29,8 +30,9 @@ The current focus is:
 - Linked SFTP sidebar for active SSH sessions
 - Remote file browsing, folder creation, delete, upload, and download
 - Batch transfer progress for multi-file operations
-- Native macOS drag-out from remote file browser to Finder
+- Native desktop drag-out from remote file browser
 - Restart/save prompt when terminal sessions stop
+- Terminal search from `Ctrl+F` / `Cmd+F`, topbar search, and terminal menu actions
 - Per-session terminal font, size, foreground color, and background color
 - System font picker in the session editor
 - Live lower status bar with host, user, uptime, CPU history, memory, disk, network, and latency when available
@@ -50,6 +52,7 @@ The current focus is:
 - SFTP is actively improving; authentication reuse and edge-case handling are still areas to keep testing carefully.
 - Packaging, signing, and distribution workflows still need a dedicated release pass.
 - There is no broad automated test suite yet.
+- Cross-platform copy/paste and resize still require manual QA passes on real macOS, Linux, and Windows machines. The current checklist lives in [`docs/qa/v0.2-core-reliability.md`](docs/qa/v0.2-core-reliability.md).
 
 ## Stack
 

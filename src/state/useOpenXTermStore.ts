@@ -832,6 +832,7 @@ export const useOpenXTermStore = create<OpenXTermState>((set, get) => ({
       terminalFontSize: draft.terminalFontSize,
       terminalForeground: draft.terminalForeground,
       terminalBackground: draft.terminalBackground,
+      localWorkingDirectory: draft.localWorkingDirectory.trim(),
       serialPort: draft.serialPort,
       baudRate: draft.baudRate,
       parity: draft.parity,

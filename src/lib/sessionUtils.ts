@@ -71,6 +71,7 @@ export function buildSessionTranscript(session: SessionDefinition) {
         : session.host || 'host'
   const transportLabel = session.kind.toUpperCase()
   const promptUser = session.username || 'terminal'
+  const localWorkingDirectory = session.localWorkingDirectory?.trim() || '~'
 
   return [
     session.kind === 'ssh'
@@ -95,7 +96,7 @@ export function buildSessionTranscript(session: SessionDefinition) {
     `> preparing ${transportLabel} session to ${target}`,
     `> profile: ${session.name}`,
     session.kind === 'local'
-      ? '> shell: operating system default'
+      ? `> shell: operating system default (${localWorkingDirectory})`
       : session.kind === 'serial'
       ? `> line settings: ${session.baudRate || 115200} baud / ${session.dataBits}${session.parity[0].toUpperCase()}${session.stopBits}`
       : `> endpoint: ${session.host}:${session.port}`,
@@ -118,7 +119,7 @@ export function buildSessionTranscript(session: SessionDefinition) {
       ? '[information] waiting for transport output...'
       : '[warning] no remote socket is opened in this foundation stage yet',
     '',
-    `${promptUser}@openxterm:${session.kind === 'serial' || session.kind === 'local' ? '~' : '/'}$ `,
+    `${promptUser}@openxterm:${session.kind === 'serial' ? '~' : session.kind === 'local' ? localWorkingDirectory : '/'}$ `,
   ]
 }
 

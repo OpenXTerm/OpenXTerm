@@ -29,6 +29,10 @@ pub fn install_macos_menu<R: Runtime>(_app: &AppHandle<R>) -> tauri::Result<()> 
             .text("new-session", "New Session")
             .text("new-macro", "New Macro")
             .separator()
+            .text("search-terminal", "Search in Terminal")
+            .text("clear-terminal", "Clear Terminal")
+            .text("reset-terminal", "Reset Terminal")
+            .separator()
             .text("lock-app", "Lock OpenXTerm")
             .build()?;
 
@@ -82,7 +86,7 @@ pub fn install_macos_menu<R: Runtime>(_app: &AppHandle<R>) -> tauri::Result<()> 
 pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
     let action = match id {
         "new-session" | "new-macro" | "show-sessions" | "show-tools" | "show-macros"
-        | "lock-app" => Some(id),
+        | "lock-app" | "search-terminal" | "clear-terminal" | "reset-terminal" => Some(id),
         _ => None,
     };
 

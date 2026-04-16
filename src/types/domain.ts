@@ -22,6 +22,7 @@ export interface SessionDefinition {
   terminalBackground?: string
   linkedSshTabId?: string
   linkedSshSessionId?: string
+  localWorkingDirectory?: string
   serialPort?: string
   baudRate?: number
   parity: 'none' | 'even' | 'odd'
@@ -137,6 +138,7 @@ export interface SessionDraft {
   terminalFontSize: number
   terminalForeground: string
   terminalBackground: string
+  localWorkingDirectory: string
   serialPort: string
   baudRate: number
   parity: 'none' | 'even' | 'odd'
@@ -183,8 +185,19 @@ export interface RemoteDragEntry {
   transferId?: string
 }
 
+export type MenuAction =
+  | 'new-session'
+  | 'new-macro'
+  | 'show-sessions'
+  | 'show-tools'
+  | 'show-macros'
+  | 'lock-app'
+  | 'search-terminal'
+  | 'clear-terminal'
+  | 'reset-terminal'
+
 export interface MenuActionPayload {
-  action: string
+  action: MenuAction
 }
 
 export type TransferDirection = 'download' | 'upload'

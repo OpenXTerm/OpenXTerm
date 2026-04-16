@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Plus, Play, Search, Terminal } from 'lucide-react'
 
-import type { MenuActionPayload } from '../../types/domain'
-
-type MenuAction = MenuActionPayload['action']
+import type { MenuAction } from '../../types/domain'
 
 interface TopBarProps {
   activeTabTitle: string
@@ -26,6 +24,9 @@ const MENUS: TopBarMenu[] = [
     items: [
       { label: 'New Session', action: 'new-session' },
       { label: 'New Macro', action: 'new-macro' },
+      { label: 'Search in Terminal', action: 'search-terminal' },
+      { label: 'Clear Terminal', action: 'clear-terminal' },
+      { label: 'Reset Terminal', action: 'reset-terminal' },
       { label: 'Lock OpenXTerm', action: 'lock-app' },
     ],
   },
@@ -152,7 +153,7 @@ export function TopBar({ activeTabTitle, onCreateSession, onCreateMacro, onMenuA
           <button className="chrome-action" type="button" onClick={onCreateMacro}>
             <Terminal size={14} />
           </button>
-          <button className="chrome-action" type="button">
+          <button className="chrome-action" type="button" onClick={() => onMenuAction('search-terminal')}>
             <Search size={14} />
           </button>
           <button className="chrome-action accent" type="button">
