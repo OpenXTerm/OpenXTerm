@@ -34,4 +34,18 @@ ssh2 = { version = "0.9", features = ["vendored-openssl"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 ssh2 = "0.9"
-windows = { version = "0.61", features = ["Security_Credentials_UI"] }
+windows-core = "0.61"
+windows = { version = "0.61", features = [
+    "Security_Credentials_UI",
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_DataExchange",
+    "Win32_System_Memory",
+    "Win32_System_Ole",
+    "Win32_System_SystemServices",
+    "Win32_UI_Shell",
+    "Win32_UI_Shell_Common",
+] }
