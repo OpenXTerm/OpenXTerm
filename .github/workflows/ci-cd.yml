@@ -121,8 +121,8 @@ jobs:
           PACKAGE_VERSION="$(node -p "require('./package.json').version")"
           PACKAGE_LOCK_VERSION="$(node -p "require('./package-lock.json').version")"
           TAURI_VERSION="$(node -p "require('./src-tauri/tauri.conf.json').version")"
-          CARGO_VERSION="$(grep '^version = ' src-tauri/Cargo.toml | head -n 1 | sed -E 's/version = \"([^\"]+)\"/\\1/')"
-          CARGO_LOCK_VERSION="$(grep -A2 '^name = \"openxterm\"' src-tauri/Cargo.lock | grep '^version = ' | head -n 1 | sed -E 's/version = \"([^\"]+)\"/\\1/')"
+          CARGO_VERSION="$(node -e "const fs = require('fs'); const match = fs.readFileSync('src-tauri/Cargo.toml', 'utf8').match(/^version\\s*=\\s*\"([^\"]+)\"/m); if (!match) process.exit(1); console.log(match[1]);")"
+          CARGO_LOCK_VERSION="$(node -e "const fs = require('fs'); const match = fs.readFileSync('src-tauri/Cargo.lock', 'utf8').match(/\\[\\[package\\]\\]\\r?\\nname = \"openxterm\"\\r?\\nversion = \"([^\"]+)\"/); if (!match) process.exit(1); console.log(match[1]);")"
 
           if [ "$RELEASE_VERSION" != "$PACKAGE_VERSION" ]; then
             echo "Release version $RELEASE_VERSION does not match package.json version $PACKAGE_VERSION"
