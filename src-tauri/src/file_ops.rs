@@ -1,9 +1,11 @@
 use std::{
+    collections::HashSet,
     fs,
     fs::File,
     io::{Read, Write},
     path::{Path, PathBuf},
     process::Command,
+    sync::{Mutex, OnceLock},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -19,10 +21,46 @@ use crate::runtime::open_embedded_sftp;
 
 const TRANSFER_PROGRESS_EVENT: &str = "openxterm://transfer-progress";
 const TRANSFER_CHUNK_SIZE: usize = 256 * 1024;
+static CANCELLED_TRANSFERS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
 
 fn open_sftp(session: &SessionDefinition) -> Result<Sftp, String> {
     open_embedded_sftp(session, None, "SFTP helper")
 }
+
+pub fn cancel_transfer(transfer_id: &str) -> Result<(), String> {
+    let mut cancelled = cancelled_transfers()
+        .lock()
+        .map_err(|_| "transfer cancellation state is poisoned".to_string())?;
+    cancelled.insert(transfer_id.to_string());
+    Ok(())
+}
+
+fn cancelled_transfers() -> &'static Mutex<HashSet<String>> {
+    CANCELLED_TRANSFERS.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+fn is_transfer_cancelled(transfer_id: &str) -> bool {
+    let Ok(cancelled) = cancelled_transfers().lock() else {
+        return false;
+    };
+
+    if cancelled.contains(transfer_id) {
+        return true;
+    }
+
+    transfer_id
+        .split_once("::item::")
+        .is_some_and(|(parent_id, _)| cancelled.contains(parent_id))
+}
+
+fn stop_if_transfer_cancelled(transfer_id: &str) -> Result<(), String> {
+    if is_transfer_cancelled(transfer_id) {
+        Err("Transfer canceled".into())
+    } else {
+        Ok(())
+    }
+}
+
 pub fn list_remote_directory(
     session: &SessionDefinition,
     path: Option<String>,
@@ -83,6 +121,36 @@ pub fn delete_remote_entry(
     }
 }
 
+pub fn rename_remote_entry(
+    session: &SessionDefinition,
+    path: &str,
+    new_name: &str,
+) -> Result<(), String> {
+    let new_name = new_name.trim();
+    if new_name.is_empty() {
+        return Err("remote name cannot be empty".into());
+    }
+    if new_name.contains('/') || new_name.contains('\\') {
+        return Err("remote name cannot contain path separators".into());
+    }
+
+    let parent_path = parent_remote_path(path);
+    let next_path = join_remote_path(&parent_path, new_name);
+    if next_path == path {
+        return Ok(());
+    }
+
+    match session.kind.as_str() {
+        "sftp" => {
+            let sftp = open_sftp(session)?;
+            sftp.rename(path, &next_path)
+                .map_err(|error| format!("failed to rename remote entry: {error}"))
+        }
+        "ftp" => run_ftp_rename(session, path, &next_path),
+        _ => Err(format!("{} does not support remote rename", session.kind)),
+    }
+}
+
 fn delete_sftp_directory_recursive(sftp: &Sftp, path: &str) -> Result<(), String> {
     let entries = sftp.read_dir(path).map_err(|error| {
         format!("failed to list remote directory {path} before delete: {error}")
@@ -108,6 +176,20 @@ fn delete_sftp_directory_recursive(sftp: &Sftp, path: &str) -> Result<(), String
 
     sftp.remove_dir(path)
         .map_err(|error| format!("failed to remove remote directory {path}: {error}"))
+}
+
+fn parent_remote_path(path: &str) -> String {
+    let mut parts = path
+        .split('/')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>();
+    let _ = parts.pop();
+
+    if parts.is_empty() {
+        "/".into()
+    } else {
+        format!("/{}", parts.join("/"))
+    }
 }
 
 pub fn upload_remote_file(
@@ -146,6 +228,7 @@ pub fn upload_remote_file(
 
     let result = match session.kind.as_str() {
         "sftp" => {
+            stop_if_transfer_cancelled(&transfer_id)?;
             let sftp = open_sftp(session)?;
             let mut file = sftp
                 .open(
@@ -156,6 +239,7 @@ pub fn upload_remote_file(
                 .map_err(|error| format!("failed to create remote file: {error}"))?;
             let mut transferred = 0u64;
             for chunk in bytes.chunks(TRANSFER_CHUNK_SIZE) {
+                stop_if_transfer_cancelled(&transfer_id)?;
                 file.write_all(chunk)
                     .map_err(|error| format!("failed to upload remote file: {error}"))?;
                 transferred += chunk.len() as u64;
@@ -176,6 +260,7 @@ pub fn upload_remote_file(
             Ok(())
         }
         "ftp" => {
+            stop_if_transfer_cancelled(&transfer_id)?;
             let temp_path = temp_upload_path(file_name);
             fs::write(&temp_path, bytes).map_err(|error| {
                 format!("failed to stage upload {}: {error}", temp_path.display())
@@ -196,6 +281,7 @@ pub fn upload_remote_file(
 
             let result = run_ftp_upload(session, &remote_path, &temp_path);
             let _ = fs::remove_file(&temp_path);
+            stop_if_transfer_cancelled(&transfer_id)?;
             result
         }
         _ => Err(format!("{} does not support upload", session.kind)),
@@ -284,6 +370,7 @@ pub fn upload_local_file(
 
     let result = match session.kind.as_str() {
         "sftp" => {
+            stop_if_transfer_cancelled(&transfer_id)?;
             let sftp = open_sftp(session)?;
             let mut transferred = 0u64;
             if metadata.is_dir() {
@@ -312,6 +399,7 @@ pub fn upload_local_file(
             Ok(())
         }
         "ftp" => {
+            stop_if_transfer_cancelled(&transfer_id)?;
             if metadata.is_dir() {
                 return Err("FTP folder upload is not implemented yet".into());
             }
@@ -329,7 +417,9 @@ pub fn upload_local_file(
                 "Uploading to remote host",
                 Some(local_path.display().to_string()),
             );
-            run_ftp_upload(session, &remote_path, &local_path)
+            let result = run_ftp_upload(session, &remote_path, &local_path);
+            stop_if_transfer_cancelled(&transfer_id)?;
+            result
         }
         _ => Err(format!("{} does not support upload", session.kind)),
     };
@@ -380,11 +470,13 @@ fn upload_sftp_directory_recursive(
     total_bytes: u64,
     transferred: &mut u64,
 ) -> Result<(), String> {
+    stop_if_transfer_cancelled(transfer_id)?;
     let _ = sftp.create_dir(remote_dir, 0o755);
 
     let entries = fs::read_dir(local_dir)
         .map_err(|error| format!("failed to read {}: {error}", local_dir.display()))?;
     for entry in entries {
+        stop_if_transfer_cancelled(transfer_id)?;
         let entry =
             entry.map_err(|error| format!("failed to read {}: {error}", local_dir.display()))?;
         let local_path = entry.path();
@@ -431,6 +523,7 @@ fn upload_sftp_file_with_progress(
     total_bytes: u64,
     transferred: &mut u64,
 ) -> Result<(), String> {
+    stop_if_transfer_cancelled(transfer_id)?;
     let mut source = File::open(local_path)
         .map_err(|error| format!("failed to open {}: {error}", local_path.display()))?;
     let mut target = sftp
@@ -443,6 +536,7 @@ fn upload_sftp_file_with_progress(
     let mut buffer = vec![0u8; TRANSFER_CHUNK_SIZE];
 
     loop {
+        stop_if_transfer_cancelled(transfer_id)?;
         let read = source
             .read(&mut buffer)
             .map_err(|error| format!("failed to read {}: {error}", local_path.display()))?;
@@ -579,8 +673,10 @@ pub fn download_remote_entry_to_path(
 
     let result = match session.kind.as_str() {
         "sftp" => {
+            stop_if_transfer_cancelled(&transfer_id)?;
             let sftp = open_sftp(session)?;
             let total_bytes = sftp_directory_total_size(&sftp, remote_path)?;
+            stop_if_transfer_cancelled(&transfer_id)?;
             fs::create_dir_all(save_path)
                 .map_err(|error| format!("failed to create {}: {error}", save_path.display()))?;
 
@@ -687,6 +783,7 @@ pub fn download_remote_file_to_path(
 
     let result = match session.kind.as_str() {
         "sftp" => {
+            stop_if_transfer_cancelled(&transfer_id)?;
             let sftp = open_sftp(session)?;
             let total_bytes = sftp
                 .metadata(remote_path)
@@ -701,6 +798,7 @@ pub fn download_remote_file_to_path(
             let mut buffer = vec![0u8; TRANSFER_CHUNK_SIZE];
 
             loop {
+                stop_if_transfer_cancelled(&transfer_id)?;
                 let read = remote_file
                     .read(&mut buffer)
                     .map_err(|error| format!("failed to read remote file: {error}"))?;
@@ -733,6 +831,7 @@ pub fn download_remote_file_to_path(
             Ok(total_bytes.unwrap_or(transferred))
         }
         "ftp" => {
+            stop_if_transfer_cancelled(&transfer_id)?;
             emit_transfer(
                 app,
                 &transfer_id,
@@ -751,6 +850,7 @@ pub fn download_remote_file_to_path(
                 Some(local_path.clone()),
             );
             run_ftp_download(session, remote_path, save_path)?;
+            stop_if_transfer_cancelled(&transfer_id)?;
             let bytes = fs::metadata(save_path)
                 .ok()
                 .map(|meta| meta.len())
@@ -843,11 +943,13 @@ fn download_sftp_directory_recursive(
     total_bytes: u64,
     transferred: &mut u64,
 ) -> Result<(), String> {
+    stop_if_transfer_cancelled(transfer_id)?;
     let entries = sftp
         .read_dir(remote_dir)
         .map_err(|error| format!("failed to list remote directory {remote_dir}: {error}"))?;
 
     for entry in entries {
+        stop_if_transfer_cancelled(transfer_id)?;
         let Some(name) = entry.name() else {
             continue;
         };
@@ -890,6 +992,7 @@ fn download_sftp_directory_recursive(
         let mut buffer = vec![0u8; TRANSFER_CHUNK_SIZE];
 
         loop {
+            stop_if_transfer_cancelled(transfer_id)?;
             let read = remote_file
                 .read(&mut buffer)
                 .map_err(|error| format!("failed to read remote file {remote_path}: {error}"))?;
@@ -983,6 +1086,11 @@ fn run_ftp_list(session: &SessionDefinition, path: &str) -> Result<Vec<u8>, Stri
 
 fn run_ftp_quote(session: &SessionDefinition, quote: &str) -> Result<(), String> {
     run_ftp_command(session, &["/"], Some(quote.to_string()), None, None).map(|_| ())
+}
+
+fn run_ftp_rename(session: &SessionDefinition, from: &str, to: &str) -> Result<(), String> {
+    run_ftp_command(session, &["/"], Some(format!("RNFR {from}")), None, None)?;
+    run_ftp_command(session, &["/"], Some(format!("RNTO {to}")), None, None).map(|_| ())
 }
 
 fn run_ftp_upload(

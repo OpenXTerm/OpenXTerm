@@ -6,6 +6,7 @@ interface TransferProgressModalProps {
   items: TransferProgressPayload[]
   open: boolean
   embedded?: boolean
+  onCancel?: (item: TransferProgressPayload) => void
   onClose: () => void
 }
 
@@ -37,7 +38,7 @@ function progressPercent(item: TransferProgressPayload) {
   return item.state === 'completed' ? 100 : null
 }
 
-export function TransferProgressModal({ items, open, embedded = false, onClose }: TransferProgressModalProps) {
+export function TransferProgressModal({ items, open, embedded = false, onCancel, onClose }: TransferProgressModalProps) {
   if (!open) {
     return null
   }
@@ -52,14 +53,18 @@ export function TransferProgressModal({ items, open, embedded = false, onClose }
             <h2 id="transfer-window-title">File Transfer</h2>
             <p>{busy ? 'Transferring files…' : 'Transfer queue complete'}</p>
           </div>
-          <button className="modal-close" type="button" onClick={onClose} disabled={busy}>
-            Close
+          <button className="modal-close" type="button" onClick={onClose}>
+            Hide
           </button>
         </div>
 
         <div className="transfer-window-list">
+          {items.length === 0 && (
+            <div className="transfer-empty-row">Waiting for transfer details...</div>
+          )}
           {items.map((item) => {
             const percent = progressPercent(item)
+            const cancellable = item.state === 'queued' || item.state === 'running'
             return (
             <div key={item.transferId} className={`transfer-row ${item.state}`}>
               <div className="transfer-row-icon">
@@ -91,8 +96,15 @@ export function TransferProgressModal({ items, open, embedded = false, onClose }
                   <div className="transfer-row-localpath">{item.localPath}</div>
                 )}
               </div>
-              <div className={`transfer-row-state ${item.state}`}>
-                <StateIcon item={item} />
+              <div className="transfer-row-actions">
+                <div className={`transfer-row-state ${item.state}`}>
+                  <StateIcon item={item} />
+                </div>
+                {cancellable && onCancel && (
+                  <button type="button" onClick={() => onCancel(item)}>
+                    Cancel
+                  </button>
+                )}
               </div>
             </div>
             )

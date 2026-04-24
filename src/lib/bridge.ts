@@ -312,6 +312,22 @@ export async function deleteRemoteEntry(
   await invoke('delete_remote_entry', { session, path, kind })
 }
 
+export async function renameRemoteEntry(session: SessionDefinition, path: string, newName: string) {
+  if (!isTauriRuntime()) {
+    return
+  }
+
+  await invoke('rename_remote_entry', { session, path, newName })
+}
+
+export async function cancelTransfer(transferId: string) {
+  if (!isTauriRuntime()) {
+    return
+  }
+
+  await invoke('cancel_transfer', { transferId })
+}
+
 export async function uploadRemoteFile(
   session: SessionDefinition,
   remoteDir: string,

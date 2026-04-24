@@ -5,6 +5,8 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type DragEvent as ReactDragEvent,
+  type FormEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
@@ -18,7 +20,6 @@ import {
   Cable,
   ChevronDown,
   ChevronRight,
-  FileStack,
   FileText,
   FolderClosed,
   FolderPlus,
@@ -41,6 +42,7 @@ import {
   deleteRemoteEntry,
   downloadRemoteEntry,
   listRemoteDirectory,
+  renameRemoteEntry,
   startNativeEntriesDrag,
   uploadLocalPath,
   uploadRemoteFile,
@@ -248,6 +250,12 @@ type SessionSidebarDragState =
   | { kind: 'session', session: SessionDefinition }
   | { kind: 'folder', folder: SessionTreeFolder }
 
+interface SftpContextMenuState {
+  entry: RemoteFileEntry
+  x: number
+  y: number
+}
+
 export function Sidebar({
   activeSection,
   activeTab,
@@ -279,6 +287,7 @@ export function Sidebar({
   const sftpListRef = useRef<HTMLDivElement | null>(null)
   const sessionListRef = useRef<HTMLDivElement | null>(null)
   const sessionDropTargetPathRef = useRef<string | null>(null)
+  const lastNativeSftpDropAtRef = useRef(0)
   const suppressSessionTreeClickRef = useRef(false)
   const enqueueTransfer = useOpenXTermStore((state) => state.enqueueTransfer)
   const importMobaXtermSessions = useOpenXTermStore((state) => state.importMobaXtermSessions)
@@ -289,6 +298,11 @@ export function Sidebar({
   const [dropActive, setDropActive] = useState(false)
   const [sftpLoading, setSftpLoading] = useState(false)
   const [sftpMessage, setSftpMessage] = useState('')
+  const [newSftpFolderName, setNewSftpFolderName] = useState('')
+  const [showNewSftpFolderForm, setShowNewSftpFolderForm] = useState(false)
+  const [renamingSftpEntry, setRenamingSftpEntry] = useState<RemoteFileEntry | null>(null)
+  const [renameSftpName, setRenameSftpName] = useState('')
+  const [sftpContextMenu, setSftpContextMenu] = useState<SftpContextMenuState | null>(null)
   const [sessionMessage, setSessionMessage] = useState('')
   const [expandedSessionFolders, setExpandedSessionFolders] = useState<Record<string, boolean>>({})
   const [sessionTreeDragState, setSessionTreeDragState] = useState<SessionSidebarDragState | null>(null)
@@ -350,6 +364,26 @@ export function Sidebar({
     void loadSftpDirectory(selectedSftpSession, '/')
   }, [activeSection, loadSftpDirectory, selectedSftpSession, selectedSftpSnapshot])
 
+  useEffect(() => {
+    if (!sftpContextMenu) {
+      return
+    }
+
+    const closeMenu = () => setSftpContextMenu(null)
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeMenu()
+      }
+    }
+
+    window.addEventListener('pointerdown', closeMenu)
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.removeEventListener('pointerdown', closeMenu)
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [sftpContextMenu])
+
   const currentSftpPath = selectedSftpSnapshot?.path ?? '/'
   const selectedSftpEntries = selectedSftpSnapshot
     ? selectedSftpEntryPaths
@@ -400,6 +434,17 @@ export function Sidebar({
     }
 
     return [entry]
+  }
+
+  const hasSftpEntryNamed = useCallback((name: string, ignoredPath?: string) => {
+    return sftpEntries.some((entry) => entry.name === name && entry.path !== ignoredPath)
+  }, [sftpEntries])
+
+  function startRenameSftpEntry(entry: RemoteFileEntry) {
+    setSftpContextMenu(null)
+    setSelectedSftpEntryPaths(selectedOrEntry(entry).map((item) => item.path))
+    setRenamingSftpEntry(entry)
+    setRenameSftpName(entry.name)
   }
 
   const loadSelectedSftpDirectory = useCallback(async (path: string) => {
@@ -813,30 +858,48 @@ export function Sidebar({
         return
       }
 
+      lastNativeSftpDropAtRef.current = Date.now()
+
       void (async () => {
+        const uploadPaths = droppedPaths.filter((localPath) => {
+          const fileName = localPath.split('/').filter(Boolean).at(-1) ?? 'upload.bin'
+          return !hasSftpEntryNamed(fileName)
+        })
+        const skippedCount = droppedPaths.length - uploadPaths.length
+        if (skippedCount > 0) {
+          setSftpMessage(
+            skippedCount === 1
+              ? 'A dropped item already exists. Rename or delete it before uploading.'
+              : `${skippedCount} dropped items already exist. Rename or delete them before uploading.`,
+          )
+        }
+        if (uploadPaths.length === 0) {
+          return
+        }
+
         setSftpLoading(true)
         try {
-          const batchTransferId = droppedPaths.length > 1 ? createBatchTransferId('upload') : null
+          const batchTransferId = uploadPaths.length > 1 ? createBatchTransferId('upload') : null
           if (batchTransferId) {
             enqueueTransfer({
               transferId: batchTransferId,
-              fileName: itemCountLabel(droppedPaths.length),
+              fileName: itemCountLabel(uploadPaths.length),
               remotePath: currentSftpPath,
               direction: 'upload',
               purpose: 'upload',
               state: 'queued',
               transferredBytes: 0,
               totalBytes: undefined,
-              localPath: batchLocalPathLabel(droppedPaths),
-              itemCount: droppedPaths.length,
-              message: `Queued ${droppedPaths.length} items for upload`,
+              localPath: batchLocalPathLabel(uploadPaths),
+              itemCount: uploadPaths.length,
+              message: `Queued ${uploadPaths.length} items for upload`,
             })
           }
 
-          for (const [index, localPath] of droppedPaths.entries()) {
+          for (const [index, localPath] of uploadPaths.entries()) {
             const fileName = localPath.split('/').filter(Boolean).at(-1) ?? 'upload.bin'
             const transferId = batchTransferId
-              ? createBatchChildTransferId(batchTransferId, index, droppedPaths.length)
+              ? createBatchChildTransferId(batchTransferId, index, uploadPaths.length)
               : `upload-${crypto.randomUUID()}`
             if (!batchTransferId) {
               enqueueTransfer({
@@ -854,7 +917,7 @@ export function Sidebar({
             }
             await uploadLocalPath(selectedSftpSession, currentSftpPath, localPath, transferId)
           }
-          setSftpMessage(`Uploaded ${droppedPaths.length} file${droppedPaths.length > 1 ? 's' : ''} to ${currentSftpPath}`)
+          setSftpMessage(`Uploaded ${uploadPaths.length} file${uploadPaths.length > 1 ? 's' : ''} to ${currentSftpPath}`)
           await loadSelectedSftpDirectory(currentSftpPath)
         } catch (error) {
           logOpenXTermError('sidebar.sftp.drop-upload', error, {
@@ -877,36 +940,47 @@ export function Sidebar({
       disposed = true
       unlisten?.()
     }
-  }, [activeSection, currentSftpPath, enqueueTransfer, loadSelectedSftpDirectory, selectedSftpSession])
+  }, [activeSection, currentSftpPath, enqueueTransfer, hasSftpEntryNamed, loadSelectedSftpDirectory, selectedSftpSession])
 
-  async function handleSidebarUploadChange(event: ChangeEvent<HTMLInputElement>) {
-    const fileList = event.target.files
-    if (!fileList || fileList.length === 0 || !selectedSftpSession) {
+  async function uploadSidebarBrowserFiles(files: File[], source: 'upload' | 'drop-upload') {
+    if (files.length === 0 || !selectedSftpSession) {
+      return
+    }
+
+    const skippedFiles = files.filter((file) => hasSftpEntryNamed(file.name))
+    const uploadFiles = files.filter((file) => !hasSftpEntryNamed(file.name))
+    if (skippedFiles.length > 0) {
+      setSftpMessage(
+        skippedFiles.length === 1
+          ? `${skippedFiles[0].name} already exists. Rename or delete it before uploading.`
+          : `${skippedFiles.length} files already exist. Rename or delete them before uploading.`,
+      )
+    }
+    if (uploadFiles.length === 0) {
       return
     }
 
     setSftpLoading(true)
     try {
-      const files = Array.from(fileList)
-      const batchTransferId = files.length > 1 ? createBatchTransferId('upload') : null
+      const batchTransferId = uploadFiles.length > 1 ? createBatchTransferId('upload') : null
       if (batchTransferId) {
         enqueueTransfer({
           transferId: batchTransferId,
-          fileName: itemCountLabel(files.length),
+          fileName: itemCountLabel(uploadFiles.length),
           remotePath: currentSftpPath,
           direction: 'upload',
           purpose: 'upload',
           state: 'queued',
           transferredBytes: 0,
-          totalBytes: files.reduce((sum, file) => sum + file.size, 0),
-          itemCount: files.length,
-          message: `Queued ${files.length} files for upload`,
+          totalBytes: uploadFiles.reduce((sum, file) => sum + file.size, 0),
+          itemCount: uploadFiles.length,
+          message: `Queued ${uploadFiles.length} files for upload`,
         })
       }
 
-      for (const [index, file] of files.entries()) {
+      for (const [index, file] of uploadFiles.entries()) {
         const transferId = batchTransferId
-          ? createBatchChildTransferId(batchTransferId, index, files.length)
+          ? createBatchChildTransferId(batchTransferId, index, uploadFiles.length)
           : `upload-${crypto.randomUUID()}`
         if (!batchTransferId) {
           enqueueTransfer({
@@ -924,18 +998,69 @@ export function Sidebar({
         const bytes = Array.from(new Uint8Array(await file.arrayBuffer()))
         await uploadRemoteFile(selectedSftpSession, currentSftpPath, file.name, bytes, transferId)
       }
-      setSftpMessage(`Uploaded ${fileList.length} file${fileList.length > 1 ? 's' : ''} to ${currentSftpPath}`)
+      setSftpMessage(`Uploaded ${uploadFiles.length} file${uploadFiles.length > 1 ? 's' : ''} to ${currentSftpPath}`)
       await loadSelectedSftpDirectory(currentSftpPath)
     } catch (error) {
-      logOpenXTermError('sidebar.sftp.upload-file', error, {
-        ...sidebarSftpErrorContext(selectedSftpSession, 'upload', currentSftpPath),
-        files: Array.from(fileList).map((file) => ({ name: file.name, size: file.size })),
+      logOpenXTermError(`sidebar.sftp.${source}`, error, {
+        ...sidebarSftpErrorContext(selectedSftpSession, source, currentSftpPath),
+        files: uploadFiles.map((file) => ({ name: file.name, size: file.size })),
       })
       setSftpMessage(error instanceof Error ? error.message : 'Unable to upload file.')
     } finally {
       setSftpLoading(false)
+    }
+  }
+
+  async function handleSidebarUploadChange(event: ChangeEvent<HTMLInputElement>) {
+    const fileList = event.target.files
+    if (!fileList || fileList.length === 0 || !selectedSftpSession) {
+      return
+    }
+
+    try {
+      await uploadSidebarBrowserFiles(Array.from(fileList), 'upload')
+    } finally {
       event.target.value = ''
     }
+  }
+
+  function handleSidebarBrowserDrag(event: ReactDragEvent<HTMLDivElement>) {
+    if (!selectedSftpSession || !Array.from(event.dataTransfer.types).includes('Files')) {
+      return
+    }
+
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'copy'
+    setDropActive(true)
+  }
+
+  function handleSidebarBrowserDragLeave(event: ReactDragEvent<HTMLDivElement>) {
+    const nextTarget = event.relatedTarget
+    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) {
+      return
+    }
+
+    setDropActive(false)
+  }
+
+  async function handleSidebarBrowserDrop(event: ReactDragEvent<HTMLDivElement>) {
+    if (!selectedSftpSession) {
+      return
+    }
+
+    event.preventDefault()
+    setDropActive(false)
+
+    if (Date.now() - lastNativeSftpDropAtRef.current < 750) {
+      return
+    }
+
+    const files = Array.from(event.dataTransfer.files)
+    if (files.length === 0) {
+      return
+    }
+
+    await uploadSidebarBrowserFiles(files, 'drop-upload')
   }
 
   async function ensureRemoteDirectoryPath(path: string) {
@@ -1027,13 +1152,15 @@ export function Sidebar({
     }
   }
 
-  async function handleCreateFolder() {
+  async function handleCreateFolder(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault()
     if (!selectedSftpSession) {
       return
     }
 
-    const name = window.prompt('Folder name')
+    const name = newSftpFolderName
     if (!name || !name.trim()) {
+      setSftpMessage('Enter a folder name.')
       return
     }
 
@@ -1041,6 +1168,8 @@ export function Sidebar({
     try {
       await createRemoteDirectory(selectedSftpSession, currentSftpPath, name.trim())
       setSftpMessage(`Created folder ${name.trim()}`)
+      setNewSftpFolderName('')
+      setShowNewSftpFolderForm(false)
       await loadSelectedSftpDirectory(currentSftpPath)
     } catch (error) {
       logOpenXTermError('sidebar.sftp.create-folder', error, {
@@ -1053,17 +1182,47 @@ export function Sidebar({
     }
   }
 
-  async function handleDeleteEntry(entries = selectedSftpEntries) {
-    if (!selectedSftpSession || entries.length === 0) {
+  async function handleRenameEntry(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault()
+    if (!selectedSftpSession || !renamingSftpEntry) {
       return
     }
 
-    const confirmed = window.confirm(
-      entries.length === 1
-        ? `Delete ${entries[0].name}?`
-        : `Delete ${entries.length} selected items?`,
-    )
-    if (!confirmed) {
+    const nextName = renameSftpName.trim()
+    if (!nextName) {
+      setSftpMessage('Enter a new name.')
+      return
+    }
+    if (nextName.includes('/') || nextName.includes('\\')) {
+      setSftpMessage('Names cannot contain path separators.')
+      return
+    }
+    if (hasSftpEntryNamed(nextName, renamingSftpEntry.path)) {
+      setSftpMessage(`${nextName} already exists in this directory.`)
+      return
+    }
+
+    setSftpLoading(true)
+    try {
+      await renameRemoteEntry(selectedSftpSession, renamingSftpEntry.path, nextName)
+      setSftpMessage(`Renamed ${renamingSftpEntry.name} to ${nextName}`)
+      setRenamingSftpEntry(null)
+      setRenameSftpName('')
+      await loadSelectedSftpDirectory(currentSftpPath)
+    } catch (error) {
+      logOpenXTermError('sidebar.sftp.rename-entry', error, {
+        ...sidebarSftpErrorContext(selectedSftpSession, 'rename', currentSftpPath),
+        path: renamingSftpEntry.path,
+        newName: nextName,
+      })
+      setSftpMessage(error instanceof Error ? error.message : 'Unable to rename remote entry.')
+    } finally {
+      setSftpLoading(false)
+    }
+  }
+
+  async function handleDeleteEntry(entries = selectedSftpEntries) {
+    if (!selectedSftpSession || entries.length === 0) {
       return
     }
 
@@ -1085,36 +1244,36 @@ export function Sidebar({
     }
   }
 
-  async function handleDownloadEntry() {
-    if (!selectedSftpSession || selectedSftpEntries.length === 0) {
+  async function handleDownloadEntry(entries = selectedSftpEntries) {
+    if (!selectedSftpSession || entries.length === 0) {
       return
     }
 
     setSftpLoading(true)
     try {
       let lastResult = ''
-      const batchTransferId = selectedSftpEntries.length > 1 ? createBatchTransferId('download') : null
-      const knownTotalBytes = selectedSftpEntries.every((entry) => entry.kind === 'file' && typeof entry.sizeBytes === 'number')
-        ? selectedSftpEntries.reduce((sum, entry) => sum + (entry.sizeBytes ?? 0), 0)
+      const batchTransferId = entries.length > 1 ? createBatchTransferId('download') : null
+      const knownTotalBytes = entries.every((entry) => entry.kind === 'file' && typeof entry.sizeBytes === 'number')
+        ? entries.reduce((sum, entry) => sum + (entry.sizeBytes ?? 0), 0)
         : undefined
       if (batchTransferId) {
         enqueueTransfer({
           transferId: batchTransferId,
-          fileName: itemCountLabel(selectedSftpEntries.length),
+          fileName: itemCountLabel(entries.length),
           remotePath: currentSftpPath,
           direction: 'download',
           purpose: 'download',
           state: 'queued',
           transferredBytes: 0,
           totalBytes: knownTotalBytes,
-          itemCount: selectedSftpEntries.length,
-          message: `Queued ${selectedSftpEntries.length} items for download`,
+          itemCount: entries.length,
+          message: `Queued ${entries.length} items for download`,
         })
       }
 
-      for (const [index, entry] of selectedSftpEntries.entries()) {
+      for (const [index, entry] of entries.entries()) {
         const transferId = batchTransferId
-          ? createBatchChildTransferId(batchTransferId, index, selectedSftpEntries.length)
+          ? createBatchChildTransferId(batchTransferId, index, entries.length)
           : `download-${crypto.randomUUID()}`
         if (!batchTransferId) {
           enqueueTransfer({
@@ -1133,14 +1292,14 @@ export function Sidebar({
         lastResult = `${result.fileName} -> ${result.savedTo}`
       }
       setSftpMessage(
-        selectedSftpEntries.length === 1
+        entries.length === 1
           ? `Downloaded ${lastResult}`
-          : `Downloaded ${selectedSftpEntries.length} item${selectedSftpEntries.length > 1 ? 's' : ''}`,
+          : `Downloaded ${entries.length} item${entries.length > 1 ? 's' : ''}`,
       )
     } catch (error) {
       logOpenXTermError('sidebar.sftp.download-entry', error, {
         ...sidebarSftpErrorContext(selectedSftpSession, 'download', currentSftpPath),
-        entries: selectedSftpEntries.map((entry) => ({ path: entry.path, kind: entry.kind })),
+        entries: entries.map((entry) => ({ path: entry.path, kind: entry.kind })),
       })
       setSftpMessage(error instanceof Error ? error.message : 'Unable to download remote item.')
     } finally {
@@ -1455,7 +1614,7 @@ export function Sidebar({
                 icon={<FolderPlus size={14} />}
                 label="New folder"
                 disabled={sftpLoading || !selectedSftpSession}
-                onClick={() => void handleCreateFolder()}
+                onClick={() => setShowNewSftpFolderForm((value) => !value)}
               />
               <SidebarIconButton
                 accent="danger"
@@ -1481,13 +1640,60 @@ export function Sidebar({
               {...{ webkitdirectory: '', directory: '' }}
               onChange={(event) => void handleSidebarUploadFolderChange(event)}
             />
+            {showNewSftpFolderForm && selectedSftpSession && (
+              <form className="sidebar-sftp-create-form" onSubmit={(event) => void handleCreateFolder(event)}>
+                <input
+                  autoFocus
+                  value={newSftpFolderName}
+                  placeholder="Folder name"
+                  disabled={sftpLoading}
+                  onChange={(event) => setNewSftpFolderName(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') {
+                      setShowNewSftpFolderForm(false)
+                      setNewSftpFolderName('')
+                    }
+                  }}
+                />
+                <button type="submit" disabled={sftpLoading || !newSftpFolderName.trim()}>
+                  Create
+                </button>
+              </form>
+            )}
+            {renamingSftpEntry && selectedSftpSession && (
+              <form className="sidebar-sftp-create-form" onSubmit={(event) => void handleRenameEntry(event)}>
+                <input
+                  autoFocus
+                  value={renameSftpName}
+                  placeholder="New name"
+                  disabled={sftpLoading}
+                  onChange={(event) => setRenameSftpName(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') {
+                      setRenamingSftpEntry(null)
+                      setRenameSftpName('')
+                    }
+                  }}
+                />
+                <button type="submit" disabled={sftpLoading || !renameSftpName.trim()}>
+                  Rename
+                </button>
+              </form>
+            )}
             <div className="sidebar-sftp-path">
               <span>{currentSftpPath}</span>
               {selectedSftpEntries.length > 0 && (
                 <strong>{selectedSftpEntries.length} selected</strong>
               )}
             </div>
-            <div ref={sftpListRef} className={`sidebar-list ${dropActive ? 'sidebar-drop-active' : ''}`}>
+            <div
+              ref={sftpListRef}
+              className={`sidebar-list ${dropActive ? 'sidebar-drop-active' : ''}`}
+              onDragEnter={handleSidebarBrowserDrag}
+              onDragOver={handleSidebarBrowserDrag}
+              onDragLeave={handleSidebarBrowserDragLeave}
+              onDrop={(event) => void handleSidebarBrowserDrop(event)}
+            >
               {selectedSftpSession && sftpEntries.length > 0 && sftpEntries.map((entry) => {
                 return (
                   <div
@@ -1498,6 +1704,12 @@ export function Sidebar({
                     title="Drag to Finder"
                     onPointerDown={(event) => handleNativeDragPointerDown(event, entry, 'row')}
                     onClick={(event) => selectSftpEntry(entry, event)}
+                    onContextMenu={(event) => {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      setSelectedSftpEntryPaths(selectedOrEntry(entry).map((item) => item.path))
+                      setSftpContextMenu({ entry, x: event.clientX, y: event.clientY })
+                    }}
                     onDoubleClick={() => {
                       handleSftpEntryOpen(entry)
                     }}
@@ -1554,6 +1766,41 @@ export function Sidebar({
                 </div>
               )}
             </div>
+            {sftpContextMenu && (
+              <div
+                className="sidebar-context-menu"
+                style={{ left: sftpContextMenu.x, top: sftpContextMenu.y }}
+                role="menu"
+                onPointerDown={(event) => event.stopPropagation()}
+                onContextMenu={(event) => event.preventDefault()}
+              >
+                <button type="button" role="menuitem" onClick={() => startRenameSftpEntry(sftpContextMenu.entry)}>
+                  Rename
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    const entries = selectedOrEntry(sftpContextMenu.entry)
+                    setSftpContextMenu(null)
+                    void handleDeleteEntry(entries)
+                  }}
+                >
+                  Delete
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setSelectedSftpEntryPaths(selectedOrEntry(sftpContextMenu.entry).map((item) => item.path))
+                    setSftpContextMenu(null)
+                    void handleDownloadEntry(selectedOrEntry(sftpContextMenu.entry))
+                  }}
+                >
+                  Download
+                </button>
+              </div>
+            )}
           </>
         )}
 
@@ -1617,9 +1864,10 @@ export function Sidebar({
         )}
 
         <div className="sidebar-footer">
-          <FolderClosed size={13} />
-          <FileStack size={13} />
-          <span>Double-click session to open a tab</span>
+          <label className="sidebar-follow-toggle">
+            <input type="checkbox" disabled />
+            <span>follow remote terminal</span>
+          </label>
         </div>
       </div>
     </aside>

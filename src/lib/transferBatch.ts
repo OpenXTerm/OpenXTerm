@@ -69,10 +69,9 @@ export function aggregateBatchProgress(payload: TransferProgressPayload) {
   const hasRunningChild = children.some((item) => item.state === 'running')
   const hasStartedChild = children.some((item) => item.state !== 'queued')
   const knownChildTotals = children.map((item) => item.totalBytes).filter((value): value is number => typeof value === 'number')
-  const childrenTotalKnown = knownChildTotals.length === expectedItems
   const parentTotal = typeof parent?.totalBytes === 'number'
     ? parent.totalBytes
-    : childrenTotalKnown
+    : knownChildTotals.length > 0
       ? knownChildTotals.reduce((sum, value) => sum + value, 0)
       : undefined
   const transferredBytes = Math.min(

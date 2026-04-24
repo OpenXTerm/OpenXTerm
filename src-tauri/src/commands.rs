@@ -252,6 +252,24 @@ pub async fn delete_remote_entry(
 }
 
 #[tauri::command]
+pub async fn rename_remote_entry(
+    session: SessionDefinition,
+    path: String,
+    new_name: String,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        file_ops::rename_remote_entry(&session, &path, &new_name)
+    })
+    .await
+    .map_err(|error| format!("failed to join remote rename task: {error}"))?
+}
+
+#[tauri::command]
+pub fn cancel_transfer(transfer_id: String) -> Result<(), String> {
+    file_ops::cancel_transfer(&transfer_id)
+}
+
+#[tauri::command]
 pub async fn upload_remote_file(
     app: AppHandle,
     session: SessionDefinition,

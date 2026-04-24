@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 
-import { listenTransferProgress } from '../../lib/bridge'
+import { cancelTransfer, listenTransferProgress } from '../../lib/bridge'
 import { aggregateBatchProgress, hydrateBatchTransfers } from '../../lib/transferBatch'
 import { mergeTransferProgress, readTransferQueueSnapshot, writeTransferQueueSnapshot } from '../../lib/transferQueue'
 import type { TransferProgressPayload } from '../../types/domain'
@@ -108,19 +108,38 @@ export function TransferWindowPage() {
 
     return sorted.filter((item) => item.transferId === transferId)
   }, [items, transferId])
-  const activeItem = transferId ? items[transferId] : null
+  const activeItems = useMemo(() => {
+    return orderedItems.filter((item) => item.state === 'queued' || item.state === 'running')
+  }, [orderedItems])
+  const allItemsFinished = orderedItems.length > 0 && activeItems.length === 0
 
   useEffect(() => {
-    if (!activeItem || activeItem.state !== 'completed') {
+    if (!allItemsFinished) {
       return
     }
 
     const closeTimer = window.setTimeout(() => {
       closeCurrentTransferWindow()
-    }, 900)
+    }, 2000)
 
     return () => window.clearTimeout(closeTimer)
-  }, [activeItem])
+  }, [allItemsFinished])
+
+  function handleCancelTransfer(item: TransferProgressPayload) {
+    void cancelTransfer(item.transferId)
+    setItems((current) => {
+      const next = {
+        ...current,
+        [item.transferId]: mergeTransferProgress(current[item.transferId], {
+          ...item,
+          state: 'error',
+          message: 'Cancel requested',
+        }),
+      }
+      writeTransferQueueSnapshot(next)
+      return next
+    })
+  }
 
   return (
     <div className="transfer-window-page">
@@ -128,6 +147,7 @@ export function TransferWindowPage() {
         items={orderedItems}
         open
         embedded
+        onCancel={handleCancelTransfer}
         onClose={() => {
           closeCurrentTransferWindow()
         }}

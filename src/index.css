@@ -253,6 +253,7 @@ button {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  overflow: hidden;
 }
 
 .sidebar-header,
@@ -330,6 +331,7 @@ button {
 }
 
 .sidebar-list {
+  flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
 }
@@ -358,6 +360,42 @@ button {
   padding-top: 6px;
   padding-bottom: 5px;
   border-bottom: 1px solid #1b2124;
+}
+
+.sidebar-sftp-create-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  padding: 6px 9px;
+  border-bottom: 1px solid #1b2124;
+}
+
+.sidebar-sftp-create-form input {
+  min-width: 0;
+  height: 26px;
+  border: 1px solid #2d383d;
+  border-radius: 6px;
+  background: #101416;
+  color: #dfe4e6;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 11px;
+}
+
+.sidebar-sftp-create-form button {
+  height: 26px;
+  border: 1px solid #2d6a56;
+  border-radius: 6px;
+  background: #18302a;
+  color: #8ff0c1;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.sidebar-sftp-create-form button:disabled,
+.sidebar-sftp-create-form input:disabled {
+  opacity: 0.55;
 }
 
 .sidebar-sftp-chip {
@@ -575,6 +613,7 @@ button {
 }
 
 .sidebar-footer {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 7px;
@@ -584,19 +623,71 @@ button {
   font-size: 11px;
 }
 
+.sidebar-follow-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: #7b8b90;
+}
+
+.sidebar-follow-toggle input {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: #2d6a56;
+}
+
+.sidebar-follow-toggle span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-context-menu {
+  position: fixed;
+  z-index: 80;
+  display: grid;
+  min-width: 132px;
+  padding: 4px;
+  border: 1px solid #2d383d;
+  border-radius: 6px;
+  background: #111619;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.34);
+}
+
+.sidebar-context-menu button {
+  display: flex;
+  align-items: center;
+  height: 26px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #d9e0e3;
+  padding: 0 8px;
+  text-align: left;
+  font: inherit;
+  font-size: 11px;
+}
+
+.sidebar-context-menu button:hover {
+  background: #18302a;
+  color: #8ff0c1;
+}
+
 .sidebar-list.sidebar-drop-active {
   position: relative;
   background: rgba(25, 57, 46, 0.18);
 }
 
 .sidebar-drop-overlay {
-  position: sticky;
-  inset: auto 10px 10px 10px;
+  position: absolute;
+  inset: 10px;
   display: grid;
   place-items: center;
   gap: 6px;
   min-height: 78px;
-  margin: 10px;
+  margin: 0;
   border: 1px dashed #4aa57d;
   border-radius: 6px;
   background: rgba(18, 35, 29, 0.86);
@@ -1352,7 +1443,7 @@ button {
 
 .transfer-row {
   display: grid;
-  grid-template-columns: 24px minmax(0, 1fr) 24px;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
   gap: 10px;
   align-items: start;
   padding: 10px 14px;
@@ -1364,11 +1455,38 @@ button {
 }
 
 .transfer-row-icon,
-.transfer-row-state {
+.transfer-row-state,
+.transfer-row-actions {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   margin-top: 2px;
+}
+
+.transfer-row-actions {
+  flex-direction: column;
+  gap: 8px;
+}
+
+.transfer-row-actions button {
+  height: 22px;
+  border: 1px solid #c89090;
+  border-radius: 4px;
+  background: #fff1f1;
+  color: #9f3030;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.transfer-row-actions button:hover {
+  background: #ffdede;
+}
+
+.transfer-empty-row {
+  padding: 18px 14px;
+  color: #55626e;
+  font-size: 12px;
 }
 
 .transfer-row-icon {

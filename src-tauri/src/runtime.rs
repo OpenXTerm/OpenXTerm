@@ -1815,6 +1815,8 @@ fn open_embedded_ssh_channel(
         .map_err(|error| format!("failed to allocate embedded SSH PTY: {error}"))?;
     let _ = channel.request_env("TERM", "xterm-256color");
     let _ = channel.request_env("COLORTERM", "truecolor");
+    let _ = channel.request_env("LANG", "C.UTF-8");
+    let _ = channel.request_env("LC_CTYPE", "C.UTF-8");
     let x11_warning = if let Some(config) = x11_config {
         let request_result = channel.request_x11(
             false,
@@ -2213,7 +2215,7 @@ fn maybe_report_ssh_runtime_guidance(
         );
     }
 
-    if !state.auth_failed && recent_output.contains("permission denied") {
+    if !state.auth_failed && looks_like_ssh_auth_failure(recent_output) {
         state.auth_failed = true;
         emit_output(
             app,
@@ -2279,6 +2281,13 @@ fn maybe_report_ssh_runtime_guidance(
             "\r\n[error] DNS resolution failed for this SSH target. Verify the hostname spelling or switch the session to a direct IP address.\r\n",
         );
     }
+}
+
+fn looks_like_ssh_auth_failure(recent_output: &str) -> bool {
+    recent_output.contains("permission denied (")
+        || recent_output.contains("permission denied, please try again")
+        || recent_output.contains("authentication failed")
+        || recent_output.contains("access denied")
 }
 
 fn maybe_report_x11_forwarding_failure(

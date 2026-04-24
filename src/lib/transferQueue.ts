@@ -49,8 +49,12 @@ export function mergeTransferProgress(
   }
 
   const incomingIsOlderState = transferStateRank[incoming.state] < transferStateRank[existing.state]
-  const shouldKeepExistingState = incomingIsOlderState || (incoming.state === 'queued' && existing.state !== 'queued')
-  const totalBytes = existing.totalBytes ?? incoming.totalBytes
+  const shouldKeepExistingState = incomingIsOlderState
+    || (incoming.state === 'queued' && existing.state !== 'queued')
+    || (existing.state === 'error' && incoming.state !== 'error')
+  const totalBytes = typeof existing.totalBytes === 'number' && typeof incoming.totalBytes === 'number'
+    ? Math.max(existing.totalBytes, incoming.totalBytes)
+    : existing.totalBytes ?? incoming.totalBytes
   const transferredBytes = Math.max(existing.transferredBytes, incoming.transferredBytes)
 
   const merged = {
