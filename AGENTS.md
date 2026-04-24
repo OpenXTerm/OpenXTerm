@@ -45,7 +45,8 @@ CI/CD workflow:
 
 - [`.github/workflows/ci-cd.yml`](/Volumes/EXT/Projects/OpenXTerm/.github/workflows/ci-cd.yml) runs verification plus a five-platform bundle matrix only through manual `workflow_dispatch`
 - matrix targets currently are Linux X64, Windows X64, Windows ARM64, macOS ARM64, and macOS X64
-- manual runs require an existing `release_tag` like `v0.2.0` and a `release_type` of `release` or `prerelease`
+- manual runs require a `version` like `0.2.0` and a `release_type` of `release` or `prerelease`
+- CI bumps release version files with `npm run version:set -- <version>`, creates a release commit on `main`, then tags it as `v<version>`
 - the release job generates release notes from the previous semver-like version tag
 - the selected tag publishes GitHub Release assets from those bundle outputs
 - Windows release jobs also add portable ZIP archives alongside the Tauri installer outputs
@@ -87,7 +88,7 @@ CI/CD workflow:
 ### CI/CD
 
 - [`.github/workflows/ci-cd.yml`](/Volumes/EXT/Projects/OpenXTerm/.github/workflows/ci-cd.yml): GitHub Actions verification/build/release pipeline
-- [`docs/releasing.md`](/Volumes/EXT/Projects/OpenXTerm/docs/releasing.md): tag-driven release checklist
+- [`docs/releasing.md`](/Volumes/EXT/Projects/OpenXTerm/docs/releasing.md): manual release checklist
 
 ## Core Architecture
 
@@ -394,7 +395,7 @@ This is the practical feature state as of April 16, 2026:
 - status bar is live and session-aware
 - non-macOS topbar menus are clickable dropdowns
 - frontend error-only console logging exists for status, transfers, terminal launch/input, and file-browser flows
-- GitHub Actions CI/CD exists for Linux X64, Windows X64, Windows ARM64, macOS ARM64, and macOS X64 and is manual-dispatch/tag-input driven
+- GitHub Actions CI/CD exists for Linux X64, Windows X64, Windows ARM64, macOS ARM64, and macOS X64 and is manual-dispatch/version-input driven
 
 Important caveats:
 

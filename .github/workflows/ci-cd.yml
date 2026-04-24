@@ -1,12 +1,12 @@
 name: CI/CD
 
-run-name: Release ${{ inputs.release_tag }} (${{ inputs.release_type }})
+run-name: Release v${{ inputs.version }} (${{ inputs.release_type }})
 
 on:
   workflow_dispatch:
     inputs:
-      release_tag:
-        description: 'Existing release tag to build, for example v0.2.0'
+      version:
+        description: 'Release version, for example 0.2.0'
         required: true
         type: string
       release_type:
@@ -22,7 +22,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-cd-${{ inputs.release_tag }}
+  group: ci-cd-v${{ inputs.version }}
   cancel-in-progress: true
 
 env:
@@ -30,15 +30,78 @@ env:
   NODE_VERSION: 22
 
 jobs:
+  prepare-release:
+    name: Prepare Release
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    outputs:
+      release_tag: ${{ steps.prepare.outputs.release_tag }}
+      release_version: ${{ steps.prepare.outputs.release_version }}
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ github.token }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Prepare version commit and tag
+        id: prepare
+        shell: bash
+        env:
+          RELEASE_VERSION_INPUT: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+
+          RELEASE_VERSION="${RELEASE_VERSION_INPUT#v}"
+          RELEASE_TAG="v$RELEASE_VERSION"
+
+          if [[ ! "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Release version must use semver format like 0.2.0 or 0.2.0-alpha.1"
+            exit 1
+          fi
+
+          git fetch --force --tags origin
+
+          if git rev-parse -q --verify "refs/tags/$RELEASE_TAG" >/dev/null; then
+            echo "Tag $RELEASE_TAG already exists"
+            exit 1
+          fi
+
+          node script/set_version.mjs "$RELEASE_VERSION"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+
+          if ! git diff --cached --quiet; then
+            git commit -m "Release $RELEASE_TAG"
+            git push origin HEAD:main
+          fi
+
+          git tag -a "$RELEASE_TAG" -m "OpenXTerm $RELEASE_TAG"
+          git push origin "$RELEASE_TAG"
+
+          echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "release_version=$RELEASE_VERSION" >> "$GITHUB_OUTPUT"
+
   verify:
     name: Verify
+    needs: prepare-release
     runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.release_tag }}
+          ref: ${{ needs.prepare-release.outputs.release_tag }}
           fetch-depth: 0
 
       - name: Setup Node.js
@@ -50,44 +113,39 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Validate release tag and version
+      - name: Validate release version files
         shell: bash
         env:
-          RELEASE_TAG: ${{ inputs.release_tag }}
+          RELEASE_VERSION: ${{ needs.prepare-release.outputs.release_version }}
         run: |
-          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
-            echo "Release tag must use semver format like v0.2.0 or v0.2.0-alpha.1"
-            exit 1
-          fi
-
-          if ! git rev-parse -q --verify "refs/tags/$RELEASE_TAG" >/dev/null; then
-            echo "Tag $RELEASE_TAG does not exist in this repository"
-            exit 1
-          fi
-
-          TAG_VERSION="${RELEASE_TAG#v}"
           PACKAGE_VERSION="$(node -p "require('./package.json').version")"
           PACKAGE_LOCK_VERSION="$(node -p "require('./package-lock.json').version")"
           TAURI_VERSION="$(node -p "require('./src-tauri/tauri.conf.json').version")"
           CARGO_VERSION="$(grep '^version = ' src-tauri/Cargo.toml | head -n 1 | sed -E 's/version = \"([^\"]+)\"/\\1/')"
+          CARGO_LOCK_VERSION="$(grep -A2 '^name = \"openxterm\"' src-tauri/Cargo.lock | grep '^version = ' | head -n 1 | sed -E 's/version = \"([^\"]+)\"/\\1/')"
 
-          if [ "$TAG_VERSION" != "$PACKAGE_VERSION" ]; then
-            echo "Tag version v$TAG_VERSION does not match package.json version $PACKAGE_VERSION"
+          if [ "$RELEASE_VERSION" != "$PACKAGE_VERSION" ]; then
+            echo "Release version $RELEASE_VERSION does not match package.json version $PACKAGE_VERSION"
             exit 1
           fi
 
-          if [ "$TAG_VERSION" != "$PACKAGE_LOCK_VERSION" ]; then
-            echo "Tag version v$TAG_VERSION does not match package-lock.json version $PACKAGE_LOCK_VERSION"
+          if [ "$RELEASE_VERSION" != "$PACKAGE_LOCK_VERSION" ]; then
+            echo "Release version $RELEASE_VERSION does not match package-lock.json version $PACKAGE_LOCK_VERSION"
             exit 1
           fi
 
-          if [ "$TAG_VERSION" != "$TAURI_VERSION" ]; then
-            echo "Tag version v$TAG_VERSION does not match src-tauri/tauri.conf.json version $TAURI_VERSION"
+          if [ "$RELEASE_VERSION" != "$TAURI_VERSION" ]; then
+            echo "Release version $RELEASE_VERSION does not match src-tauri/tauri.conf.json version $TAURI_VERSION"
             exit 1
           fi
 
-          if [ "$TAG_VERSION" != "$CARGO_VERSION" ]; then
-            echo "Tag version v$TAG_VERSION does not match src-tauri/Cargo.toml version $CARGO_VERSION"
+          if [ "$RELEASE_VERSION" != "$CARGO_VERSION" ]; then
+            echo "Release version $RELEASE_VERSION does not match src-tauri/Cargo.toml version $CARGO_VERSION"
+            exit 1
+          fi
+
+          if [ "$RELEASE_VERSION" != "$CARGO_LOCK_VERSION" ]; then
+            echo "Release version $RELEASE_VERSION does not match src-tauri/Cargo.lock version $CARGO_LOCK_VERSION"
             exit 1
           fi
 
@@ -126,7 +184,9 @@ jobs:
 
   build:
     name: Build ${{ matrix.name }}
-    needs: verify
+    needs:
+      - prepare-release
+      - verify
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -157,7 +217,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.release_tag }}
+          ref: ${{ needs.prepare-release.outputs.release_tag }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -230,7 +290,9 @@ jobs:
 
   release:
     name: Publish GitHub Release
-    needs: build
+    needs:
+      - prepare-release
+      - build
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -239,14 +301,14 @@ jobs:
       - name: Checkout release tag
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.release_tag }}
+          ref: ${{ needs.prepare-release.outputs.release_tag }}
           fetch-depth: 0
 
       - name: Generate release notes
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ inputs.release_tag }}
+          RELEASE_TAG: ${{ needs.prepare-release.outputs.release_tag }}
         run: |
           set -euo pipefail
 
@@ -309,8 +371,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         with:
-          tag_name: ${{ inputs.release_tag }}
-          name: OpenXTerm ${{ inputs.release_tag }}
+          tag_name: ${{ needs.prepare-release.outputs.release_tag }}
+          name: OpenXTerm ${{ needs.prepare-release.outputs.release_tag }}
           prerelease: ${{ inputs.release_type == 'prerelease' }}
           body_path: release-notes.md
           files: release-assets/**/*

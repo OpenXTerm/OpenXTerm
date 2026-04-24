@@ -11,6 +11,7 @@
     "check": "tsc -b && eslint .",
     "lint": "eslint .",
     "preview": "vite preview --host 127.0.0.1 --port 4173",
+    "version:set": "node script/set_version.mjs",
     "tauri:dev": "node script/run_tauri.mjs dev",
     "tauri:build": "node script/run_tauri.mjs build"
   },

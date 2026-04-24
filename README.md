@@ -183,7 +183,7 @@ It currently runs verification and bundle builds for:
 - macOS ARM64
 - macOS X64
 
-CI/CD is manual-only: run the workflow from GitHub Actions with an existing `release_tag` and choose `release` or `prerelease`. The release job publishes bundle assets and generates release notes from the previous version tag. Current release assets are unsigned and unnotarized until signing secrets are added.
+CI/CD is manual-only: run the workflow from GitHub Actions with a release `version` and choose `release` or `prerelease`. The workflow creates the release commit and tag, publishes bundle assets, and generates release notes from the previous version tag. Current release assets are unsigned and unnotarized until signing secrets are added.
 
 ## Roadmap
 
