@@ -3,7 +3,7 @@ use std::{
     fs,
     hash::{DefaultHasher, Hash, Hasher},
     io::{self, BufReader, Read, Write},
-    net::{Shutdown, TcpStream},
+    net::{Shutdown, TcpStream, ToSocketAddrs},
     path::PathBuf,
     process::Command,
     sync::{
@@ -57,6 +57,7 @@ const X11_PROXY_IDLE_SLEEP: Duration = Duration::from_millis(5);
 const X11_COMMAND_TIMEOUT: Duration = Duration::from_millis(700);
 const X11_PROXY_PENDING_LIMIT: usize = 4 * 1024 * 1024;
 const RECENT_TERMINAL_OUTPUT_CHAR_LIMIT: usize = 2048;
+const TELNET_CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 
 #[derive(Clone)]
 struct X11ForwardConfig {
@@ -182,35 +183,9 @@ impl AppRuntime {
 
         self.stop_terminal(&tab_id)?;
 
-        let stream =
-            TcpStream::connect((session.host.as_str(), session.port)).map_err(|error| {
-                format!(
-                    "failed to connect to {}:{}: {error}",
-                    session.host, session.port
-                )
-            })?;
-        stream
-            .set_read_timeout(Some(Duration::from_millis(250)))
-            .map_err(|error| format!("failed to configure TELNET read timeout: {error}"))?;
-        let writer_stream = stream
-            .try_clone()
-            .map_err(|error| format!("failed to clone TELNET stream: {error}"))?;
-        let shutdown_stream = writer_stream
-            .try_clone()
-            .map_err(|error| format!("failed to clone TELNET shutdown stream: {error}"))?;
-
-        let writer: SharedWriter = Arc::new(Mutex::new(Box::new(TelnetWriter::new(writer_stream))));
+        let writer: SharedWriter = Arc::new(Mutex::new(Box::new(PendingTelnetWriter)));
         let stop_flag = Arc::new(AtomicBool::new(false));
-
-        spawn_telnet_reader(
-            app.clone(),
-            self.terminals.clone(),
-            tab_id.clone(),
-            stream,
-            writer.clone(),
-            session.clone(),
-            stop_flag.clone(),
-        );
+        let shutdown_stream: Arc<Mutex<Option<TcpStream>>> = Arc::new(Mutex::new(None));
 
         self.terminals
             .lock()
@@ -218,27 +193,30 @@ impl AppRuntime {
             .insert(
                 tab_id.clone(),
                 ActiveTerminal {
-                    writer,
+                    writer: writer.clone(),
                     resize: Box::new(|_, _| Ok(())),
-                    stop: Box::new(move || {
-                        let _ = shutdown_stream.shutdown(Shutdown::Both);
-                    }),
-                    stop_flag,
+                    stop: {
+                        let shutdown_stream = shutdown_stream.clone();
+                        Box::new(move || {
+                            if let Ok(mut stream) = shutdown_stream.lock() {
+                                if let Some(stream) = stream.take() {
+                                    let _ = stream.shutdown(Shutdown::Both);
+                                }
+                            }
+                        })
+                    },
+                    stop_flag: stop_flag.clone(),
                 },
             );
 
-        emit_output(
-            app,
-            &tab_id,
-            &format!(
-                "\r\n[information] Launching TELNET transport to {}:{}\r\n",
-                session.host, session.port
-            ),
-        );
-        emit_output(
-            app,
-            &tab_id,
-            "\r\n[information] Native TELNET negotiation is active.\r\n",
+        spawn_telnet_connector(
+            app.clone(),
+            self.terminals.clone(),
+            tab_id,
+            session,
+            writer,
+            shutdown_stream,
+            stop_flag,
         );
 
         Ok(true)
@@ -1560,6 +1538,98 @@ fn spawn_telnet_reader(
             }
         }
     });
+}
+
+fn spawn_telnet_connector(
+    app: AppHandle,
+    terminals: Arc<Mutex<HashMap<String, ActiveTerminal>>>,
+    tab_id: String,
+    session: SessionDefinition,
+    writer: SharedWriter,
+    shutdown_stream: Arc<Mutex<Option<TcpStream>>>,
+    stop_flag: Arc<AtomicBool>,
+) {
+    thread::spawn(move || {
+        let stream = match connect_telnet_stream(&session) {
+            Ok(stream) => stream,
+            Err(error) => {
+                if !stop_flag.load(Ordering::Relaxed) {
+                    emit_output(&app, &tab_id, &format!("\r\n[error] {error}\r\n"));
+                }
+                finalize_terminal(&app, &terminals, &tab_id, &stop_flag, None, error);
+                return;
+            }
+        };
+
+        if stop_flag.load(Ordering::Relaxed) {
+            let _ = stream.shutdown(Shutdown::Both);
+            return;
+        }
+
+        if let Err(error) = stream.set_read_timeout(Some(Duration::from_millis(250))) {
+            let message = format!("failed to configure TELNET read timeout: {error}");
+            emit_output(&app, &tab_id, &format!("\r\n[error] {message}\r\n"));
+            finalize_terminal(&app, &terminals, &tab_id, &stop_flag, None, message);
+            return;
+        }
+
+        let writer_stream = match stream.try_clone() {
+            Ok(stream) => stream,
+            Err(error) => {
+                let message = format!("failed to clone TELNET stream: {error}");
+                emit_output(&app, &tab_id, &format!("\r\n[error] {message}\r\n"));
+                finalize_terminal(&app, &terminals, &tab_id, &stop_flag, None, message);
+                return;
+            }
+        };
+
+        let stream_for_shutdown = match writer_stream.try_clone() {
+            Ok(stream) => stream,
+            Err(error) => {
+                let message = format!("failed to clone TELNET shutdown stream: {error}");
+                emit_output(&app, &tab_id, &format!("\r\n[error] {message}\r\n"));
+                finalize_terminal(&app, &terminals, &tab_id, &stop_flag, None, message);
+                return;
+            }
+        };
+
+        if let Ok(mut stream) = shutdown_stream.lock() {
+            *stream = Some(stream_for_shutdown);
+        }
+
+        if let Ok(mut writer) = writer.lock() {
+            *writer = Box::new(TelnetWriter::new(writer_stream));
+        }
+
+        spawn_telnet_reader(app, terminals, tab_id, stream, writer, session, stop_flag);
+    });
+}
+
+fn connect_telnet_stream(session: &SessionDefinition) -> Result<TcpStream, String> {
+    let endpoint = (session.host.as_str(), session.port);
+    let addresses = endpoint.to_socket_addrs().map_err(|error| {
+        format!(
+            "failed to resolve {}:{}: {error}",
+            session.host, session.port
+        )
+    })?;
+
+    let mut last_error = None;
+    for address in addresses {
+        match TcpStream::connect_timeout(&address, TELNET_CONNECT_TIMEOUT) {
+            Ok(stream) => return Ok(stream),
+            Err(error) => last_error = Some(error),
+        }
+    }
+
+    Err(format!(
+        "failed to connect to {}:{}: {}",
+        session.host,
+        session.port,
+        last_error
+            .map(|error| error.to_string())
+            .unwrap_or_else(|| "no resolved addresses".into())
+    ))
 }
 
 fn spawn_serial_reader(
@@ -3194,9 +3264,21 @@ struct TelnetWriter {
     stream: TcpStream,
 }
 
+struct PendingTelnetWriter;
+
 impl TelnetWriter {
     fn new(stream: TcpStream) -> Self {
         Self { stream }
+    }
+}
+
+impl Write for PendingTelnetWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
     }
 }
 

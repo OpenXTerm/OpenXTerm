@@ -510,13 +510,13 @@ export function Sidebar({
   }, [loadSftpDirectory, selectedSftpSession])
 
   function isSessionFolderExpanded(path: string) {
-    return expandedSessionFolders[path] ?? true
+    return expandedSessionFolders[path] ?? false
   }
 
   function toggleSessionFolder(path: string) {
     setExpandedSessionFolders((current) => ({
       ...current,
-      [path]: !(current[path] ?? true),
+      [path]: !(current[path] ?? false),
     }))
   }
 
@@ -1614,20 +1614,6 @@ export function Sidebar({
               <span>SFTP</span>
               <span className="sidebar-caption">{selectedSftpSession?.host ?? 'SSH-linked'}</span>
             </div>
-            {sshSftpLinks.length > 1 && (
-              <div className="sidebar-sftp-switcher">
-                {sshSftpLinks.map((session) => (
-                  <button
-                    key={session.id}
-                    type="button"
-                    className={`sidebar-sftp-chip ${selectedSftpSession?.id === session.id ? 'active' : ''}`}
-                    onClick={() => setSelectedSftpSessionId(session.id)}
-                  >
-                    {session.name}
-                  </button>
-                ))}
-              </div>
-            )}
             <div className="sidebar-sftp-toolbar">
               <SidebarIconButton
                 accent="folder"
@@ -1886,7 +1872,7 @@ export function Sidebar({
             </div>
             <div className="sidebar-list">
               {tools.map((tool) => (
-                <div key={tool.name} className="tool-row">
+                <button key={tool.name} className="tool-row" type="button" disabled>
                   <div className="tool-row-icon">
                     <Wrench size={14} />
                   </div>
@@ -1894,7 +1880,7 @@ export function Sidebar({
                     <strong>{tool.name}</strong>
                     <span>{tool.note}</span>
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           </>

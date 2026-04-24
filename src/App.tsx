@@ -304,16 +304,7 @@ export function App() {
     <div className="app-shell" data-theme={preferences.theme}>
       {!isMacOS && (
         <TopBar
-          activeTabTitle={activeTab?.title ?? 'OpenXTerm'}
-          onCreateMacro={() => {
-            setEditingMacro(null)
-            setMacroModalOpen(true)
-          }}
           onMenuAction={handleMenuAction}
-          onCreateSession={() => {
-            setEditingSession(null)
-            setSessionModalOpen(true)
-          }}
         />
       )}
 
@@ -405,9 +396,6 @@ export function App() {
           />
           <StatusBar
             activeTab={activeTab}
-            lockSupport={lockSupport}
-            locked={appLocked}
-            onLockApp={handleLockApp}
             sessionCpuHistoryByTabId={sessionCpuHistoryByTabId}
             sessionStatusByTabId={sessionStatusByTabId}
             sessions={sessions}

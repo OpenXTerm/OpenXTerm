@@ -1,16 +1,13 @@
 import { useMemo, type ReactNode } from 'react'
-import { Activity, Clock3, Cpu, HardDrive, Lock, Monitor, Network, Timer, User } from 'lucide-react'
+import { Activity, Clock3, Cpu, HardDrive, Monitor, Network, Timer, User } from 'lucide-react'
 
-import type { SessionDefinition, SessionStatusSnapshot, SystemAuthSupport, WorkspaceTab } from '../../types/domain'
+import type { SessionDefinition, SessionStatusSnapshot, WorkspaceTab } from '../../types/domain'
 
 interface StatusBarProps {
   activeTab: WorkspaceTab | undefined
   sessions: SessionDefinition[]
   sessionCpuHistoryByTabId: Record<string, number[]>
   sessionStatusByTabId: Record<string, SessionStatusSnapshot>
-  lockSupport: SystemAuthSupport
-  locked: boolean
-  onLockApp: () => void
 }
 
 const CPU_HISTORY_SIZE = 22
@@ -120,9 +117,6 @@ export function StatusBar({
   sessions,
   sessionCpuHistoryByTabId,
   sessionStatusByTabId,
-  lockSupport,
-  locked,
-  onLockApp,
 }: StatusBarProps) {
   const activeTabId = activeTab?.id
   const activeSession = useMemo(
@@ -142,16 +136,6 @@ export function StatusBar({
         <StatusSegment icon={<Monitor size={12} />} value="OpenXTerm" accent />
         <StatusSegment icon={<Activity size={12} />} value="Tauri shell online" />
         <StatusSegment icon={<Network size={12} />} value="Transports queued" />
-        <button
-          className="status-segment status-segment-button"
-          type="button"
-          onClick={onLockApp}
-          disabled={!lockSupport.available || locked}
-          title={lockSupport.available ? `Lock with ${lockSupport.methodLabel}` : lockSupport.detail}
-        >
-          <Lock size={12} />
-          <span>Lock</span>
-        </button>
       </footer>
     )
   }
@@ -174,16 +158,6 @@ export function StatusBar({
         <StatusSegment icon={<Timer size={12} />} value="..." />
         <StatusSegment icon={<Clock3 size={12} />} value="up ..." />
         <StatusSegment icon={<Monitor size={12} />} value={activeSession.name} accent />
-        <button
-          className="status-segment status-segment-button"
-          type="button"
-          onClick={onLockApp}
-          disabled={!lockSupport.available || locked}
-          title={lockSupport.available ? `Lock with ${lockSupport.methodLabel}` : lockSupport.detail}
-        >
-          <Lock size={12} />
-          <span>Lock</span>
-        </button>
       </footer>
     )
   }
@@ -205,16 +179,6 @@ export function StatusBar({
       <StatusSegment icon={<Timer size={12} />} value={compactValue(status.latency, '--')} />
       <StatusSegment icon={<Clock3 size={12} />} value={`up ${formatUptimeValue(status.uptime)}`} title={status.uptime} />
       <StatusSegment icon={<Monitor size={12} />} value={activeSession.name} accent title={status.remoteOs} />
-      <button
-        className="status-segment status-segment-button"
-        type="button"
-        onClick={onLockApp}
-        disabled={!lockSupport.available || locked}
-        title={lockSupport.available ? `Lock with ${lockSupport.methodLabel}` : lockSupport.detail}
-      >
-        <Lock size={12} />
-        <span>Lock</span>
-      </button>
     </footer>
   )
 }

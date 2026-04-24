@@ -66,45 +66,47 @@ export function Workspace({
   onTerminalResize,
 }: WorkspaceProps) {
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0]
+  const visibleTabs = tabs.filter((tab) => tab.protocol !== 'welcome' && tab.kind !== 'welcome')
   const session = activeTab.sessionId ? sessionMap.get(activeTab.sessionId) : undefined
 
   return (
     <section className="workspace">
-      <div className="tabstrip">
-        <div className="tabstrip-list">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              className={`workspace-tab ${tab.id === activeTabId ? 'active' : ''}`}
-              type="button"
-              onClick={() => onSelectTab(tab.id)}
-            >
-              {getTabIcon(tab)}
-              <span>{tab.title}</span>
-              {tab.closable && (
-                <span
-                  className="workspace-tab-close"
-                  role="button"
-                  tabIndex={0}
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    onCloseTab(tab.id)
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
+      {visibleTabs.length > 0 && (
+        <div className="tabstrip">
+          <div className="tabstrip-list">
+            {visibleTabs.map((tab) => (
+              <button
+                key={tab.id}
+                className={`workspace-tab ${tab.id === activeTabId ? 'active' : ''}`}
+                type="button"
+                onClick={() => onSelectTab(tab.id)}
+              >
+                {getTabIcon(tab)}
+                <span>{tab.title}</span>
+                {tab.closable && (
+                  <span
+                    className="workspace-tab-close"
+                    role="button"
+                    tabIndex={0}
+                    onClick={(event) => {
                       event.stopPropagation()
                       onCloseTab(tab.id)
-                    }
-                  }}
-                >
-                  <X size={12} />
-                </span>
-              )}
-            </button>
-          ))}
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.stopPropagation()
+                        onCloseTab(tab.id)
+                      }
+                    }}
+                  >
+                    <X size={12} />
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="tabstrip-add">+</div>
-      </div>
+      )}
 
       <div className="workspace-content">
         {activeTab.kind === 'welcome' && (

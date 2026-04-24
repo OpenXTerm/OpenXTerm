@@ -1,12 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { Plus, Play, Search, Terminal } from 'lucide-react'
 
 import type { MenuAction } from '../../types/domain'
 
 interface TopBarProps {
-  activeTabTitle: string
-  onCreateSession: () => void
-  onCreateMacro: () => void
   onMenuAction: (action: MenuAction) => void
 }
 
@@ -65,7 +61,7 @@ const MENUS: TopBarMenu[] = [
   },
 ]
 
-export function TopBar({ activeTabTitle, onCreateSession, onCreateMacro, onMenuAction }: TopBarProps) {
+export function TopBar({ onMenuAction }: TopBarProps) {
   const [openMenuLabel, setOpenMenuLabel] = useState<string | null>(null)
   const menubarRef = useRef<HTMLDivElement | null>(null)
 
@@ -143,25 +139,6 @@ export function TopBar({ activeTabTitle, onCreateSession, onCreateMacro, onMenuA
             )
           })}
         </div>
-      </div>
-
-      <div className="topbar-toolbar">
-        <div className="topbar-actions">
-          <button className="chrome-action" type="button" onClick={onCreateSession}>
-            <Plus size={14} />
-          </button>
-          <button className="chrome-action" type="button" onClick={onCreateMacro}>
-            <Terminal size={14} />
-          </button>
-          <button className="chrome-action" type="button" onClick={() => onMenuAction('search-terminal')}>
-            <Search size={14} />
-          </button>
-          <button className="chrome-action accent" type="button">
-            <Play size={14} />
-          </button>
-        </div>
-
-        <div className="topbar-breadcrumb" data-tauri-drag-region>{activeTabTitle}</div>
       </div>
     </header>
   )

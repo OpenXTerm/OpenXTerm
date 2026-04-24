@@ -57,21 +57,18 @@ button {
   background: rgba(5, 15, 14, 0.95);
 }
 
-.topbar-menubar,
-.topbar-toolbar {
+.topbar-menubar {
   display: flex;
   align-items: center;
   min-height: 28px;
   padding: 0 12px;
 }
 
-.platform-macos .topbar-menubar,
-.platform-macos .topbar-toolbar {
+.platform-macos .topbar-menubar {
   padding-left: 86px;
 }
 
-.topbar-menuitems,
-.topbar-actions {
+.topbar-menuitems {
   display: flex;
   align-items: center;
   gap: 2px;
@@ -170,21 +167,6 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-}
-
-.topbar-toolbar {
-  gap: 14px;
-  border-top: 1px solid rgba(255, 255, 255, 0.03);
-}
-
-.topbar-breadcrumb {
-  min-width: 0;
-  flex: 1;
-  font-size: 12px;
-  color: #8ff0c1;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .workbench {
@@ -344,16 +326,11 @@ button {
   -webkit-user-select: none;
 }
 
-.sidebar-sftp-switcher,
 .sidebar-sftp-toolbar {
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 6px 9px 0;
-}
-
-.sidebar-sftp-switcher {
-  overflow: auto hidden;
 }
 
 .sidebar-sftp-toolbar {
@@ -468,7 +445,18 @@ button {
 }
 
 .tool-row {
+  width: 100%;
+  border-left: 0;
+  border-right: 0;
+  border-top: 0;
   justify-content: flex-start;
+  text-align: left;
+  font: inherit;
+  cursor: default;
+}
+
+.tool-row:disabled {
+  opacity: 0.52;
 }
 
 .sidebar-sftp-entry,
@@ -586,7 +574,7 @@ button {
 
 .sidebar-row.active,
 .sidebar-row:hover,
-.tool-row:hover,
+.tool-row:not(:disabled):hover,
 .file-row:hover {
   background: #171d20;
 }
@@ -843,8 +831,7 @@ button {
   overflow: auto hidden;
 }
 
-.workspace-tab,
-.tabstrip-add {
+.workspace-tab {
   height: 28px;
   border: 1px solid #384248;
   border-bottom-color: #2a3236;
@@ -879,14 +866,6 @@ button {
   align-items: center;
   margin-left: auto;
   color: #8fa0a7;
-}
-
-.tabstrip-add {
-  min-width: 26px;
-  display: grid;
-  place-items: center;
-  font-size: 16px;
-  color: #7f8d92;
 }
 
 .workspace-content {
@@ -1371,13 +1350,11 @@ button {
   color: #ffd25a;
 }
 
-.status-segment-button,
 .status-chip-button {
   cursor: pointer;
   font: inherit;
 }
 
-.status-segment-button:disabled,
 .status-chip-button:disabled {
   opacity: 0.48;
   cursor: default;

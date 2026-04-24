@@ -65,7 +65,7 @@ function isSshKind(kind: SessionKind): boolean {
 }
 
 export function buildSessionTranscript(session: SessionDefinition) {
-  if (isSshKind(session.kind)) {
+  if (isSshKind(session.kind) || session.kind === 'telnet') {
     return []
   }
 
@@ -86,8 +86,6 @@ export function buildSessionTranscript(session: SessionDefinition) {
       ? '\x1b[38;2;54;255;187m • OpenXTerm SSH runtime\x1b[0m'
       : session.kind === 'local'
         ? '\x1b[38;2;54;255;187m • OpenXTerm LOCAL runtime\x1b[0m'
-        : session.kind === 'telnet'
-        ? '\x1b[38;2;54;255;187m • OpenXTerm TELNET runtime\x1b[0m'
         : session.kind === 'serial'
           ? '\x1b[38;2;54;255;187m • OpenXTerm SERIAL runtime\x1b[0m'
       : '\x1b[38;2;54;255;187m • OpenXTerm file browser\x1b[0m',
@@ -95,8 +93,6 @@ export function buildSessionTranscript(session: SessionDefinition) {
       ? '\x1b[38;2;255;220;102m (key / agent auth path is active in this pass)\x1b[0m'
       : session.kind === 'local'
         ? '\x1b[38;2;255;220;102m (native local shell backend is active in this pass)\x1b[0m'
-        : session.kind === 'telnet'
-        ? '\x1b[38;2;255;220;102m (native telnet negotiation backend is active in this pass)\x1b[0m'
         : session.kind === 'serial'
           ? '\x1b[38;2;255;220;102m (native serial backend is active in this pass)\x1b[0m'
       : `\x1b[38;2;255;220;102m (${transportLabel} transport shell scheduled for next stage)\x1b[0m`,
@@ -119,13 +115,13 @@ export function buildSessionTranscript(session: SessionDefinition) {
         ]
       : []),
     '',
-    session.kind === 'local' || session.kind === 'ssh' || session.kind === 'telnet' || session.kind === 'serial'
+    session.kind === 'local' || session.kind === 'ssh' || session.kind === 'serial'
       ? session.kind === 'ssh'
         ? '[information] terminal host is switching to the embedded transport runtime'
         : '[information] terminal host is switching to the native transport runtime'
       : '[information] tab shell is live, protocol adapter is the next milestone',
     '[information] copy/paste, scrollback, resize, macros and status rail are already wired',
-    session.kind === 'local' || session.kind === 'ssh' || session.kind === 'telnet' || session.kind === 'serial'
+    session.kind === 'local' || session.kind === 'ssh' || session.kind === 'serial'
       ? '[information] waiting for transport output...'
       : '[warning] no remote socket is opened in this foundation stage yet',
     '',
