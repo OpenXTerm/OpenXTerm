@@ -276,7 +276,7 @@ export function App() {
     document.body.style.userSelect = 'none'
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
-      const nextWidth = Math.min(420, Math.max(220, startWidth + (moveEvent.clientX - startX)))
+      const nextWidth = Math.min(840, Math.max(220, startWidth + (moveEvent.clientX - startX)))
       sidebarWidthRef.current = nextWidth
       setSidebarWidthDraft(nextWidth)
     }

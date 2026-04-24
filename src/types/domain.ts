@@ -181,6 +181,9 @@ export interface RemoteFileEntry {
   sizeBytes?: number
   sizeLabel: string
   modifiedLabel: string
+  ownerLabel?: string
+  groupLabel?: string
+  accessLabel?: string
 }
 
 export interface RemoteDirectorySnapshot {

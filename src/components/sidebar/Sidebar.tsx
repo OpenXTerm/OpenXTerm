@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type CSSProperties,
   type DragEvent as ReactDragEvent,
   type FormEvent,
   type MouseEvent as ReactMouseEvent,
@@ -94,6 +95,22 @@ const tools = [
   { name: 'Ping', note: 'Quick latency and packet-loss checks.' },
   { name: 'Network Tools', note: 'DNS, traceroute and capture helpers.' },
 ]
+
+const SFTP_TABLE_COLUMN_LABELS = ['Name', 'Size (KB)', 'Last modified', 'Owner', 'Group', 'Access']
+const SFTP_TABLE_DEFAULT_COLUMN_WIDTHS = [220, 82, 132, 82, 82, 104]
+const SFTP_TABLE_MIN_COLUMN_WIDTHS = [140, 58, 96, 58, 58, 78]
+
+function remoteSizeKbLabel(entry: RemoteFileEntry) {
+  if (entry.kind === 'folder') {
+    return ''
+  }
+
+  if (typeof entry.sizeBytes === 'number') {
+    return Math.max(1, Math.ceil(entry.sizeBytes / 1024)).toLocaleString()
+  }
+
+  return entry.sizeLabel === '--' ? '' : entry.sizeLabel
+}
 
 function sidebarSftpErrorContext(session: SessionDefinition, action: string, path: string) {
   return {
@@ -303,6 +320,7 @@ export function Sidebar({
   const [renamingSftpEntry, setRenamingSftpEntry] = useState<RemoteFileEntry | null>(null)
   const [renameSftpName, setRenameSftpName] = useState('')
   const [sftpContextMenu, setSftpContextMenu] = useState<SftpContextMenuState | null>(null)
+  const [sftpColumnWidths, setSftpColumnWidths] = useState(SFTP_TABLE_DEFAULT_COLUMN_WIDTHS)
   const [sessionMessage, setSessionMessage] = useState('')
   const [expandedSessionFolders, setExpandedSessionFolders] = useState<Record<string, boolean>>({})
   const [sessionTreeDragState, setSessionTreeDragState] = useState<SessionSidebarDragState | null>(null)
@@ -314,6 +332,41 @@ export function Sidebar({
     ?? sshSftpLinks[0]
 
   const selectedSftpSnapshot = selectedSftpSession ? snapshotsBySessionId[selectedSftpSession.id] : undefined
+  const sftpTableStyle = useMemo(
+    () => ({
+      '--sftp-table-columns': `${sftpColumnWidths.map((width) => `${width}px`).join(' ')} 28px`,
+    }) as CSSProperties,
+    [sftpColumnWidths],
+  )
+
+  function handleSftpColumnResizeStart(index: number, event: ReactPointerEvent<HTMLButtonElement>) {
+    event.preventDefault()
+    event.stopPropagation()
+
+    const startX = event.clientX
+    const startWidth = sftpColumnWidths[index]
+
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const minWidth = SFTP_TABLE_MIN_COLUMN_WIDTHS[index] ?? 58
+      const nextWidth = Math.max(minWidth, Math.round(startWidth + moveEvent.clientX - startX))
+      setSftpColumnWidths((current) => current.map((width, columnIndex) => (
+        columnIndex === index ? nextWidth : width
+      )))
+    }
+
+    const handlePointerUp = () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp)
+  }
 
   const loadSftpDirectory = useCallback(async (session: SessionDefinition, path: string) => {
     setSftpLoading(true)
@@ -878,6 +931,7 @@ export function Sidebar({
         }
 
         setSftpLoading(true)
+        const transferIds: string[] = []
         try {
           const batchTransferId = uploadPaths.length > 1 ? createBatchTransferId('upload') : null
           if (batchTransferId) {
@@ -901,6 +955,7 @@ export function Sidebar({
             const transferId = batchTransferId
               ? createBatchChildTransferId(batchTransferId, index, uploadPaths.length)
               : `upload-${crypto.randomUUID()}`
+            transferIds.push(transferId)
             if (!batchTransferId) {
               enqueueTransfer({
                 transferId,
@@ -923,6 +978,7 @@ export function Sidebar({
           logOpenXTermError('sidebar.sftp.drop-upload', error, {
             ...sidebarSftpErrorContext(selectedSftpSession, 'drop-upload', currentSftpPath),
             droppedPaths,
+            transferIds,
           })
           setSftpMessage(error instanceof Error ? error.message : 'Unable to upload dropped file.')
         } finally {
@@ -1694,63 +1750,87 @@ export function Sidebar({
               onDragLeave={handleSidebarBrowserDragLeave}
               onDrop={(event) => void handleSidebarBrowserDrop(event)}
             >
-              {selectedSftpSession && sftpEntries.length > 0 && sftpEntries.map((entry) => {
-                return (
-                  <div
-                    key={entry.path}
-                    className={`sidebar-row sidebar-sftp-entry ${selectedSftpEntryPaths.includes(entry.path) ? 'active' : ''}`}
-                    role="button"
-                    tabIndex={0}
-                    title="Drag to Finder"
-                    onPointerDown={(event) => handleNativeDragPointerDown(event, entry, 'row')}
-                    onClick={(event) => selectSftpEntry(entry, event)}
-                    onContextMenu={(event) => {
-                      event.preventDefault()
-                      event.stopPropagation()
-                      setSelectedSftpEntryPaths(selectedOrEntry(entry).map((item) => item.path))
-                      setSftpContextMenu({ entry, x: event.clientX, y: event.clientY })
-                    }}
-                    onDoubleClick={() => {
-                      handleSftpEntryOpen(entry)
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') {
-                        handleSftpEntryOpen(entry)
-                      }
-                      if (event.key === 'Delete' || event.key === 'Backspace') {
-                        event.preventDefault()
-                        setSelectedSftpEntryPaths(selectedOrEntry(entry).map((item) => item.path))
-                        void handleDeleteEntry(selectedOrEntry(entry))
-                      }
-                    }}
-                  >
-                    <div className="sidebar-row-main">
-                      <span className="sidebar-row-icon">
-                        {entry.kind === 'folder' ? <FolderClosed size={13} /> : <FileText size={13} />}
+              {selectedSftpSession && sftpEntries.length > 0 && (
+                <div
+                  className="sidebar-sftp-table"
+                  role="table"
+                  aria-label="Remote SFTP directory"
+                  style={sftpTableStyle}
+                >
+                  <div className="sidebar-sftp-table-header" role="row">
+                    {SFTP_TABLE_COLUMN_LABELS.map((label, index) => (
+                      <span key={label} className="file-table-header-cell">
+                        {label}
+                        <button
+                          className="file-table-column-resizer"
+                          type="button"
+                          aria-label={`Resize ${label} column`}
+                          onPointerDown={(event) => handleSftpColumnResizeStart(index, event)}
+                        />
                       </span>
-                      <div className="sidebar-row-copy">
-                        <strong>{entry.name}</strong>
-                        <span>{entry.kind === 'folder' ? 'Folder' : entry.sizeLabel}</span>
-                      </div>
-                    </div>
-                    <button
-                      className="sidebar-row-drag-handle"
-                      data-no-row-drag="true"
-                      type="button"
-                      title="Drag selected item(s) to Finder"
-                      aria-label={`Drag ${entry.name} to Finder`}
-                      onPointerDown={(event) => handleNativeDragPointerDown(event, entry, 'handle')}
-                      onClick={(event) => {
-                        event.preventDefault()
-                        event.stopPropagation()
-                        setSelectedSftpEntryPaths(selectedOrEntry(entry).map((item) => item.path))
-                      }}
-                    >
-                      <ArrowDownToLine size={12} />
-                    </button>
+                    ))}
+                    <span aria-hidden="true" />
                   </div>
-                )
-              })}
+                  {sftpEntries.map((entry) => {
+                    const selected = selectedSftpEntryPaths.includes(entry.path)
+                    return (
+                      <div
+                        key={entry.path}
+                        className={`sidebar-sftp-table-row ${selected ? 'active' : ''}`}
+                        role="row"
+                        tabIndex={0}
+                        title="Drag to Finder"
+                        onPointerDown={(event) => handleNativeDragPointerDown(event, entry, 'row')}
+                        onClick={(event) => selectSftpEntry(entry, event)}
+                        onContextMenu={(event) => {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          setSelectedSftpEntryPaths(selectedOrEntry(entry).map((item) => item.path))
+                          setSftpContextMenu({ entry, x: event.clientX, y: event.clientY })
+                        }}
+                        onDoubleClick={() => {
+                          handleSftpEntryOpen(entry)
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            handleSftpEntryOpen(entry)
+                          }
+                          if (event.key === 'Delete' || event.key === 'Backspace') {
+                            event.preventDefault()
+                            setSelectedSftpEntryPaths(selectedOrEntry(entry).map((item) => item.path))
+                            void handleDeleteEntry(selectedOrEntry(entry))
+                          }
+                        }}
+                      >
+                        <span className="sidebar-sftp-name-cell" title={entry.name}>
+                          {entry.kind === 'folder' ? <FolderClosed size={13} /> : <FileText size={13} />}
+                          <span>{entry.name}</span>
+                        </span>
+                        <span>{remoteSizeKbLabel(entry)}</span>
+                        <span title={entry.modifiedLabel}>{entry.modifiedLabel}</span>
+                        <span>{entry.ownerLabel ?? ''}</span>
+                        <span>{entry.groupLabel ?? ''}</span>
+                        <span className="sidebar-sftp-access-cell">{entry.accessLabel ?? ''}</span>
+                        <button
+                          className="sidebar-sftp-table-drag"
+                          data-no-row-drag="true"
+                          type="button"
+                          title="Drag selected item(s) to Finder"
+                          aria-label={`Drag ${entry.name} to Finder`}
+                          onPointerDown={(event) => handleNativeDragPointerDown(event, entry, 'handle')}
+                          onClick={(event) => {
+                            event.preventDefault()
+                            event.stopPropagation()
+                            setSelectedSftpEntryPaths(selectedOrEntry(entry).map((item) => item.path))
+                          }}
+                        >
+                          <ArrowDownToLine size={12} />
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
               {selectedSftpSession && !sftpEntries.length && (
                 <div className="sidebar-empty-copy">
                   {sftpLoading ? 'Loading remote directory...' : sftpMessage || 'This directory is empty.'}

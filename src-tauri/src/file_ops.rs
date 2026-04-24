@@ -39,6 +39,12 @@ fn cancelled_transfers() -> &'static Mutex<HashSet<String>> {
     CANCELLED_TRANSFERS.get_or_init(|| Mutex::new(HashSet::new()))
 }
 
+fn clear_transfer_cancel(transfer_id: &str) {
+    if let Ok(mut cancelled) = cancelled_transfers().lock() {
+        cancelled.remove(transfer_id);
+    }
+}
+
 fn is_transfer_cancelled(transfer_id: &str) -> bool {
     let Ok(cancelled) = cancelled_transfers().lock() else {
         return false;
@@ -211,6 +217,7 @@ pub fn upload_remote_file(
                 .unwrap_or(0)
         )
     });
+    clear_transfer_cancel(&transfer_id);
 
     emit_transfer(
         app,
@@ -302,6 +309,7 @@ pub fn upload_remote_file(
                 "Upload complete",
                 None,
             );
+            clear_transfer_cancel(&transfer_id);
             Ok(())
         }
         Err(error) => {
@@ -318,6 +326,7 @@ pub fn upload_remote_file(
                 &error,
                 None,
             );
+            clear_transfer_cancel(&transfer_id);
             Err(error)
         }
     }
@@ -353,6 +362,7 @@ pub fn upload_local_file(
                 .unwrap_or(0)
         )
     });
+    clear_transfer_cancel(&transfer_id);
 
     emit_transfer(
         app,
@@ -439,6 +449,7 @@ pub fn upload_local_file(
                 "Upload complete",
                 Some(local_path.display().to_string()),
             );
+            clear_transfer_cancel(&transfer_id);
             Ok(())
         }
         Err(error) => {
@@ -455,6 +466,7 @@ pub fn upload_local_file(
                 &error,
                 Some(local_path.display().to_string()),
             );
+            clear_transfer_cancel(&transfer_id);
             Err(error)
         }
     }
@@ -651,6 +663,7 @@ pub fn download_remote_entry_to_path(
                 .unwrap_or(0)
         )
     });
+    clear_transfer_cancel(&transfer_id);
     let local_path = save_path.display().to_string();
 
     emit_transfer(
@@ -718,6 +731,7 @@ pub fn download_remote_entry_to_path(
                 },
                 Some(local_path.clone()),
             );
+            clear_transfer_cancel(&transfer_id);
             Ok(FileDownloadResult {
                 file_name: file_name.to_string(),
                 saved_to: local_path,
@@ -738,6 +752,7 @@ pub fn download_remote_entry_to_path(
                 &error,
                 Some(local_path),
             );
+            clear_transfer_cancel(&transfer_id);
             Err(error)
         }
     }
@@ -761,6 +776,7 @@ pub fn download_remote_file_to_path(
                 .unwrap_or(0)
         )
     });
+    clear_transfer_cancel(&transfer_id);
     let local_path = save_path.display().to_string();
 
     emit_transfer(
@@ -879,6 +895,7 @@ pub fn download_remote_file_to_path(
                 },
                 Some(local_path.clone()),
             );
+            clear_transfer_cancel(&transfer_id);
             Ok(FileDownloadResult {
                 file_name: file_name.to_string(),
                 saved_to: local_path,
@@ -899,6 +916,7 @@ pub fn download_remote_file_to_path(
                 &error,
                 Some(local_path),
             );
+            clear_transfer_cancel(&transfer_id);
             Err(error)
         }
     }
@@ -1056,6 +1074,9 @@ fn list_sftp_directory(
                 size_bytes: entry.len(),
                 size_label: format_size(entry.len()),
                 modified_label: format_system_time(entry.modified()),
+                owner_label: entry.uid().map(|uid| uid.to_string()),
+                group_label: entry.gid().map(|gid| gid.to_string()),
+                access_label: format_access_label(entry.file_type(), entry.permissions()),
             })
         })
         .collect();
@@ -1201,6 +1222,9 @@ fn parse_ftp_list_line(line: &str, current_path: &str) -> Option<RemoteFileEntry
         size_bytes,
         size_label: format_size(size_bytes),
         modified_label: parts[5..8].join(" "),
+        owner_label: Some(parts[2].to_string()),
+        group_label: Some(parts[3].to_string()),
+        access_label: Some(parts[0].to_string()),
     })
 }
 
@@ -1331,6 +1355,25 @@ fn format_system_time(timestamp: Option<SystemTime>) -> String {
 
 fn is_directory(file_type: Option<FileType>) -> bool {
     matches!(file_type, Some(FileType::Directory))
+}
+
+fn format_access_label(file_type: Option<FileType>, permissions: Option<u32>) -> Option<String> {
+    let permissions = permissions?;
+    let kind = if is_directory(file_type) { 'd' } else { '-' };
+    Some(format!(
+        "{}{}{}{}",
+        kind,
+        format_permission_triplet((permissions >> 6) & 0o7),
+        format_permission_triplet((permissions >> 3) & 0o7),
+        format_permission_triplet(permissions & 0o7),
+    ))
+}
+
+fn format_permission_triplet(bits: u32) -> String {
+    let read = if bits & 0o4 != 0 { 'r' } else { '-' };
+    let write = if bits & 0o2 != 0 { 'w' } else { '-' };
+    let execute = if bits & 0o1 != 0 { 'x' } else { '-' };
+    format!("{read}{write}{execute}")
 }
 
 fn sanitize_file_name(file_name: &str) -> String {

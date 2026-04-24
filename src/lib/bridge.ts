@@ -288,6 +288,9 @@ export async function listRemoteDirectory(session: SessionDefinition, path?: str
       kind: entry.kind,
       sizeLabel: entry.size,
       modifiedLabel: entry.modified,
+      ownerLabel: '',
+      groupLabel: '',
+      accessLabel: entry.kind === 'folder' ? 'drwxr-xr-x' : '-rw-r--r--',
     })),
   } satisfies RemoteDirectorySnapshot
 }

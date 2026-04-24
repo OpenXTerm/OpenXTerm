@@ -321,7 +321,7 @@ function isLiveTerminalKind(kind: SessionDefinition['kind']) {
 }
 
 function clampSidebarWidth(width: number) {
-  return Math.min(420, Math.max(220, Math.round(width)))
+  return Math.min(840, Math.max(220, Math.round(width)))
 }
 
 function buildLinkedSftpSession(session: SessionDefinition, linkedSshTabId?: string): SessionDefinition {

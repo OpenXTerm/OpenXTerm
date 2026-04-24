@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type CSSProperties,
   type DragEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react'
@@ -28,6 +29,10 @@ import { useOpenXTermStore } from '../../state/useOpenXTermStore'
 interface FileBrowserViewProps {
   session: SessionDefinition
 }
+
+const FILE_TABLE_COLUMN_LABELS = ['Name', 'Size (KB)', 'Last modified', 'Owner', 'Group', 'Access']
+const FILE_TABLE_DEFAULT_COLUMN_WIDTHS = [240, 82, 142, 86, 86, 108]
+const FILE_TABLE_MIN_COLUMN_WIDTHS = [150, 58, 96, 58, 58, 78]
 
 function parentPathOf(path: string) {
   if (!path || path === '/') {
@@ -57,6 +62,18 @@ function movedEnough(startX: number, startY: number, currentX: number, currentY:
 
 function itemCountLabel(count: number) {
   return count === 1 ? '1 item' : `${count} items`
+}
+
+function remoteSizeKbLabel(entry: RemoteFileEntry) {
+  if (entry.kind === 'folder') {
+    return ''
+  }
+
+  if (typeof entry.sizeBytes === 'number') {
+    return Math.max(1, Math.ceil(entry.sizeBytes / 1024)).toLocaleString()
+  }
+
+  return entry.sizeLabel === '--' ? '' : entry.sizeLabel
 }
 
 function isHiddenEntry(entry: RemoteFileEntry) {
@@ -112,6 +129,7 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
   const [message, setMessage] = useState('')
   const [dropActive, setDropActive] = useState(false)
   const [showHidden, setShowHidden] = useState(false)
+  const [columnWidths, setColumnWidths] = useState(FILE_TABLE_DEFAULT_COLUMN_WIDTHS)
 
   const visibleEntries = useMemo(() => {
     const entries = snapshot?.entries ?? []
@@ -126,6 +144,41 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
     [selectedPath, visibleEntries],
   )
   const pathToCopy = selectedEntry?.path ?? snapshot?.path ?? currentPath
+  const fileTableStyle = useMemo(
+    () => ({
+      '--file-table-columns': columnWidths.map((width) => `${width}px`).join(' '),
+    }) as CSSProperties,
+    [columnWidths],
+  )
+
+  function handleColumnResizeStart(index: number, event: ReactPointerEvent<HTMLButtonElement>) {
+    event.preventDefault()
+    event.stopPropagation()
+
+    const startX = event.clientX
+    const startWidth = columnWidths[index]
+
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const minWidth = FILE_TABLE_MIN_COLUMN_WIDTHS[index] ?? 58
+      const nextWidth = Math.max(minWidth, Math.round(startWidth + moveEvent.clientX - startX))
+      setColumnWidths((current) => current.map((width, columnIndex) => (
+        columnIndex === index ? nextWidth : width
+      )))
+    }
+
+    const handlePointerUp = () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp)
+  }
 
   const loadDirectory = useCallback(async (targetPath: string) => {
     setBusy(true)
@@ -553,9 +606,23 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
             <span>{session.kind.toUpperCase()} {snapshot?.path ?? currentPath}</span>
             {busy && <LoaderCircle size={14} className="spinning" />}
           </div>
-          <div className="file-list">
+          <div className="file-list" style={fileTableStyle}>
             {visibleEntries.length ? (
-              visibleEntries.map((entry) => (
+              <>
+                <div className="file-row file-row-header" role="row">
+                  {FILE_TABLE_COLUMN_LABELS.map((label, index) => (
+                    <span key={label} className="file-table-header-cell">
+                      {label}
+                      <button
+                        className="file-table-column-resizer"
+                        type="button"
+                        aria-label={`Resize ${label} column`}
+                        onPointerDown={(event) => handleColumnResizeStart(index, event)}
+                      />
+                    </span>
+                  ))}
+                </div>
+                {visibleEntries.map((entry) => (
                   <button
                     key={entry.path}
                     type="button"
@@ -572,10 +639,14 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
                       {entry.kind === 'folder' ? <Folder size={14} /> : <FileText size={14} />}
                       <span>{entry.name}</span>
                     </div>
-                    <span>{entry.sizeLabel}</span>
+                    <span>{remoteSizeKbLabel(entry)}</span>
                     <span>{entry.modifiedLabel}</span>
+                    <span>{entry.ownerLabel ?? ''}</span>
+                    <span>{entry.groupLabel ?? ''}</span>
+                    <span>{entry.accessLabel ?? ''}</span>
                   </button>
-              ))
+                ))}
+              </>
             ) : (
               <div className="file-empty">
                 {snapshot?.entries.length && !showHidden
@@ -600,6 +671,9 @@ path: ${selectedEntry.path}
 type: ${selectedEntry.kind}
 size: ${selectedEntry.sizeLabel}
 modified: ${selectedEntry.modifiedLabel}
+owner: ${selectedEntry.ownerLabel ?? '-'}
+group: ${selectedEntry.groupLabel ?? '-'}
+access: ${selectedEntry.accessLabel ?? '-'}
 drag out: ${selectedEntry.kind === 'file' ? 'native desktop drag export' : 'folders are not exported'}
 
 double-click a folder to open it`

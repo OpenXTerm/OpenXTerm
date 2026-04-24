@@ -130,6 +130,12 @@ pub struct RemoteFileEntry {
     pub size_bytes: Option<u64>,
     pub size_label: String,
     pub modified_label: String,
+    #[serde(default)]
+    pub owner_label: Option<String>,
+    #[serde(default)]
+    pub group_label: Option<String>,
+    #[serde(default)]
+    pub access_label: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -178,6 +178,9 @@ fn list_sftp_entries(ssh: &mut Session, remote_path: &str) -> Result<Vec<RemoteF
             size_bytes: size,
             size_label: format_size(size.unwrap_or(0)),
             modified_label: entry.long_name().unwrap_or("--").to_string(),
+            owner_label: entry.uid().map(|uid| uid.to_string()),
+            group_label: entry.gid().map(|gid| gid.to_string()),
+            access_label: format_access_label(entry.file_type(), entry.permissions()),
         });
     }
     entries.sort_by(|left, right| left.name.to_lowercase().cmp(&right.name.to_lowercase()));
@@ -219,4 +222,27 @@ fn format_size(size_bytes: u64) -> String {
     } else {
         format!("{value:.1} {}", UNITS[unit_index])
     }
+}
+
+fn format_access_label(file_type: Option<FileType>, permissions: Option<u32>) -> Option<String> {
+    let permissions = permissions?;
+    let kind = if matches!(file_type, Some(FileType::Directory)) {
+        'd'
+    } else {
+        '-'
+    };
+    Some(format!(
+        "{}{}{}{}",
+        kind,
+        format_permission_triplet((permissions >> 6) & 0o7),
+        format_permission_triplet((permissions >> 3) & 0o7),
+        format_permission_triplet(permissions & 0o7),
+    ))
+}
+
+fn format_permission_triplet(bits: u32) -> String {
+    let read = if bits & 0o4 != 0 { 'r' } else { '-' };
+    let write = if bits & 0o2 != 0 { 'w' } else { '-' };
+    let execute = if bits & 0o1 != 0 { 'x' } else { '-' };
+    format!("{read}{write}{execute}")
 }
