@@ -1,67 +1,78 @@
-# OpenXTerm
+<p align="center">
+  <img src="docs/logo.svg" alt="OpenXTerm" width="180">
+</p>
 
-OpenXTerm is an early-stage open-source desktop terminal workspace for macOS, Linux, and Windows.
+<h1 align="center">OpenXTerm</h1>
 
-It is inspired by the session-first workflow popularized by tools like MobaXterm: saved connections, folders, terminal tabs, SFTP sidebars, file transfers, macros, and live host status in one compact app.
+<p align="center">
+  Open-source desktop terminal workspace for saved sessions, SSH, SFTP, local shells, file transfers, macros, and live host status.
+</p>
 
-OpenXTerm is not affiliated with, endorsed by, or connected to MobaXterm or Mobatek.
+<p align="center">
+  <a href="https://github.com/OpenXTerm/OpenXTerm/actions/workflows/ci-cd.yml"><img alt="CI/CD" src="https://github.com/OpenXTerm/OpenXTerm/actions/workflows/ci-cd.yml/badge.svg"></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-green"></a>
+  <img alt="Status" src="https://img.shields.io/badge/status-alpha-f6c177">
+  <img alt="Tauri" src="https://img.shields.io/badge/Tauri-2-24c8db">
+  <img alt="Platforms" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-8ff0c1">
+  <img alt="Made with AI" src="https://img.shields.io/badge/Made%20with-AI-lightgrey">
+</p>
 
-## Status
+<p align="center">
+  <img src="docs/img_showcase.jpg" alt="OpenXTerm application screenshot">
+</p>
 
-This project is usable for development and testing, but it is still alpha software. Expect rough edges, missing packaging polish, and behavior that may change between releases.
+## What Is OpenXTerm?
 
-The current focus is:
+OpenXTerm is a Tauri 2 desktop application that brings a session-first terminal workflow to macOS, Linux, and Windows.
 
-- reliable SSH sessions
-- integrated SFTP workflows
-- session tree management
-- compact cross-platform desktop UX
-- local shell support
-- embedded SSH X11 forwarding diagnostics
+It is built for people who want saved connections, folders, terminal tabs, linked SFTP, file transfers, macros, and live status in one compact workspace.
+
+The project is inspired by the workflow popularized by MobaXterm, but OpenXTerm is independent software and is not affiliated with, endorsed by, or connected to MobaXterm or Mobatek.
+
+## Current Status
+
+OpenXTerm is alpha software. It is usable for development and testing, but APIs, storage shape, UI details, and packaging behavior may still change before a stable release.
+
+Downloads are not treated as stable releases yet. Until signing, notarization, and update channels are finished, use GitHub Actions artifacts or build locally from source.
+
+Current focus areas:
+
+- reliable SSH, Telnet, Serial, and local terminal sessions
+- linked SFTP workflows for live SSH sessions
+- Windows, macOS, and Linux packaging
+- native drag-out and transfer reliability
+- embedded SSH helper behavior
+- X11 forwarding diagnostics
+- UI simplification and density
+
+## Platform Status
+
+| Platform | Build | Notes |
+| --- | --- | --- |
+| Windows x64 | CI bundle | Primary active test target. |
+| Windows ARM64 | CI bundle | Build target exists; needs more device QA. |
+| macOS ARM64 | CI bundle | Unsigned and unnotarized. |
+| macOS x64 | CI bundle | Unsigned and unnotarized. |
+| Linux x64 | CI bundle | Requires normal Tauri/WebKit runtime packages. |
 
 ## Features
 
-- Local shell sessions for macOS, Linux, and Windows
-- Per-session local working directory for local shell profiles
-- SSH, Telnet, and Serial terminal transports
-- Session folders with tree view and drag/drop organization
-- Multiple simultaneous connections to the same saved session
-- MobaXterm `.mxtsessions` import for common session types
-- Linked SFTP sidebar for active SSH sessions
-- Remote file browsing, folder creation, delete, upload, and download
-- Batch transfer progress for multi-file operations
-- Native desktop drag-out from remote file browser
-- Restart/save prompt when terminal sessions stop
-- Terminal search from `Ctrl+F` / `Cmd+F`, topbar search, and terminal menu actions
-- Per-session terminal font, size, foreground color, and background color
-- System font picker in the session editor
-- Live lower status bar with host, user, uptime, CPU history, memory, disk, network, and latency when available
-- Live SSH tabs powered by an embedded `libssh-rs` backend
-- SSH status gathered through embedded helper SSH sessions
-- Linked SFTP handled through embedded helper SSH sessions
-- Clickable non-macOS topbar menus with app-level actions for Terminal, Sessions, View, Tools, Macros, and Help
-- Optional app lock through platform authentication where supported
-- Embedded SSH X11 forwarding bridge plus diagnostics for local X server setups
-- Error-only frontend console logging for status, transfers, terminal launch/input, and file-browser failures
-
-## Known Limits
-
-- The app is not a finished MobaXterm clone. It covers a focused subset and is evolving quickly.
-- X11 forwarding uses the embedded SSH runtime and still requires a working local X server such as XQuartz on macOS, Xorg/XWayland on Linux, or a Windows X server.
-- Remote status metrics are best-effort and depend on the remote OS and available shell tools.
-- Linked SFTP and live status can reuse an interactively entered SSH password only while the originating SSH tab is still connected; after that, helper reconnects need a saved password, private key, or SSH agent auth.
-- SFTP is actively improving; authentication reuse and edge-case handling are still areas to keep testing carefully.
-- Packaging, signing, and distribution workflows still need a dedicated release pass.
-- There is no broad automated test suite yet.
-- Cross-platform copy/paste and resize still require manual QA passes on real macOS, Linux, and Windows machines. The current checklist lives in [`docs/qa/v0.2-core-reliability.md`](docs/qa/v0.2-core-reliability.md).
-
-## Stack
-
-- Tauri 2
-- Rust backend
-- React 19 + TypeScript + Vite
-- Zustand
-- xterm.js
+- Saved session profiles for Local, SSH, Telnet, Serial, SFTP, and FTP-shaped workflows.
+- Session folders with tree organization and sidebar drag/drop.
+- Multiple simultaneous tabs for the same saved session.
+- Embedded `libssh-rs` SSH runtime for live SSH terminal tabs.
+- Linked SFTP discovery from active SSH tabs.
+- Remote file listing, folder creation, rename, delete, upload, download, and native drag-out.
+- Batch transfer aggregation for multi-file operations.
+- Per-session terminal appearance: font family, font size, foreground, and background.
+- System font picker for terminal profiles.
+- Terminal search, clear, reset, restart, and save-output flows.
+- Live lower status bar with host, user, uptime, CPU history, memory, disk, network, and latency when available.
+- MobaXterm `.mxtsessions` import for common session types.
+- Optional app lock through platform authentication where supported.
+- Embedded SSH X11 forwarding bridge and runtime diagnostics.
+- Error-only frontend console logging for operational failures.
+- GitHub Actions builds for Linux X64, Windows X64, Windows ARM64, macOS ARM64, and macOS X64.
 
 ## Quick Start
 
@@ -71,30 +82,16 @@ Install dependencies:
 npm install
 ```
 
-`npm install` also provisions the local `@tauri-apps/cli` binary used by the `tauri:dev` and `tauri:build` scripts, so CI and local builds do not depend on a globally installed Tauri CLI.
-
-On Windows, those scripts also check for a full Perl before launching Cargo because the embedded SSH runtime builds vendored OpenSSL through `libssh-rs`. If Perl is missing, install Strawberry Perl:
-
-```powershell
-winget install StrawberryPerl.StrawberryPerl
-```
-
 Run the desktop app:
 
 ```bash
-./script/build_and_run.sh
-```
-
-On Windows, run the same app through npm:
-
-```powershell
 npm run tauri:dev
 ```
 
-Verify launch without keeping the dev loop attached:
+Build the desktop app:
 
 ```bash
-./script/build_and_run.sh --verify
+npm run tauri:build
 ```
 
 Typecheck and lint:
@@ -103,47 +100,50 @@ Typecheck and lint:
 npm run check
 ```
 
-Build the Rust backend:
+Build the Rust backend directly:
 
 ```bash
 cargo build --manifest-path src-tauri/Cargo.toml
 ```
 
-For direct `cargo` commands on Windows, open a fresh terminal after installing Strawberry Perl so `perl.exe` is on `PATH`, or use the npm Tauri scripts which add the detected Perl path for the child process.
+### Windows Build Note
 
-On Windows, if `cargo build` fails with `LNK1104` against `target\\debug\\deps\\openxterm.exe`, a previously launched debug binary is still locked by the OS. Close the running app or build into a different target directory before retrying.
+The embedded SSH runtime builds vendored OpenSSL through `libssh-rs`, which needs a full Perl installation on Windows.
 
-## GitHub Actions
+The npm Tauri scripts run through [`script/run_tauri.mjs`](script/run_tauri.mjs). That wrapper checks for Perl before Cargo starts and prints install guidance if Perl is missing.
 
-The repository now includes a single CI/CD workflow at [`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml).
+Recommended Windows install:
 
-It currently does:
+```powershell
+winget install StrawberryPerl.StrawberryPerl
+```
 
-- `pull_request` and `push` to `main`:
-  - runs `npm run check`
-  - runs `cargo check --manifest-path src-tauri/Cargo.toml`
-  - builds Tauri bundles for:
-    - Linux X64
-    - Windows X64
-    - Windows ARM64
-    - macOS ARM64
-    - macOS X64
-- tag push matching `v*`:
-  - runs the same verification/build matrix
-  - publishes bundled artifacts to a GitHub Release
-- `workflow_dispatch`:
-  - allows manual execution of the same pipeline
+After installing Strawberry Perl, open a fresh terminal so `perl.exe` is visible in `PATH`.
 
-Current release behavior:
+## Security Note
 
-- artifacts are uploaded unsigned unless platform signing/notarization secrets are added later
-- the workflow publishes the contents of each platform bundle directory as release assets
+OpenXTerm is still alpha. Treat saved credentials and imported session data accordingly. Platform credential-store integration and release signing are not finished yet.
 
-## Development Notes
+## Development
 
-Fresh agents and contributors should start with [`AGENTS.md`](AGENTS.md). It is more detailed than this README and maps the current architecture, invariants, and common edit points.
+Useful commands:
 
-High-level map:
+```bash
+npm run check
+cargo check --manifest-path src-tauri/Cargo.toml
+cargo build --manifest-path src-tauri/Cargo.toml
+```
+
+On Unix-like systems, the helper script can start or verify the app:
+
+```bash
+./script/build_and_run.sh
+./script/build_and_run.sh --verify
+```
+
+Fresh contributors and coding agents should read [`AGENTS.md`](AGENTS.md). It documents current architecture, invariants, known fragile areas, and recommended edit points.
+
+## Project Structure
 
 ```text
 OpenXTerm/
@@ -167,12 +167,55 @@ OpenXTerm/
       runtime.rs
       storage.rs
       x11_support.rs
+  docs/
   script/
 ```
 
+## CI/CD
+
+The GitHub Actions workflow lives at [`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml).
+
+It currently runs verification and bundle builds for:
+
+- Linux X64
+- Windows X64
+- Windows ARM64
+- macOS ARM64
+- macOS X64
+
+CI/CD is manual-only: run the workflow from GitHub Actions with an existing `release_tag` and choose `release` or `prerelease`. The release job publishes bundle assets and generates release notes from the previous version tag. Current release assets are unsigned and unnotarized until signing secrets are added.
+
 ## Roadmap
 
-See [ROADMAP.md](ROADMAP.md) for the current release plan, stable-release blockers, and feature status.
+See [ROADMAP.md](ROADMAP.md) for the active release plan, stable-release blockers, and feature status.
+
+## FAQ
+
+**Is OpenXTerm a MobaXterm clone?**
+No. It is an independent open-source terminal workspace inspired by session-first tools. The goal is a focused cross-platform workflow, not a complete feature-for-feature clone.
+
+**Where are stable installers?**
+Not yet published. CI builds bundles for all target platforms, but release signing and notarization are still pending.
+
+**Can I contribute?**
+Yes. Start with [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md), and [ROADMAP.md](ROADMAP.md).
+
+## Known Limits
+
+- OpenXTerm is not a finished MobaXterm clone. It covers a focused subset and is evolving quickly.
+- X11 forwarding requires a working local X server: XQuartz on macOS, Xorg/XWayland on Linux, or a Windows X server such as VcXsrv or X410.
+- Remote status metrics are best-effort and depend on the remote OS and available shell tools.
+- Linked SFTP and live status can reuse an interactively entered SSH password only while the originating SSH tab is still connected.
+- Packaging, signing, notarization, and update channels still need a dedicated release pass.
+- There is no broad automated test suite yet. Manual QA remains important for terminal IO, native drag, and cross-platform packaging.
+
+## Trademark Notice
+
+OpenXTerm is independent software and is not affiliated with, endorsed by, sponsored by, or connected to Mobatek or MobaXterm.
+
+MobaXterm belongs to Mobatek:
+
+> © 2008 - 2026 Mobatek. MobaXterm® is a registered trademark of Mobatek.
 
 ## License
 

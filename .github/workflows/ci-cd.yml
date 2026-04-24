@@ -1,19 +1,28 @@
 name: CI/CD
 
+run-name: Release ${{ inputs.release_tag }} (${{ inputs.release_type }})
+
 on:
-  pull_request:
-  push:
-    branches:
-      - main
-    tags:
-      - 'v*'
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Existing release tag to build, for example v0.2.0'
+        required: true
+        type: string
+      release_type:
+        description: 'GitHub Release type'
+        required: true
+        default: prerelease
+        type: choice
+        options:
+          - prerelease
+          - release
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-cd-${{ github.ref }}
+  group: ci-cd-${{ inputs.release_tag }}
   cancel-in-progress: true
 
 env:
@@ -28,6 +37,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag }}
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -37,6 +49,35 @@ jobs:
 
       - name: Install frontend dependencies
         run: npm ci
+
+      - name: Validate release tag and version
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Release tag must use semver format like v0.2.0 or v0.2.0-alpha.1"
+            exit 1
+          fi
+
+          if ! git rev-parse -q --verify "refs/tags/$RELEASE_TAG" >/dev/null; then
+            echo "Tag $RELEASE_TAG does not exist in this repository"
+            exit 1
+          fi
+
+          TAG_VERSION="${RELEASE_TAG#v}"
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          TAURI_VERSION="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+
+          if [ "$TAG_VERSION" != "$PACKAGE_VERSION" ]; then
+            echo "Tag version v$TAG_VERSION does not match package.json version $PACKAGE_VERSION"
+            exit 1
+          fi
+
+          if [ "$TAG_VERSION" != "$TAURI_VERSION" ]; then
+            echo "Tag version v$TAG_VERSION does not match src-tauri/tauri.conf.json version $TAURI_VERSION"
+            exit 1
+          fi
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -103,6 +144,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -146,6 +189,24 @@ jobs:
       - name: Build Tauri bundle
         run: node script/run_tauri.mjs build --target ${{ matrix.target }}
 
+      - name: Create Windows portable ZIP
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $releaseDir = "src-tauri/target/${{ matrix.target }}/release"
+          $exe = Get-ChildItem -Path $releaseDir -Filter "*.exe" -File |
+            Where-Object { $_.DirectoryName -eq (Resolve-Path $releaseDir).Path } |
+            Select-Object -First 1
+
+          if (-not $exe) {
+            throw "Release executable not found in $releaseDir"
+          }
+
+          $stageDir = "release-portable/${{ matrix.artifact_name }}"
+          New-Item -ItemType Directory -Force -Path $stageDir | Out-Null
+          Copy-Item -LiteralPath $exe.FullName -Destination "$stageDir/OpenXTerm.exe"
+          Compress-Archive -Path "$stageDir/*" -DestinationPath "release-portable/${{ matrix.artifact_name }}-portable.zip" -Force
+
       - name: Upload bundle artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -153,16 +214,78 @@ jobs:
           if-no-files-found: error
           path: |
             src-tauri/target/${{ matrix.target }}/release/bundle/**
+            release-portable/*.zip
 
   release:
     name: Publish GitHub Release
-    if: startsWith(github.ref, 'refs/tags/v')
     needs: build
     runs-on: ubuntu-22.04
     permissions:
       contents: write
 
     steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag }}
+          fetch-depth: 0
+
+      - name: Generate release notes
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+
+          git fetch --force --tags
+
+          if ! git rev-parse -q --verify "refs/tags/$RELEASE_TAG" >/dev/null; then
+            echo "Tag $RELEASE_TAG does not exist in this repository"
+            exit 1
+          fi
+
+          mapfile -t VERSION_TAGS < <(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' | sort -V)
+          PREVIOUS_TAG=""
+          FOUND_TAG="0"
+
+          for TAG in "${VERSION_TAGS[@]}"; do
+            if [ "$TAG" = "$RELEASE_TAG" ]; then
+              FOUND_TAG="1"
+              break
+            fi
+
+            PREVIOUS_TAG="$TAG"
+          done
+
+          if [ "$FOUND_TAG" != "1" ]; then
+            echo "Tag $RELEASE_TAG was not found in the version tag list"
+            exit 1
+          fi
+
+          if [ -n "$PREVIOUS_TAG" ]; then
+            gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+              -f tag_name="$RELEASE_TAG" \
+              -f previous_tag_name="$PREVIOUS_TAG" \
+              --jq '.body // ""' > generated-release-notes.md
+          else
+            gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+              -f tag_name="$RELEASE_TAG" \
+              --jq '.body // ""' > generated-release-notes.md
+          fi
+
+          {
+            echo "Built from tag \`$RELEASE_TAG\`."
+
+            if [ -n "$PREVIOUS_TAG" ]; then
+              echo
+              echo "Changes since \`$PREVIOUS_TAG\`."
+            fi
+
+            echo
+            cat generated-release-notes.md
+          } > release-notes.md
+
       - name: Download bundled artifacts
         uses: actions/download-artifact@v4
         with:
@@ -171,7 +294,11 @@ jobs:
 
       - name: Publish release assets
         uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         with:
-          name: OpenXTerm ${{ github.ref_name }}
-          generate_release_notes: true
+          tag_name: ${{ inputs.release_tag }}
+          name: OpenXTerm ${{ inputs.release_tag }}
+          prerelease: ${{ inputs.release_type == 'prerelease' }}
+          body_path: release-notes.md
           files: release-assets/**/*
