@@ -4,10 +4,15 @@ OpenXTerm releases are manual and tag-based. Normal commits and pushed tags do n
 
 ## Release Flow
 
-1. Update the version in both files:
+1. Update the version in all app version files:
 
 ```json
 // package.json
+"version": "0.2.0"
+```
+
+```json
+// package-lock.json
 "version": "0.2.0"
 ```
 
@@ -16,10 +21,15 @@ OpenXTerm releases are manual and tag-based. Normal commits and pushed tags do n
 "version": "0.2.0"
 ```
 
+```toml
+# src-tauri/Cargo.toml
+version = "0.2.0"
+```
+
 2. Commit the version change:
 
 ```bash
-git add package.json src-tauri/tauri.conf.json
+git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
 git commit -m "Release v0.2.0"
 ```
 
@@ -63,9 +73,11 @@ Every run builds and publishes a GitHub Release for the selected tag. Use `relea
 
 ## Version Rule
 
-The workflow fails early if the tag version does not match both app version files:
+The workflow fails early if the tag version does not match all app version files:
 
 - `package.json`
+- `package-lock.json`
 - `src-tauri/tauri.conf.json`
+- `src-tauri/Cargo.toml`
 
-Example: tag `v0.2.0` requires both files to contain `0.2.0`.
+Example: tag `v0.2.0` requires all three files to contain `0.2.0`.

@@ -67,15 +67,27 @@ jobs:
 
           TAG_VERSION="${RELEASE_TAG#v}"
           PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          PACKAGE_LOCK_VERSION="$(node -p "require('./package-lock.json').version")"
           TAURI_VERSION="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          CARGO_VERSION="$(grep '^version = ' src-tauri/Cargo.toml | head -n 1 | sed -E 's/version = \"([^\"]+)\"/\\1/')"
 
           if [ "$TAG_VERSION" != "$PACKAGE_VERSION" ]; then
             echo "Tag version v$TAG_VERSION does not match package.json version $PACKAGE_VERSION"
             exit 1
           fi
 
+          if [ "$TAG_VERSION" != "$PACKAGE_LOCK_VERSION" ]; then
+            echo "Tag version v$TAG_VERSION does not match package-lock.json version $PACKAGE_LOCK_VERSION"
+            exit 1
+          fi
+
           if [ "$TAG_VERSION" != "$TAURI_VERSION" ]; then
             echo "Tag version v$TAG_VERSION does not match src-tauri/tauri.conf.json version $TAURI_VERSION"
+            exit 1
+          fi
+
+          if [ "$TAG_VERSION" != "$CARGO_VERSION" ]; then
+            echo "Tag version v$TAG_VERSION does not match src-tauri/Cargo.toml version $CARGO_VERSION"
             exit 1
           fi
 
