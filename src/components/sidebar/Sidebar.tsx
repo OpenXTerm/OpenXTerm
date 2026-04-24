@@ -334,7 +334,7 @@ export function Sidebar({
   const selectedSftpSnapshot = selectedSftpSession ? snapshotsBySessionId[selectedSftpSession.id] : undefined
   const sftpTableStyle = useMemo(
     () => ({
-      '--sftp-table-columns': `${sftpColumnWidths.map((width) => `${width}px`).join(' ')} 28px`,
+      '--sftp-table-columns': sftpColumnWidths.map((width) => `${width}px`).join(' '),
     }) as CSSProperties,
     [sftpColumnWidths],
   )
@@ -1429,6 +1429,11 @@ export function Sidebar({
 
       started = true
       cleanupDragListeners()
+      try {
+        event.currentTarget.releasePointerCapture(event.pointerId)
+      } catch {
+        // The pointer may already be released by the webview when native drag starts.
+      }
       moveEvent.preventDefault()
       moveEvent.stopPropagation()
       const dragEntries = selectedOrEntry(entry)
@@ -1457,6 +1462,7 @@ export function Sidebar({
           remotePath: item.path,
           fileName: item.name,
           kind: item.kind,
+          sizeBytes: item.sizeBytes,
           transferId: batchTransferId
             ? createBatchChildTransferId(batchTransferId, index, dragEntries.length)
             : undefined,
@@ -1466,11 +1472,11 @@ export function Sidebar({
       )
         .then((dragStarted) => {
           if (!dragStarted) {
-            setSftpMessage('Native macOS drag-out could not start for the selected item(s).')
+            setSftpMessage('Native drag-out could not start for the selected item(s).')
           }
         })
         .catch((error) => {
-          setSftpMessage(error instanceof Error ? error.message : 'Native macOS drag-out failed.')
+          setSftpMessage(error instanceof Error ? error.message : 'Native drag-out failed.')
         })
     }
 
@@ -1491,6 +1497,11 @@ export function Sidebar({
       if (source === 'handle') {
         moveEvent.preventDefault()
         moveEvent.stopPropagation()
+      }
+      try {
+        event.currentTarget.releasePointerCapture(event.pointerId)
+      } catch {
+        // Some webview edge cases release capture before pointerup reaches this handler.
       }
       cleanupDragListeners()
     }
@@ -1769,7 +1780,6 @@ export function Sidebar({
                         />
                       </span>
                     ))}
-                    <span aria-hidden="true" />
                   </div>
                   {sftpEntries.map((entry) => {
                     const selected = selectedSftpEntryPaths.includes(entry.path)
@@ -1779,7 +1789,6 @@ export function Sidebar({
                         className={`sidebar-sftp-table-row ${selected ? 'active' : ''}`}
                         role="row"
                         tabIndex={0}
-                        title="Drag to Finder"
                         onPointerDown={(event) => handleNativeDragPointerDown(event, entry, 'row')}
                         onClick={(event) => selectSftpEntry(entry, event)}
                         onContextMenu={(event) => {
@@ -1811,21 +1820,6 @@ export function Sidebar({
                         <span>{entry.ownerLabel ?? ''}</span>
                         <span>{entry.groupLabel ?? ''}</span>
                         <span className="sidebar-sftp-access-cell">{entry.accessLabel ?? ''}</span>
-                        <button
-                          className="sidebar-sftp-table-drag"
-                          data-no-row-drag="true"
-                          type="button"
-                          title="Drag selected item(s) to Finder"
-                          aria-label={`Drag ${entry.name} to Finder`}
-                          onPointerDown={(event) => handleNativeDragPointerDown(event, entry, 'handle')}
-                          onClick={(event) => {
-                            event.preventDefault()
-                            event.stopPropagation()
-                            setSelectedSftpEntryPaths(selectedOrEntry(entry).map((item) => item.path))
-                          }}
-                        >
-                          <ArrowDownToLine size={12} />
-                        </button>
                       </div>
                     )
                   })}

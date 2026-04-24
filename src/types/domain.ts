@@ -200,6 +200,7 @@ export interface RemoteDragEntry {
   remotePath: string
   fileName: string
   kind: 'folder' | 'file'
+  sizeBytes?: number
   transferId?: string
 }
 

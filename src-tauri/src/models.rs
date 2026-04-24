@@ -158,6 +158,8 @@ pub struct RemoteDragEntry {
     pub remote_path: String,
     pub file_name: String,
     pub kind: String,
+    #[serde(default)]
+    pub size_bytes: Option<u64>,
     pub transfer_id: Option<String>,
 }
 

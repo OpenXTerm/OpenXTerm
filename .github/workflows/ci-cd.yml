@@ -144,7 +144,7 @@ jobs:
             wget
 
       - name: Build Tauri bundle
-        run: npm run tauri:build -- --target ${{ matrix.target }}
+        run: node script/run_tauri.mjs build --target ${{ matrix.target }}
 
       - name: Upload bundle artifacts
         uses: actions/upload-artifact@v4

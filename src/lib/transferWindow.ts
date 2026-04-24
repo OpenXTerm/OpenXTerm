@@ -27,6 +27,10 @@ export function requestTransferWindow(item: TransferProgressPayload) {
     return
   }
 
+  if (item.purpose === 'drag-export') {
+    return
+  }
+
   if (isBatchChildTransferId(item.transferId)) {
     return
   }

@@ -11,8 +11,8 @@
     "check": "tsc -b && eslint .",
     "lint": "eslint .",
     "preview": "vite preview --host 127.0.0.1 --port 4173",
-    "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:dev": "node script/run_tauri.mjs dev",
+    "tauri:build": "node script/run_tauri.mjs build"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.8.0",

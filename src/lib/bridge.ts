@@ -417,6 +417,7 @@ export async function startNativeFileDrag(
   session: SessionDefinition,
   remotePath: string,
   fileName: string,
+  sizeBytes: number | undefined,
   clientX: number,
   clientY: number,
 ) {
@@ -424,7 +425,7 @@ export async function startNativeFileDrag(
     return false
   }
 
-  return invoke<boolean>('start_native_file_drag', { session, remotePath, fileName, clientX, clientY })
+  return invoke<boolean>('start_native_file_drag', { session, remotePath, fileName, sizeBytes, clientX, clientY })
 }
 
 export async function startNativeEntriesDrag(

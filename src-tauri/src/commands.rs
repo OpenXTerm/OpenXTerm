@@ -350,6 +350,7 @@ pub fn start_native_file_drag(
     session: SessionDefinition,
     remote_path: String,
     file_name: String,
+    size_bytes: Option<u64>,
     client_x: f64,
     client_y: f64,
 ) -> Result<bool, String> {
@@ -359,6 +360,7 @@ pub fn start_native_file_drag(
         &session,
         &remote_path,
         &file_name,
+        size_bytes,
         client_x,
         client_y,
     )

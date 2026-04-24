@@ -73,10 +73,22 @@ npm install
 
 `npm install` also provisions the local `@tauri-apps/cli` binary used by the `tauri:dev` and `tauri:build` scripts, so CI and local builds do not depend on a globally installed Tauri CLI.
 
+On Windows, those scripts also check for a full Perl before launching Cargo because the embedded SSH runtime builds vendored OpenSSL through `libssh-rs`. If Perl is missing, install Strawberry Perl:
+
+```powershell
+winget install StrawberryPerl.StrawberryPerl
+```
+
 Run the desktop app:
 
 ```bash
 ./script/build_and_run.sh
+```
+
+On Windows, run the same app through npm:
+
+```powershell
+npm run tauri:dev
 ```
 
 Verify launch without keeping the dev loop attached:
@@ -96,6 +108,8 @@ Build the Rust backend:
 ```bash
 cargo build --manifest-path src-tauri/Cargo.toml
 ```
+
+For direct `cargo` commands on Windows, open a fresh terminal after installing Strawberry Perl so `perl.exe` is on `PATH`, or use the npm Tauri scripts which add the detected Perl path for the child process.
 
 On Windows, if `cargo build` fails with `LNK1104` against `target\\debug\\deps\\openxterm.exe`, a previously launched debug binary is still locked by the OS. Close the running app or build into a different target directory before retrying.
 

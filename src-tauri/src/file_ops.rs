@@ -1399,7 +1399,7 @@ fn emit_transfer(
     message: &str,
     local_path: Option<String>,
 ) {
-    if state == "queued" && !is_batch_child_transfer_id(transfer_id) {
+    if state == "queued" && purpose != "drag-export" && !is_batch_child_transfer_id(transfer_id) {
         reveal_transfer_window(app, transfer_id, file_name);
     }
 

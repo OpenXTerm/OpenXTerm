@@ -492,7 +492,7 @@ button {
 .sidebar-sftp-table-header,
 .sidebar-sftp-table-row {
   display: grid;
-  grid-template-columns: var(--sftp-table-columns, 220px 82px 132px 82px 82px 104px 28px);
+  grid-template-columns: var(--sftp-table-columns, 220px 82px 132px 82px 82px 104px);
   gap: 8px;
   align-items: center;
   width: max-content;
@@ -582,23 +582,6 @@ button {
 
 .sidebar-sftp-access-cell {
   font-family: 'SF Mono', 'JetBrains Mono', Menlo, monospace;
-}
-
-.sidebar-sftp-table-drag {
-  width: 22px;
-  height: 22px;
-  display: inline-grid;
-  place-items: center;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: transparent;
-  color: #7b8b90;
-}
-
-.sidebar-sftp-table-drag:hover {
-  border-color: #2d6a56;
-  background: #18302a;
-  color: #8ff0c1;
 }
 
 .sidebar-row.active,

@@ -504,6 +504,8 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
     setSelectedPath(entry.path)
     const startX = event.clientX
     const startY = event.clientY
+    const dragButton = event.currentTarget
+    const pointerId = event.pointerId
     let started = false
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
@@ -514,7 +516,14 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
       started = true
       window.removeEventListener('pointermove', handlePointerMove)
       window.removeEventListener('pointerup', handlePointerUp)
-      void startNativeFileDrag(session, entry.path, entry.name, moveEvent.clientX, moveEvent.clientY)
+      try {
+        dragButton.releasePointerCapture(pointerId)
+      } catch {
+        // Native drag can outlive the webview pointer capture on Windows.
+      }
+      moveEvent.preventDefault()
+      moveEvent.stopPropagation()
+      void startNativeFileDrag(session, entry.path, entry.name, entry.sizeBytes, moveEvent.clientX, moveEvent.clientY)
         .then((dragStarted) => {
           if (!dragStarted) {
             setMessage('Native drag-out could not start for this file.')
@@ -527,6 +536,11 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
     }
 
     const handlePointerUp = () => {
+      try {
+        dragButton.releasePointerCapture(pointerId)
+      } catch {
+        // The pointer may already be released when drag never starts.
+      }
       window.removeEventListener('pointermove', handlePointerMove)
       window.removeEventListener('pointerup', handlePointerUp)
     }

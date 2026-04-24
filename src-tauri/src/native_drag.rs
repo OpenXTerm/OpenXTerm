@@ -1,21 +1,22 @@
 use std::{
+    ffi::c_void,
     ffi::{c_char, CStr},
+    io::{Read, Seek, SeekFrom},
     path::PathBuf,
     sync::OnceLock,
 };
 
-#[cfg(target_os = "macos")]
-use std::ffi::c_void;
 #[cfg(target_os = "windows")]
 use std::{
     ffi::OsStr,
-    fs,
     mem::{size_of, ManuallyDrop},
     os::windows::ffi::OsStrExt,
     ptr,
     sync::Mutex,
 };
 
+#[cfg(target_os = "windows")]
+use libssh_rs::{OpenFlags, Sftp, SftpFile};
 use tauri::{AppHandle, Window};
 #[cfg(target_os = "windows")]
 use windows::Win32::{
@@ -28,8 +29,9 @@ use windows::Win32::{
     System::{
         Com::{
             IAdviseSink, IDataObject, IDataObject_Impl, IEnumFORMATETC, IEnumFORMATETC_Impl,
-            IEnumSTATDATA, DATADIR_GET, FORMATETC, STGMEDIUM, STGMEDIUM_0, TYMED_HGLOBAL,
-            TYMED_ISTREAM,
+            IEnumSTATDATA, ISequentialStream_Impl, IStream, IStream_Impl, DATADIR_GET, FORMATETC,
+            LOCKTYPE, STATFLAG, STATSTG, STGC, STGMEDIUM, STGMEDIUM_0, STGTY_STREAM, STREAM_SEEK,
+            STREAM_SEEK_CUR, STREAM_SEEK_END, STREAM_SEEK_SET, TYMED_HGLOBAL, TYMED_ISTREAM,
         },
         DataExchange::RegisterClipboardFormatW,
         Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE, GMEM_ZEROINIT},
@@ -37,13 +39,15 @@ use windows::Win32::{
         SystemServices::{MK_LBUTTON, MODIFIERKEYS_FLAGS},
     },
     UI::Shell::{
-        SHCreateMemStream, CFSTR_FILECONTENTS, CFSTR_FILEDESCRIPTORW, FD_ATTRIBUTES, FD_PROGRESSUI,
+        CFSTR_FILECONTENTS, CFSTR_FILEDESCRIPTORW, FD_ATTRIBUTES, FD_FILESIZE, FD_PROGRESSUI,
         FD_UNICODE, FILEDESCRIPTORW,
     },
 };
 #[cfg(target_os = "windows")]
 use windows_core::{implement, Error as WindowsError, BOOL, HRESULT};
 
+#[cfg(target_os = "windows")]
+use crate::runtime::open_embedded_sftp;
 use crate::{
     file_ops,
     models::{RemoteDragEntry, SessionDefinition},
@@ -72,6 +76,7 @@ pub fn start_native_file_drag(
     session: &SessionDefinition,
     remote_path: &str,
     file_name: &str,
+    size_bytes: Option<u64>,
     client_x: f64,
     client_y: f64,
 ) -> Result<bool, String> {
@@ -85,6 +90,7 @@ pub fn start_native_file_drag(
             remote_path: remote_path.to_string(),
             file_name: file_name.to_string(),
             kind: "file".into(),
+            size_bytes,
             transfer_id: None,
         }],
         client_x,
@@ -130,6 +136,7 @@ fn start_native_file_drag_impl(
             remote_path: entry.remote_path.clone(),
             file_name: entry.file_name.clone(),
             kind: entry.kind.clone(),
+            size_bytes: entry.size_bytes,
             transfer_id: entry
                 .transfer_id
                 .clone()
@@ -156,7 +163,7 @@ fn start_native_file_drag_impl(
 
 #[cfg(target_os = "windows")]
 fn start_native_file_drag_impl(
-    app: &AppHandle,
+    _app: &AppHandle,
     _window: &Window,
     session: &SessionDefinition,
     entries: &[RemoteDragEntry],
@@ -169,8 +176,7 @@ fn start_native_file_drag_impl(
 
     let drag_entries = entries
         .iter()
-        .enumerate()
-        .map(|(index, entry)| {
+        .map(|entry| {
             if entry.kind != "file" {
                 return Err("Windows drag-out currently exports files only.".to_string());
             }
@@ -178,16 +184,13 @@ fn start_native_file_drag_impl(
             Ok(WindowsVirtualDragEntry {
                 remote_path: entry.remote_path.clone(),
                 file_name: entry.file_name.clone(),
-                transfer_id: entry
-                    .transfer_id
-                    .clone()
-                    .unwrap_or_else(|| format!("native-drag-{}-{index}", uuid_like_stamp())),
+                size_bytes: entry.size_bytes,
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
 
     let data_object: IDataObject =
-        WindowsVirtualFileDataObject::new(app.clone(), session.clone(), drag_entries).into();
+        WindowsVirtualFileDataObject::new(session.clone(), drag_entries).into();
     let drop_source: IDropSource = WindowsDropSource.into();
     let mut effect = DROPEFFECT(0);
     let result = unsafe { DoDragDrop(&data_object, &drop_source, DROPEFFECT_COPY, &mut effect) };
@@ -275,6 +278,7 @@ struct NativePromiseEntry {
     remote_path: String,
     file_name: String,
     kind: String,
+    size_bytes: Option<u64>,
     transfer_id: String,
 }
 
@@ -297,6 +301,7 @@ fn remote_file_name(path: &str) -> String {
         .to_string()
 }
 
+#[cfg(target_os = "macos")]
 fn uuid_like_stamp() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -311,31 +316,20 @@ fn uuid_like_stamp() -> String {
 struct WindowsVirtualDragEntry {
     remote_path: String,
     file_name: String,
-    transfer_id: String,
+    size_bytes: Option<u64>,
 }
 
 #[cfg(target_os = "windows")]
 #[implement(IDataObject)]
 struct WindowsVirtualFileDataObject {
-    app: AppHandle,
     session: SessionDefinition,
     entries: Vec<WindowsVirtualDragEntry>,
-    staged_paths: Mutex<Vec<Option<PathBuf>>>,
 }
 
 #[cfg(target_os = "windows")]
 impl WindowsVirtualFileDataObject {
-    fn new(
-        app: AppHandle,
-        session: SessionDefinition,
-        entries: Vec<WindowsVirtualDragEntry>,
-    ) -> Self {
-        Self {
-            app,
-            session,
-            staged_paths: Mutex::new(vec![None; entries.len()]),
-            entries,
-        }
+    fn new(session: SessionDefinition, entries: Vec<WindowsVirtualDragEntry>) -> Self {
+        Self { session, entries }
     }
 
     fn supported_formats() -> [FORMATETC; 2] {
@@ -362,7 +356,7 @@ impl WindowsVirtualFileDataObject {
         let descriptors = self
             .entries
             .iter()
-            .map(|entry| build_windows_file_descriptor(&entry.file_name))
+            .map(|entry| build_windows_file_descriptor(&entry.file_name, entry.size_bytes))
             .collect::<Vec<_>>();
         let bytes = encode_file_group_descriptor(&descriptors);
         let hglobal = hglobal_from_bytes(&bytes)?;
@@ -376,18 +370,12 @@ impl WindowsVirtualFileDataObject {
 
     fn create_file_contents_medium(&self, index: i32) -> Result<STGMEDIUM, WindowsError> {
         let entry_index = usize::try_from(index).map_err(|_| WindowsError::from(DV_E_FORMATETC))?;
-        let staged_path = self.stage_file_for_contents(entry_index)?;
-        let bytes = fs::read(&staged_path).map_err(|error| {
-            WindowsError::new(
-                E_FAIL,
-                format!(
-                    "failed to read staged drag file {}: {error}",
-                    staged_path.display()
-                ),
-            )
-        })?;
-        let stream = unsafe { SHCreateMemStream(Some(&bytes)) }
-            .ok_or_else(|| WindowsError::new(E_FAIL, "failed to create Windows drag stream"))?;
+        let entry = self
+            .entries
+            .get(entry_index)
+            .ok_or_else(|| WindowsError::from(DV_E_FORMATETC))?
+            .clone();
+        let stream: IStream = WindowsRemoteFileStream::new(self.session.clone(), entry).into();
 
         Ok(STGMEDIUM {
             tymed: TYMED_ISTREAM.0 as u32,
@@ -397,33 +385,293 @@ impl WindowsVirtualFileDataObject {
             pUnkForRelease: ManuallyDrop::new(None),
         })
     }
+}
 
-    fn stage_file_for_contents(&self, entry_index: usize) -> Result<PathBuf, WindowsError> {
-        let mut staged_paths = self
-            .staged_paths
+#[cfg(target_os = "windows")]
+const WINDOWS_REMOTE_STREAM_CHUNK_SIZE: usize = 256 * 1024;
+
+#[cfg(target_os = "windows")]
+#[implement(IStream)]
+struct WindowsRemoteFileStream {
+    session: SessionDefinition,
+    entry: WindowsVirtualDragEntry,
+    state: Mutex<WindowsRemoteFileStreamState>,
+}
+
+#[cfg(target_os = "windows")]
+struct WindowsRemoteFileStreamState {
+    file: Option<SftpFile>,
+    sftp: Option<Sftp>,
+    position: u64,
+}
+
+#[cfg(target_os = "windows")]
+impl WindowsRemoteFileStream {
+    fn new(session: SessionDefinition, entry: WindowsVirtualDragEntry) -> Self {
+        Self {
+            session,
+            entry,
+            state: Mutex::new(WindowsRemoteFileStreamState {
+                file: None,
+                sftp: None,
+                position: 0,
+            }),
+        }
+    }
+
+    fn open_file(&self, state: &mut WindowsRemoteFileStreamState) -> Result<(), String> {
+        if state.file.is_some() {
+            return Ok(());
+        }
+
+        let sftp = open_embedded_sftp(&self.session, None, "Windows drag-out stream")?;
+        let mut file = sftp
+            .open(&self.entry.remote_path, OpenFlags::READ_ONLY, 0)
+            .map_err(|error| format!("failed to open remote file for drag-out: {error}"))?;
+        if state.position > 0 {
+            file.seek(SeekFrom::Start(state.position))
+                .map_err(|error| format!("failed to seek remote drag-out stream: {error}"))?;
+        }
+        state.file = Some(file);
+        state.sftp = Some(sftp);
+        Ok(())
+    }
+
+    fn read_remote(&self, buffer: &mut [u8]) -> Result<usize, String> {
+        let mut state = self
+            .state
             .lock()
-            .map_err(|_| WindowsError::new(E_FAIL, "failed to lock Windows drag cache"))?;
-        if let Some(path) = staged_paths.get(entry_index).and_then(|path| path.clone()) {
-            return Ok(path);
+            .map_err(|_| "failed to lock Windows drag-out stream".to_string())?;
+        self.open_file(&mut state)?;
+        let file = state
+            .file
+            .as_mut()
+            .ok_or_else(|| "Windows drag-out stream is not open".to_string())?;
+        let read = file
+            .read(buffer)
+            .map_err(|error| format!("failed to read remote drag-out stream: {error}"))?;
+        state.position = state.position.saturating_add(read as u64);
+        Ok(read)
+    }
+
+    fn seek_remote(&self, position: SeekFrom) -> Result<u64, String> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| "failed to lock Windows drag-out stream".to_string())?;
+        self.open_file(&mut state)?;
+        let file = state
+            .file
+            .as_mut()
+            .ok_or_else(|| "Windows drag-out stream is not open".to_string())?;
+        let position = file
+            .seek(position)
+            .map_err(|error| format!("failed to seek remote drag-out stream: {error}"))?;
+        state.position = position;
+        Ok(position)
+    }
+
+    fn current_position(&self) -> u64 {
+        self.state
+            .lock()
+            .map(|state| state.position)
+            .unwrap_or_default()
+    }
+
+    fn stream_error(message: impl AsRef<str>) -> HRESULT {
+        eprintln!(
+            "OpenXTerm Windows drag-out stream error: {}",
+            message.as_ref()
+        );
+        E_FAIL
+    }
+}
+
+#[cfg(target_os = "windows")]
+impl ISequentialStream_Impl for WindowsRemoteFileStream_Impl {
+    fn Read(&self, pv: *mut c_void, cb: u32, pcbread: *mut u32) -> HRESULT {
+        if !pcbread.is_null() {
+            unsafe {
+                *pcbread = 0;
+            }
+        }
+        if cb == 0 {
+            return S_OK;
+        }
+        if pv.is_null() {
+            return E_POINTER;
         }
 
-        let entry = self
-            .entries
-            .get(entry_index)
-            .ok_or_else(|| WindowsError::from(DV_E_FORMATETC))?;
-        let result = file_ops::prepare_remote_drag_file(
-            &self.app,
-            &self.session,
-            &entry.remote_path,
-            entry.transfer_id.clone(),
-        )
-        .map_err(|error| WindowsError::new(E_FAIL, error))?;
-        let path = PathBuf::from(result.saved_to);
-        if let Some(slot) = staged_paths.get_mut(entry_index) {
-            *slot = Some(path.clone());
+        let buffer = unsafe { std::slice::from_raw_parts_mut(pv as *mut u8, cb as usize) };
+        match self.read_remote(buffer) {
+            Ok(read) => {
+                if !pcbread.is_null() {
+                    unsafe {
+                        *pcbread = read as u32;
+                    }
+                }
+                if read == 0 {
+                    S_FALSE
+                } else {
+                    S_OK
+                }
+            }
+            Err(error) => WindowsRemoteFileStream::stream_error(error),
+        }
+    }
+
+    fn Write(&self, _pv: *const c_void, _cb: u32, pcbwritten: *mut u32) -> HRESULT {
+        if !pcbwritten.is_null() {
+            unsafe {
+                *pcbwritten = 0;
+            }
+        }
+        E_NOTIMPL
+    }
+}
+
+#[cfg(target_os = "windows")]
+impl IStream_Impl for WindowsRemoteFileStream_Impl {
+    fn Seek(
+        &self,
+        dlibmove: i64,
+        dworigin: STREAM_SEEK,
+        plibnewposition: *mut u64,
+    ) -> windows_core::Result<()> {
+        let seek_from = if dworigin == STREAM_SEEK_SET {
+            if dlibmove < 0 {
+                return Err(WindowsError::from(E_FAIL));
+            }
+            SeekFrom::Start(dlibmove as u64)
+        } else if dworigin == STREAM_SEEK_CUR {
+            SeekFrom::Current(dlibmove)
+        } else if dworigin == STREAM_SEEK_END {
+            SeekFrom::End(dlibmove)
+        } else {
+            return Err(WindowsError::from(E_FAIL));
+        };
+        let position = self
+            .seek_remote(seek_from)
+            .map_err(|error| WindowsError::new(E_FAIL, error))?;
+        if !plibnewposition.is_null() {
+            unsafe {
+                *plibnewposition = position;
+            }
+        }
+        Ok(())
+    }
+
+    fn SetSize(&self, _libnewsize: u64) -> windows_core::Result<()> {
+        Err(WindowsError::from(E_NOTIMPL))
+    }
+
+    fn CopyTo(
+        &self,
+        pstm: windows_core::Ref<'_, IStream>,
+        cb: u64,
+        pcbread: *mut u64,
+        pcbwritten: *mut u64,
+    ) -> windows_core::Result<()> {
+        let target = pstm.ok()?;
+        let mut total_read = 0u64;
+        let mut total_written = 0u64;
+        let mut buffer = vec![0u8; WINDOWS_REMOTE_STREAM_CHUNK_SIZE.min(cb as usize).max(1)];
+
+        while total_read < cb {
+            let remaining = (cb - total_read) as usize;
+            let requested = buffer.len().min(remaining);
+            let read = self
+                .read_remote(&mut buffer[..requested])
+                .map_err(|error| WindowsError::new(E_FAIL, error))?;
+            if read == 0 {
+                break;
+            }
+
+            total_read += read as u64;
+            let mut written = 0u32;
+            unsafe {
+                target
+                    .Write(
+                        buffer.as_ptr() as *const c_void,
+                        read as u32,
+                        Some(&mut written),
+                    )
+                    .ok()?;
+            }
+            total_written += written as u64;
+            if written < read as u32 {
+                break;
+            }
         }
 
-        Ok(path)
+        if !pcbread.is_null() {
+            unsafe {
+                *pcbread = total_read;
+            }
+        }
+        if !pcbwritten.is_null() {
+            unsafe {
+                *pcbwritten = total_written;
+            }
+        }
+        Ok(())
+    }
+
+    fn Commit(&self, _grfcommitflags: &STGC) -> windows_core::Result<()> {
+        Ok(())
+    }
+
+    fn Revert(&self) -> windows_core::Result<()> {
+        Err(WindowsError::from(E_NOTIMPL))
+    }
+
+    fn LockRegion(
+        &self,
+        _liboffset: u64,
+        _cb: u64,
+        _dwlocktype: &LOCKTYPE,
+    ) -> windows_core::Result<()> {
+        Err(WindowsError::from(E_NOTIMPL))
+    }
+
+    fn UnlockRegion(
+        &self,
+        _liboffset: u64,
+        _cb: u64,
+        _dwlocktype: u32,
+    ) -> windows_core::Result<()> {
+        Err(WindowsError::from(E_NOTIMPL))
+    }
+
+    fn Stat(&self, pstatstg: *mut STATSTG, _grfstatflag: &STATFLAG) -> windows_core::Result<()> {
+        if pstatstg.is_null() {
+            return Err(WindowsError::from(E_POINTER));
+        }
+        unsafe {
+            *pstatstg = STATSTG {
+                r#type: STGTY_STREAM.0 as u32,
+                cbSize: self.entry.size_bytes.unwrap_or(0),
+                ..Default::default()
+            };
+        }
+        Ok(())
+    }
+
+    fn Clone(&self) -> windows_core::Result<IStream> {
+        let stream: IStream =
+            WindowsRemoteFileStream::new(self.session.clone(), self.entry.clone()).into();
+        if self.current_position() == 0 {
+            return Ok(stream);
+        }
+
+        unsafe {
+            stream.Seek(
+                self.current_position() as i64,
+                STREAM_SEEK_SET,
+                Option::<*mut u64>::None,
+            )?;
+        }
+        Ok(stream)
     }
 }
 
@@ -626,7 +874,7 @@ fn windows_drag_formats() -> (u16, u16) {
 }
 
 #[cfg(target_os = "windows")]
-fn build_windows_file_descriptor(file_name: &str) -> FILEDESCRIPTORW {
+fn build_windows_file_descriptor(file_name: &str, size_bytes: Option<u64>) -> FILEDESCRIPTORW {
     const FILE_DESCRIPTOR_NAME_CAPACITY: usize = 260;
 
     let mut descriptor = FILEDESCRIPTORW {
@@ -634,6 +882,11 @@ fn build_windows_file_descriptor(file_name: &str) -> FILEDESCRIPTORW {
         dwFileAttributes: FILE_ATTRIBUTE_NORMAL.0,
         ..Default::default()
     };
+    if let Some(size_bytes) = size_bytes {
+        descriptor.dwFlags |= FD_FILESIZE.0 as u32;
+        descriptor.nFileSizeHigh = (size_bytes >> 32) as u32;
+        descriptor.nFileSizeLow = (size_bytes & 0xffff_ffff) as u32;
+    }
     let wide_name = wide_null(file_name);
     let name_len = wide_name
         .len()
