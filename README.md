@@ -17,7 +17,7 @@ The current focus is:
 - session tree management
 - compact cross-platform desktop UX
 - local shell support
-- standard SSH X11 forwarding diagnostics
+- embedded SSH X11 forwarding diagnostics
 
 ## Features
 
@@ -36,19 +36,20 @@ The current focus is:
 - Per-session terminal font, size, foreground color, and background color
 - System font picker in the session editor
 - Live lower status bar with host, user, uptime, CPU history, memory, disk, network, and latency when available
-- Windows SSH status fallback through a separate native `ssh2` probe when control-socket reuse is unavailable
-- Windows linked SFTP fallback through native `ssh2` when OpenSSH control-socket reuse is unavailable
+- Live SSH tabs powered by an embedded `libssh-rs` backend
+- SSH status gathered through embedded helper SSH sessions
+- Linked SFTP handled through embedded helper SSH sessions
 - Clickable non-macOS topbar menus with app-level actions for Terminal, Sessions, View, Tools, Macros, and Help
 - Optional app lock through platform authentication where supported
-- SSH X11 forwarding settings and diagnostics for local X server setups
+- Embedded SSH X11 forwarding bridge plus diagnostics for local X server setups
 - Error-only frontend console logging for status, transfers, terminal launch/input, and file-browser failures
 
 ## Known Limits
 
 - The app is not a finished MobaXterm clone. It covers a focused subset and is evolving quickly.
-- X11 forwarding uses standard OpenSSH `-X` / `-Y`; it still requires a working local X server such as XQuartz on macOS, Xorg/XWayland on Linux, or a Windows X server.
+- X11 forwarding uses the embedded SSH runtime and still requires a working local X server such as XQuartz on macOS, Xorg/XWayland on Linux, or a Windows X server.
 - Remote status metrics are best-effort and depend on the remote OS and available shell tools.
-- On Windows, interactive password entry in the terminal is not automatically reusable for linked SFTP or live status. Those helper connections need a saved password, private key, or SSH agent auth.
+- Linked SFTP and live status can reuse an interactively entered SSH password only while the originating SSH tab is still connected; after that, helper reconnects need a saved password, private key, or SSH agent auth.
 - SFTP is actively improving; authentication reuse and edge-case handling are still areas to keep testing carefully.
 - Packaging, signing, and distribution workflows still need a dedicated release pass.
 - There is no broad automated test suite yet.

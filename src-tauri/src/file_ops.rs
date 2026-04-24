@@ -2,13 +2,12 @@ use std::{
     fs,
     fs::File,
     io::{Read, Write},
-    net::TcpStream,
     path::{Path, PathBuf},
     process::Command,
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use ssh2::Session;
+use libssh_rs::{FileType, OpenFlags, Sftp};
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use time::{format_description::parse, OffsetDateTime};
 
@@ -16,22 +15,14 @@ use crate::models::{
     FileDownloadResult, RemoteDirectorySnapshot, RemoteFileEntry, SessionDefinition,
     TransferProgressPayload,
 };
-use crate::runtime::{ssh_control_path_for_tab, ssh_control_user_path_for_tab};
+use crate::runtime::open_embedded_sftp;
 
-const S_IFMT: u32 = 0o170000;
-const S_IFDIR: u32 = 0o040000;
 const TRANSFER_PROGRESS_EVENT: &str = "openxterm://transfer-progress";
 const TRANSFER_CHUNK_SIZE: usize = 256 * 1024;
-const MUX_FIELD_SEPARATOR: char = '\x1f';
-const MUX_RECORD_SEPARATOR: char = '\x1e';
 
-struct LinkedSshMux {
-    control_path: Option<PathBuf>,
-    target: String,
-    port: u16,
-    key_path: Option<PathBuf>,
+fn open_sftp(session: &SessionDefinition) -> Result<Sftp, String> {
+    open_embedded_sftp(session, None, "SFTP helper")
 }
-
 pub fn list_remote_directory(
     session: &SessionDefinition,
     path: Option<String>,
@@ -52,15 +43,8 @@ pub fn create_remote_directory(
 
     match session.kind.as_str() {
         "sftp" => {
-            if uses_linked_ssh_mux(session) {
-                return create_mux_directory(session, &remote_path);
-            }
-
-            let ssh = connect_ssh(session)?;
-            let sftp = ssh
-                .sftp()
-                .map_err(|error| format!("failed to open SFTP subsystem: {error}"))?;
-            sftp.mkdir(Path::new(&remote_path), 0o755)
+            let sftp = open_sftp(session)?;
+            sftp.create_dir(&remote_path, 0o755)
                 .map_err(|error| format!("failed to create remote directory: {error}"))?;
             Ok(())
         }
@@ -79,18 +63,11 @@ pub fn delete_remote_entry(
 ) -> Result<(), String> {
     match session.kind.as_str() {
         "sftp" => {
-            if uses_linked_ssh_mux(session) {
-                return delete_mux_entry(session, path, kind);
-            }
-
-            let ssh = connect_ssh(session)?;
-            let sftp = ssh
-                .sftp()
-                .map_err(|error| format!("failed to open SFTP subsystem: {error}"))?;
+            let sftp = open_sftp(session)?;
             if kind == "folder" {
-                delete_sftp_directory_recursive(&sftp, Path::new(path))?;
+                delete_sftp_directory_recursive(&sftp, path)?;
             } else {
-                sftp.unlink(Path::new(path))
+                sftp.remove_file(path)
                     .map_err(|error| format!("failed to remove remote file: {error}"))?;
             }
             Ok(())
@@ -106,16 +83,13 @@ pub fn delete_remote_entry(
     }
 }
 
-fn delete_sftp_directory_recursive(sftp: &ssh2::Sftp, path: &Path) -> Result<(), String> {
-    let entries = sftp.readdir(path).map_err(|error| {
-        format!(
-            "failed to list remote directory {} before delete: {error}",
-            path.display()
-        )
+fn delete_sftp_directory_recursive(sftp: &Sftp, path: &str) -> Result<(), String> {
+    let entries = sftp.read_dir(path).map_err(|error| {
+        format!("failed to list remote directory {path} before delete: {error}")
     })?;
 
-    for (entry_path, stat) in entries {
-        let Some(name) = entry_path.file_name().and_then(|value| value.to_str()) else {
+    for entry in entries {
+        let Some(name) = entry.name() else {
             continue;
         };
 
@@ -123,25 +97,17 @@ fn delete_sftp_directory_recursive(sftp: &ssh2::Sftp, path: &Path) -> Result<(),
             continue;
         }
 
-        let child_path = path.join(name);
-        if is_directory(stat.perm) {
+        let child_path = join_remote_path(path, name);
+        if is_directory(entry.file_type()) {
             delete_sftp_directory_recursive(sftp, &child_path)?;
         } else {
-            sftp.unlink(&child_path).map_err(|error| {
-                format!(
-                    "failed to remove remote file {}: {error}",
-                    child_path.display()
-                )
-            })?;
+            sftp.remove_file(&child_path)
+                .map_err(|error| format!("failed to remove remote file {child_path}: {error}"))?;
         }
     }
 
-    sftp.rmdir(path).map_err(|error| {
-        format!(
-            "failed to remove remote directory {}: {error}",
-            path.display()
-        )
-    })
+    sftp.remove_dir(path)
+        .map_err(|error| format!("failed to remove remote directory {path}: {error}"))
 }
 
 pub fn upload_remote_file(
@@ -180,11 +146,19 @@ pub fn upload_remote_file(
 
     let result = match session.kind.as_str() {
         "sftp" => {
-            if uses_linked_ssh_mux(session) {
-                let temp_path = temp_upload_path(file_name);
-                fs::write(&temp_path, bytes).map_err(|error| {
-                    format!("failed to stage upload {}: {error}", temp_path.display())
-                })?;
+            let sftp = open_sftp(session)?;
+            let mut file = sftp
+                .open(
+                    &remote_path,
+                    OpenFlags::CREATE | OpenFlags::WRITE_ONLY | OpenFlags::TRUNCATE,
+                    0o644,
+                )
+                .map_err(|error| format!("failed to create remote file: {error}"))?;
+            let mut transferred = 0u64;
+            for chunk in bytes.chunks(TRANSFER_CHUNK_SIZE) {
+                file.write_all(chunk)
+                    .map_err(|error| format!("failed to upload remote file: {error}"))?;
+                transferred += chunk.len() as u64;
                 emit_transfer(
                     app,
                     &transfer_id,
@@ -193,44 +167,13 @@ pub fn upload_remote_file(
                     "upload",
                     "upload",
                     "running",
-                    0,
+                    transferred,
                     Some(total_bytes),
-                    "Uploading through the active SSH session",
+                    "Uploading to remote host",
                     None,
                 );
-                let upload_result = upload_mux_path(session, &temp_path, &remote_path, false);
-                let _ = fs::remove_file(&temp_path);
-                upload_result?;
-                Ok(())
-            } else {
-                let ssh = connect_ssh(session)?;
-                let sftp = ssh
-                    .sftp()
-                    .map_err(|error| format!("failed to open SFTP subsystem: {error}"))?;
-                let mut file = sftp
-                    .create(Path::new(&remote_path))
-                    .map_err(|error| format!("failed to create remote file: {error}"))?;
-                let mut transferred = 0u64;
-                for chunk in bytes.chunks(TRANSFER_CHUNK_SIZE) {
-                    file.write_all(chunk)
-                        .map_err(|error| format!("failed to upload remote file: {error}"))?;
-                    transferred += chunk.len() as u64;
-                    emit_transfer(
-                        app,
-                        &transfer_id,
-                        file_name,
-                        &remote_path,
-                        "upload",
-                        "upload",
-                        "running",
-                        transferred,
-                        Some(total_bytes),
-                        "Uploading to remote host",
-                        None,
-                    );
-                }
-                Ok(())
             }
+            Ok(())
         }
         "ftp" => {
             let temp_path = temp_upload_path(file_name);
@@ -341,53 +284,32 @@ pub fn upload_local_file(
 
     let result = match session.kind.as_str() {
         "sftp" => {
-            if uses_linked_ssh_mux(session) {
-                emit_transfer(
+            let sftp = open_sftp(session)?;
+            let mut transferred = 0u64;
+            if metadata.is_dir() {
+                upload_sftp_directory_recursive(
                     app,
+                    &sftp,
+                    &local_path,
+                    &remote_path,
                     &transfer_id,
                     &file_name,
-                    &remote_path,
-                    "upload",
-                    "upload",
-                    "running",
-                    0,
-                    Some(total_bytes),
-                    "Uploading through the active SSH session",
-                    Some(local_path.display().to_string()),
-                );
-                upload_mux_path(session, &local_path, &remote_path, metadata.is_dir())?;
-                Ok(())
+                    total_bytes,
+                    &mut transferred,
+                )?;
             } else {
-                let ssh = connect_ssh(session)?;
-                let sftp = ssh
-                    .sftp()
-                    .map_err(|error| format!("failed to open SFTP subsystem: {error}"))?;
-                let mut transferred = 0u64;
-                if metadata.is_dir() {
-                    upload_sftp_directory_recursive(
-                        app,
-                        &sftp,
-                        &local_path,
-                        Path::new(&remote_path),
-                        &transfer_id,
-                        &file_name,
-                        total_bytes,
-                        &mut transferred,
-                    )?;
-                } else {
-                    upload_sftp_file_with_progress(
-                        app,
-                        &sftp,
-                        &local_path,
-                        Path::new(&remote_path),
-                        &transfer_id,
-                        &file_name,
-                        total_bytes,
-                        &mut transferred,
-                    )?;
-                }
-                Ok(())
+                upload_sftp_file_with_progress(
+                    app,
+                    &sftp,
+                    &local_path,
+                    &remote_path,
+                    &transfer_id,
+                    &file_name,
+                    total_bytes,
+                    &mut transferred,
+                )?;
             }
+            Ok(())
         }
         "ftp" => {
             if metadata.is_dir() {
@@ -450,15 +372,15 @@ pub fn upload_local_file(
 
 fn upload_sftp_directory_recursive(
     app: &AppHandle,
-    sftp: &ssh2::Sftp,
+    sftp: &Sftp,
     local_dir: &Path,
-    remote_dir: &Path,
+    remote_dir: &str,
     transfer_id: &str,
     display_name: &str,
     total_bytes: u64,
     transferred: &mut u64,
 ) -> Result<(), String> {
-    let _ = sftp.mkdir(remote_dir, 0o755);
+    let _ = sftp.create_dir(remote_dir, 0o755);
 
     let entries = fs::read_dir(local_dir)
         .map_err(|error| format!("failed to read {}: {error}", local_dir.display()))?;
@@ -466,7 +388,7 @@ fn upload_sftp_directory_recursive(
         let entry =
             entry.map_err(|error| format!("failed to read {}: {error}", local_dir.display()))?;
         let local_path = entry.path();
-        let remote_path = remote_dir.join(entry.file_name());
+        let remote_path = join_remote_path(remote_dir, &entry.file_name().to_string_lossy());
         let metadata = entry
             .metadata()
             .map_err(|error| format!("failed to read {}: {error}", local_path.display()))?;
@@ -501,9 +423,9 @@ fn upload_sftp_directory_recursive(
 
 fn upload_sftp_file_with_progress(
     app: &AppHandle,
-    sftp: &ssh2::Sftp,
+    sftp: &Sftp,
     local_path: &Path,
-    remote_path: &Path,
+    remote_path: &str,
     transfer_id: &str,
     display_name: &str,
     total_bytes: u64,
@@ -511,12 +433,13 @@ fn upload_sftp_file_with_progress(
 ) -> Result<(), String> {
     let mut source = File::open(local_path)
         .map_err(|error| format!("failed to open {}: {error}", local_path.display()))?;
-    let mut target = sftp.create(remote_path).map_err(|error| {
-        format!(
-            "failed to create remote file {}: {error}",
-            remote_path.display()
+    let mut target = sftp
+        .open(
+            remote_path,
+            OpenFlags::CREATE | OpenFlags::WRITE_ONLY | OpenFlags::TRUNCATE,
+            0o644,
         )
-    })?;
+        .map_err(|error| format!("failed to create remote file {remote_path}: {error}"))?;
     let mut buffer = vec![0u8; TRANSFER_CHUNK_SIZE];
 
     loop {
@@ -527,18 +450,15 @@ fn upload_sftp_file_with_progress(
             break;
         }
 
-        target.write_all(&buffer[..read]).map_err(|error| {
-            format!(
-                "failed to upload remote file {}: {error}",
-                remote_path.display()
-            )
-        })?;
+        target
+            .write_all(&buffer[..read])
+            .map_err(|error| format!("failed to upload remote file {remote_path}: {error}"))?;
         *transferred += read as u64;
         emit_transfer(
             app,
             transfer_id,
             display_name,
-            &remote_path.to_string_lossy(),
+            remote_path,
             "upload",
             "upload",
             "running",
@@ -659,57 +579,25 @@ pub fn download_remote_entry_to_path(
 
     let result = match session.kind.as_str() {
         "sftp" => {
-            if uses_linked_ssh_mux(session) {
-                if save_path.exists() {
-                    fs::remove_dir_all(save_path).map_err(|error| {
-                        format!("failed to replace {}: {error}", save_path.display())
-                    })?;
-                }
-                emit_transfer(
-                    app,
-                    &transfer_id,
-                    file_name,
-                    remote_path,
-                    "download",
-                    purpose,
-                    "running",
-                    0,
-                    None,
-                    if purpose == "drag-export" {
-                        "Preparing local drag folder"
-                    } else {
-                        "Downloading folder through the active SSH session"
-                    },
-                    Some(local_path.clone()),
-                );
-                download_mux_path(session, remote_path, save_path, true)?;
-                let total_bytes = local_directory_total_size(save_path).unwrap_or(0);
-                Ok(total_bytes)
-            } else {
-                let ssh = connect_ssh(session)?;
-                let sftp = ssh
-                    .sftp()
-                    .map_err(|error| format!("failed to open SFTP subsystem: {error}"))?;
-                let total_bytes = sftp_directory_total_size(&sftp, Path::new(remote_path))?;
-                fs::create_dir_all(save_path).map_err(|error| {
-                    format!("failed to create {}: {error}", save_path.display())
-                })?;
+            let sftp = open_sftp(session)?;
+            let total_bytes = sftp_directory_total_size(&sftp, remote_path)?;
+            fs::create_dir_all(save_path)
+                .map_err(|error| format!("failed to create {}: {error}", save_path.display()))?;
 
-                let mut transferred = 0u64;
-                download_sftp_directory_recursive(
-                    app,
-                    &sftp,
-                    Path::new(remote_path),
-                    save_path,
-                    &transfer_id,
-                    file_name,
-                    remote_path,
-                    purpose,
-                    total_bytes,
-                    &mut transferred,
-                )?;
-                Ok(total_bytes)
-            }
+            let mut transferred = 0u64;
+            download_sftp_directory_recursive(
+                app,
+                &sftp,
+                remote_path,
+                save_path,
+                &transfer_id,
+                file_name,
+                remote_path,
+                purpose,
+                total_bytes,
+                &mut transferred,
+            )?;
+            Ok(total_bytes)
         }
         "ftp" => Err("FTP folder download is not implemented yet".into()),
         _ => Err(format!("{} does not support download", session.kind)),
@@ -799,7 +687,31 @@ pub fn download_remote_file_to_path(
 
     let result = match session.kind.as_str() {
         "sftp" => {
-            if uses_linked_ssh_mux(session) {
+            let sftp = open_sftp(session)?;
+            let total_bytes = sftp
+                .metadata(remote_path)
+                .ok()
+                .and_then(|metadata| metadata.len());
+            let mut remote_file = sftp
+                .open(remote_path, OpenFlags::READ_ONLY, 0)
+                .map_err(|error| format!("failed to open remote file: {error}"))?;
+            let mut local_file = File::create(save_path)
+                .map_err(|error| format!("failed to write {}: {error}", save_path.display()))?;
+            let mut transferred = 0u64;
+            let mut buffer = vec![0u8; TRANSFER_CHUNK_SIZE];
+
+            loop {
+                let read = remote_file
+                    .read(&mut buffer)
+                    .map_err(|error| format!("failed to read remote file: {error}"))?;
+                if read == 0 {
+                    break;
+                }
+
+                local_file
+                    .write_all(&buffer[..read])
+                    .map_err(|error| format!("failed to write {}: {error}", save_path.display()))?;
+                transferred += read as u64;
                 emit_transfer(
                     app,
                     &transfer_id,
@@ -808,70 +720,17 @@ pub fn download_remote_file_to_path(
                     "download",
                     purpose,
                     "running",
-                    0,
-                    None,
+                    transferred,
+                    total_bytes,
                     if purpose == "drag-export" {
                         "Preparing local drag copy"
                     } else {
-                        "Downloading through the active SSH session"
+                        "Downloading from remote host"
                     },
                     Some(local_path.clone()),
                 );
-                download_mux_path(session, remote_path, save_path, false)?;
-                let bytes = fs::metadata(save_path)
-                    .ok()
-                    .map(|meta| meta.len())
-                    .unwrap_or(0);
-                Ok(bytes)
-            } else {
-                let ssh = connect_ssh(session)?;
-                let sftp = ssh
-                    .sftp()
-                    .map_err(|error| format!("failed to open SFTP subsystem: {error}"))?;
-                let total_bytes = sftp
-                    .stat(Path::new(remote_path))
-                    .ok()
-                    .and_then(|stat| stat.size);
-                let mut remote_file = sftp
-                    .open(Path::new(remote_path))
-                    .map_err(|error| format!("failed to open remote file: {error}"))?;
-                let mut local_file = File::create(save_path)
-                    .map_err(|error| format!("failed to write {}: {error}", save_path.display()))?;
-                let mut transferred = 0u64;
-                let mut buffer = vec![0u8; TRANSFER_CHUNK_SIZE];
-
-                loop {
-                    let read = remote_file
-                        .read(&mut buffer)
-                        .map_err(|error| format!("failed to read remote file: {error}"))?;
-                    if read == 0 {
-                        break;
-                    }
-
-                    local_file.write_all(&buffer[..read]).map_err(|error| {
-                        format!("failed to write {}: {error}", save_path.display())
-                    })?;
-                    transferred += read as u64;
-                    emit_transfer(
-                        app,
-                        &transfer_id,
-                        file_name,
-                        remote_path,
-                        "download",
-                        purpose,
-                        "running",
-                        transferred,
-                        total_bytes,
-                        if purpose == "drag-export" {
-                            "Preparing local drag copy"
-                        } else {
-                            "Downloading from remote host"
-                        },
-                        Some(local_path.clone()),
-                    );
-                }
-                Ok(total_bytes.unwrap_or(transferred))
             }
+            Ok(total_bytes.unwrap_or(transferred))
         }
         "ftp" => {
             emit_transfer(
@@ -945,17 +804,14 @@ pub fn download_remote_file_to_path(
     }
 }
 
-fn sftp_directory_total_size(sftp: &ssh2::Sftp, path: &Path) -> Result<u64, String> {
+fn sftp_directory_total_size(sftp: &Sftp, path: &str) -> Result<u64, String> {
     let mut total = 0u64;
-    let entries = sftp.readdir(path).map_err(|error| {
-        format!(
-            "failed to list remote directory {}: {error}",
-            path.display()
-        )
-    })?;
+    let entries = sftp
+        .read_dir(path)
+        .map_err(|error| format!("failed to list remote directory {path}: {error}"))?;
 
-    for (entry_path, stat) in entries {
-        let Some(name) = entry_path.file_name().and_then(|value| value.to_str()) else {
+    for entry in entries {
+        let Some(name) = entry.name() else {
             continue;
         };
 
@@ -963,11 +819,11 @@ fn sftp_directory_total_size(sftp: &ssh2::Sftp, path: &Path) -> Result<u64, Stri
             continue;
         }
 
-        let child_path = path.join(name);
-        if is_directory(stat.perm) {
+        let child_path = join_remote_path(path, name);
+        if is_directory(entry.file_type()) {
             total += sftp_directory_total_size(sftp, &child_path)?;
         } else {
-            total += stat.size.unwrap_or(0);
+            total += entry.len().unwrap_or(0);
         }
     }
 
@@ -977,8 +833,8 @@ fn sftp_directory_total_size(sftp: &ssh2::Sftp, path: &Path) -> Result<u64, Stri
 #[allow(clippy::too_many_arguments)]
 fn download_sftp_directory_recursive(
     app: &AppHandle,
-    sftp: &ssh2::Sftp,
-    remote_dir: &Path,
+    sftp: &Sftp,
+    remote_dir: &str,
     local_dir: &Path,
     transfer_id: &str,
     display_name: &str,
@@ -987,15 +843,12 @@ fn download_sftp_directory_recursive(
     total_bytes: u64,
     transferred: &mut u64,
 ) -> Result<(), String> {
-    let entries = sftp.readdir(remote_dir).map_err(|error| {
-        format!(
-            "failed to list remote directory {}: {error}",
-            remote_dir.display()
-        )
-    })?;
+    let entries = sftp
+        .read_dir(remote_dir)
+        .map_err(|error| format!("failed to list remote directory {remote_dir}: {error}"))?;
 
-    for (entry_path, stat) in entries {
-        let Some(name) = entry_path.file_name().and_then(|value| value.to_str()) else {
+    for entry in entries {
+        let Some(name) = entry.name() else {
             continue;
         };
 
@@ -1003,10 +856,10 @@ fn download_sftp_directory_recursive(
             continue;
         }
 
-        let remote_path = remote_dir.join(name);
+        let remote_path = join_remote_path(remote_dir, name);
         let local_path = local_dir.join(name);
 
-        if is_directory(stat.perm) {
+        if is_directory(entry.file_type()) {
             fs::create_dir_all(&local_path)
                 .map_err(|error| format!("failed to create {}: {error}", local_path.display()))?;
             download_sftp_directory_recursive(
@@ -1029,23 +882,17 @@ fn download_sftp_directory_recursive(
                 .map_err(|error| format!("failed to create {}: {error}", parent.display()))?;
         }
 
-        let mut remote_file = sftp.open(&remote_path).map_err(|error| {
-            format!(
-                "failed to open remote file {}: {error}",
-                remote_path.display()
-            )
-        })?;
+        let mut remote_file = sftp
+            .open(&remote_path, OpenFlags::READ_ONLY, 0)
+            .map_err(|error| format!("failed to open remote file {remote_path}: {error}"))?;
         let mut local_file = File::create(&local_path)
             .map_err(|error| format!("failed to write {}: {error}", local_path.display()))?;
         let mut buffer = vec![0u8; TRANSFER_CHUNK_SIZE];
 
         loop {
-            let read = remote_file.read(&mut buffer).map_err(|error| {
-                format!(
-                    "failed to read remote file {}: {error}",
-                    remote_path.display()
-                )
-            })?;
+            let read = remote_file
+                .read(&mut buffer)
+                .map_err(|error| format!("failed to read remote file {remote_path}: {error}"))?;
             if read == 0 {
                 break;
             }
@@ -1081,330 +928,36 @@ fn list_sftp_directory(
     session: &SessionDefinition,
     path: String,
 ) -> Result<RemoteDirectorySnapshot, String> {
-    if uses_linked_ssh_mux(session) {
-        return list_mux_directory(session, path);
-    }
-
-    let ssh = connect_ssh(session)?;
-    let sftp = ssh
-        .sftp()
-        .map_err(|error| format!("failed to open SFTP subsystem: {error}"))?;
+    let sftp = open_sftp(session)?;
     let entries = sftp
-        .readdir(Path::new(&path))
+        .read_dir(&path)
         .map_err(|error| format!("failed to list remote directory {path}: {error}"))?;
 
     let entries = entries
         .into_iter()
-        .filter_map(|(entry_path, stat)| {
-            let name = entry_path.file_name()?.to_string_lossy().to_string();
+        .filter_map(|entry| {
+            let name = entry.name()?.to_string();
             if name == "." || name == ".." {
                 return None;
             }
 
-            let kind = if is_directory(stat.perm) {
+            let kind = if is_directory(entry.file_type()) {
                 "folder"
             } else {
                 "file"
             };
             Some(RemoteFileEntry {
                 name: name.clone(),
-                path: if path == "/" {
-                    format!("/{name}")
-                } else {
-                    format!("{path}/{name}")
-                },
+                path: join_remote_path(&path, &name),
                 kind: kind.into(),
-                size_bytes: stat.size,
-                size_label: format_size(stat.size),
-                modified_label: format_timestamp(stat.mtime),
+                size_bytes: entry.len(),
+                size_label: format_size(entry.len()),
+                modified_label: format_system_time(entry.modified()),
             })
         })
         .collect();
 
     Ok(RemoteDirectorySnapshot { path, entries })
-}
-
-fn uses_linked_ssh_mux(session: &SessionDefinition) -> bool {
-    ssh_control_master_supported()
-        && session
-            .linked_ssh_tab_id
-            .as_ref()
-            .is_some_and(|tab_id| !tab_id.trim().is_empty())
-}
-
-fn linked_ssh_mux(session: &SessionDefinition) -> Result<LinkedSshMux, String> {
-    let tab_id = session
-        .linked_ssh_tab_id
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-        .ok_or_else(|| "SFTP is not linked to a live SSH terminal".to_string())?;
-    let target = build_linked_ssh_target(session, tab_id)?;
-    let control_path = if ssh_control_master_supported() {
-        let control_path = ssh_control_path_for_tab(tab_id);
-
-        if !control_path.exists() {
-            return Err(
-      "The linked SSH terminal is not authenticated yet. Finish the SSH login in the terminal, then refresh SFTP.".into(),
-    );
-        }
-
-        Some(control_path)
-    } else {
-        None
-    };
-
-    Ok(LinkedSshMux {
-        control_path,
-        target,
-        port: session.port,
-        key_path: session
-            .key_path
-            .as_ref()
-            .filter(|value| !value.trim().is_empty())
-            .map(|value| expand_tilde(value)),
-    })
-}
-
-fn build_linked_ssh_target(session: &SessionDefinition, tab_id: &str) -> Result<String, String> {
-    if session.username.trim().is_empty() {
-        let login_path = ssh_control_user_path_for_tab(tab_id);
-        let username = fs::read_to_string(&login_path)
-            .map(|value| value.trim().to_string())
-            .unwrap_or_default();
-        if username.is_empty() {
-            return Err(
-                "The linked SSH login name is not available yet. Enter the SSH username in the terminal, then refresh SFTP."
-                    .into(),
-            );
-        }
-        Ok(format!("{}@{}", username, session.host))
-    } else {
-        Ok(format!("{}@{}", session.username, session.host))
-    }
-}
-
-fn list_mux_directory(
-    session: &SessionDefinition,
-    path: String,
-) -> Result<RemoteDirectorySnapshot, String> {
-    let script = format!(
-        r#"remote_dir={}
-if [ ! -d "$remote_dir" ]; then
-  printf 'not a directory: %s\n' "$remote_dir" >&2
-  exit 2
-fi
-for entry in "$remote_dir"/* "$remote_dir"/.[!.]* "$remote_dir"/..?*; do
-  [ -e "$entry" ] || continue
-  name=${{entry##*/}}
-  if [ "$name" = "." ] || [ "$name" = ".." ]; then
-    continue
-  fi
-  if [ -d "$entry" ]; then
-    kind=folder
-    size=0
-  else
-    kind=file
-    size=$(wc -c < "$entry" 2>/dev/null | tr -d '[:space:]')
-  fi
-  mtime=$(stat -c %Y "$entry" 2>/dev/null || stat -f %m "$entry" 2>/dev/null || printf 0)
-  printf '%s\037%s\037%s\037%s\036' "$kind" "${{size:-0}}" "${{mtime:-0}}" "$name"
-done"#,
-        shell_quote(&path),
-    );
-    let output = run_mux_ssh(session, &script)?;
-    let listing = String::from_utf8_lossy(&output);
-    let mut entries = Vec::new();
-
-    for record in listing.split(MUX_RECORD_SEPARATOR) {
-        if record.trim().is_empty() {
-            continue;
-        }
-
-        let mut fields = record.splitn(4, MUX_FIELD_SEPARATOR);
-        let Some(kind) = fields.next() else { continue };
-        let Some(size_raw) = fields.next() else {
-            continue;
-        };
-        let Some(mtime_raw) = fields.next() else {
-            continue;
-        };
-        let Some(name) = fields.next() else { continue };
-        if name == "." || name == ".." {
-            continue;
-        }
-
-        let size_bytes = size_raw.parse::<u64>().ok();
-        let modified = mtime_raw.parse::<u64>().ok();
-        entries.push(RemoteFileEntry {
-            name: name.to_string(),
-            path: join_remote_path(&path, name),
-            kind: if kind == "folder" { "folder" } else { "file" }.into(),
-            size_bytes,
-            size_label: format_size(size_bytes),
-            modified_label: format_timestamp(modified),
-        });
-    }
-
-    Ok(RemoteDirectorySnapshot { path, entries })
-}
-
-fn create_mux_directory(session: &SessionDefinition, remote_path: &str) -> Result<(), String> {
-    run_mux_ssh(
-        session,
-        &format!("mkdir -p -- {}", shell_quote(remote_path)),
-    )
-    .map(|_| ())
-}
-
-fn delete_mux_entry(
-    session: &SessionDefinition,
-    remote_path: &str,
-    kind: &str,
-) -> Result<(), String> {
-    let command = if kind == "folder" {
-        format!("rm -rf -- {}", shell_quote(remote_path))
-    } else {
-        format!("rm -f -- {}", shell_quote(remote_path))
-    };
-    run_mux_ssh(session, &command).map(|_| ())
-}
-
-fn upload_mux_path(
-    session: &SessionDefinition,
-    local_path: &Path,
-    remote_path: &str,
-    recursive: bool,
-) -> Result<(), String> {
-    run_mux_scp(
-        session,
-        recursive,
-        &[
-            local_path.display().to_string(),
-            mux_remote_spec(session, remote_path)?,
-        ],
-    )
-}
-
-fn download_mux_path(
-    session: &SessionDefinition,
-    remote_path: &str,
-    save_path: &Path,
-    recursive: bool,
-) -> Result<(), String> {
-    if let Some(parent) = save_path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|error| format!("failed to create {}: {error}", parent.display()))?;
-    }
-
-    run_mux_scp(
-        session,
-        recursive,
-        &[
-            mux_remote_spec(session, remote_path)?,
-            save_path.display().to_string(),
-        ],
-    )
-}
-
-fn run_mux_ssh(session: &SessionDefinition, remote_script: &str) -> Result<Vec<u8>, String> {
-    let mux = linked_ssh_mux(session)?;
-    let mut command = Command::new("ssh");
-    apply_linked_ssh_transport_args(&mut command, &mux);
-    let output = command
-        .arg("-o")
-        .arg("BatchMode=yes")
-        .arg("-o")
-        .arg("ControlMaster=no")
-        .arg("-o")
-        .arg("LogLevel=ERROR")
-        .arg("-p")
-        .arg(mux.port.to_string())
-        .arg(&mux.target)
-        .arg("sh")
-        .arg("-lc")
-        .arg(shell_quote(remote_script))
-        .output()
-        .map_err(|error| format!("failed to run command through linked SSH session: {error}"))?;
-
-    if !output.status.success() {
-        return Err(format_mux_failure(
-            "linked SSH command failed",
-            &output.stderr,
-        ));
-    }
-
-    Ok(output.stdout)
-}
-
-fn run_mux_scp(
-    session: &SessionDefinition,
-    recursive: bool,
-    args: &[String],
-) -> Result<(), String> {
-    let mux = linked_ssh_mux(session)?;
-    let mut command = Command::new("scp");
-    if recursive {
-        command.arg("-r");
-    }
-    apply_linked_ssh_transport_args(&mut command, &mux);
-    command
-        .arg("-o")
-        .arg("BatchMode=yes")
-        .arg("-o")
-        .arg("ControlMaster=no")
-        .arg("-o")
-        .arg("LogLevel=ERROR")
-        .arg("-P")
-        .arg(mux.port.to_string());
-
-    for arg in args {
-        command.arg(arg);
-    }
-
-    let output = command
-        .output()
-        .map_err(|error| format!("failed to run scp through linked SSH session: {error}"))?;
-
-    if !output.status.success() {
-        return Err(format_mux_failure(
-            "linked SFTP transfer failed",
-            &output.stderr,
-        ));
-    }
-
-    Ok(())
-}
-
-fn mux_remote_spec(session: &SessionDefinition, remote_path: &str) -> Result<String, String> {
-    let mux = linked_ssh_mux(session)?;
-    Ok(format!("{}:{remote_path}", mux.target))
-}
-
-fn apply_linked_ssh_transport_args(command: &mut Command, mux: &LinkedSshMux) {
-    command.arg("-q");
-
-    if let Some(control_path) = &mux.control_path {
-        command.arg("-S").arg(control_path);
-    } else if let Some(key_path) = &mux.key_path {
-        command.arg("-i").arg(key_path);
-    }
-}
-
-fn ssh_control_master_supported() -> bool {
-    !cfg!(windows)
-}
-
-fn shell_quote(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "'\\''"))
-}
-
-fn format_mux_failure(prefix: &str, stderr: &[u8]) -> String {
-    let detail = String::from_utf8_lossy(stderr).trim().to_string();
-    if detail.is_empty() {
-        prefix.to_string()
-    } else {
-        format!("{prefix}: {detail}")
-    }
 }
 
 fn list_ftp_directory(
@@ -1422,85 +975,6 @@ fn list_ftp_directory(
     }
 
     Ok(RemoteDirectorySnapshot { path, entries })
-}
-
-fn connect_ssh(session: &SessionDefinition) -> Result<Session, String> {
-    let username = effective_ssh_username(session)?;
-    let tcp = TcpStream::connect((session.host.as_str(), session.port)).map_err(|error| {
-        format!(
-            "failed to connect to {}:{}: {error}",
-            session.host, session.port
-        )
-    })?;
-    let mut ssh =
-        Session::new().map_err(|error| format!("failed to create SSH session: {error}"))?;
-    ssh.set_tcp_stream(tcp);
-    ssh.handshake()
-        .map_err(|error| format!("SSH handshake failed: {error}"))?;
-
-    match session.auth_type.as_str() {
-        "password" => {
-            let password = session
-                .password
-                .clone()
-                .filter(|value| !value.is_empty())
-                .ok_or_else(windows_credential_reuse_message)?;
-            ssh.userauth_password(&username, &password)
-                .map_err(|error| format!("SSH password authentication failed: {error}"))?;
-        }
-        "key" => {
-            let key_path = session
-                .key_path
-                .clone()
-                .filter(|value| !value.trim().is_empty())
-                .ok_or_else(|| "key authentication requires a key path".to_string())?;
-            let expanded = expand_tilde(&key_path);
-            ssh.userauth_pubkey_file(&username, None, &expanded, session.password.as_deref())
-                .map_err(|error| format!("SSH key authentication failed: {error}"))?;
-        }
-        _ => {
-            ssh.userauth_agent(&username)
-                .map_err(|error| format!("SSH agent authentication failed: {error}"))?;
-        }
-    }
-
-    if !ssh.authenticated() {
-        return Err("SSH authentication was rejected by the remote host".into());
-    }
-
-    Ok(ssh)
-}
-
-fn effective_ssh_username(session: &SessionDefinition) -> Result<String, String> {
-    let username = session.username.trim();
-    if !username.is_empty() {
-        return Ok(username.to_string());
-    }
-
-    if let Some(tab_id) = session
-        .linked_ssh_tab_id
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-    {
-        let login_path = ssh_control_user_path_for_tab(tab_id);
-        let linked_username = fs::read_to_string(&login_path)
-            .map(|value| value.trim().to_string())
-            .unwrap_or_default();
-        if !linked_username.is_empty() {
-            return Ok(linked_username);
-        }
-
-        return Err(
-            "The linked SSH login name is not available yet. Enter the SSH username in the terminal, then refresh SFTP."
-                .into(),
-        );
-    }
-
-    Err("SFTP requires a username in the session profile.".into())
-}
-
-fn windows_credential_reuse_message() -> String {
-    "Windows cannot reuse the password typed into the interactive SSH terminal. Save a password in the session, use a key, or use SSH agent authentication for live status and linked SFTP.".into()
 }
 
 fn run_ftp_list(session: &SessionDefinition, path: &str) -> Result<Vec<u8>, String> {
@@ -1725,15 +1199,20 @@ fn format_size(size_bytes: Option<u64>) -> String {
     }
 }
 
-fn format_timestamp(timestamp: Option<u64>) -> String {
+fn format_system_time(timestamp: Option<SystemTime>) -> String {
     let Some(timestamp) = timestamp else {
         return "--".into();
     };
 
+    let Ok(timestamp) = timestamp.duration_since(UNIX_EPOCH) else {
+        return "--".into();
+    };
+    let timestamp = timestamp.as_secs() as i64;
+
     let Ok(format) = parse("[year]-[month]-[day] [hour]:[minute]") else {
         return timestamp.to_string();
     };
-    let Ok(datetime) = OffsetDateTime::from_unix_timestamp(timestamp as i64) else {
+    let Ok(datetime) = OffsetDateTime::from_unix_timestamp(timestamp) else {
         return timestamp.to_string();
     };
 
@@ -1742,30 +1221,8 @@ fn format_timestamp(timestamp: Option<u64>) -> String {
         .unwrap_or_else(|_| timestamp.to_string())
 }
 
-fn is_directory(perm: Option<u32>) -> bool {
-    perm.map(|value| value & S_IFMT == S_IFDIR).unwrap_or(false)
-}
-
-fn expand_tilde(path: &str) -> PathBuf {
-    if let Some(stripped) = path.strip_prefix("~/") {
-        if let Some(home) = local_home_dir() {
-            return PathBuf::from(home).join(stripped);
-        }
-    }
-
-    PathBuf::from(path)
-}
-
-fn local_home_dir() -> Option<std::ffi::OsString> {
-    #[cfg(windows)]
-    {
-        std::env::var_os("USERPROFILE")
-    }
-
-    #[cfg(not(windows))]
-    {
-        std::env::var_os("HOME")
-    }
+fn is_directory(file_type: Option<FileType>) -> bool {
+    matches!(file_type, Some(FileType::Directory))
 }
 
 fn sanitize_file_name(file_name: &str) -> String {

@@ -3,8 +3,8 @@ use tauri::{AppHandle, State};
 use crate::{
     file_ops,
     models::{
-        LocalX11SupportPayload, MacroDefinition, RemoteDragEntry, SessionDefinition,
-        SessionFolderDefinition, StorageModel, UiPreferences,
+        LibsshProbePayload, LocalX11SupportPayload, MacroDefinition, RemoteDragEntry,
+        SessionDefinition, SessionFolderDefinition, StorageModel, UiPreferences,
     },
     native_drag,
     runtime::AppRuntime,
@@ -136,6 +136,19 @@ pub fn open_external_target(target: String) -> Result<(), String> {
 #[tauri::command]
 pub fn list_system_font_families() -> Result<Vec<String>, String> {
     crate::font_support::list_system_font_families()
+}
+
+#[tauri::command]
+pub async fn run_libssh_probe(
+    session: SessionDefinition,
+    remote_command: Option<String>,
+    remote_path: Option<String>,
+) -> Result<LibsshProbePayload, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::libssh_spike::run_probe(&session, remote_command.as_deref(), remote_path.as_deref())
+    })
+    .await
+    .map_err(|error| format!("failed to join libssh probe task: {error}"))?
 }
 
 #[tauri::command]

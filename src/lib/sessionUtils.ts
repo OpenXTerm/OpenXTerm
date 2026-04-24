@@ -60,7 +60,15 @@ export function getDefaultPort(kind: SessionKind) {
   }
 }
 
+function isSshKind(kind: SessionKind): boolean {
+  return kind === 'ssh'
+}
+
 export function buildSessionTranscript(session: SessionDefinition) {
+  if (isSshKind(session.kind)) {
+    return []
+  }
+
   const target =
     session.kind === 'local'
       ? 'this computer'
@@ -112,7 +120,9 @@ export function buildSessionTranscript(session: SessionDefinition) {
       : []),
     '',
     session.kind === 'local' || session.kind === 'ssh' || session.kind === 'telnet' || session.kind === 'serial'
-      ? '[information] terminal host is switching to the system transport process'
+      ? session.kind === 'ssh'
+        ? '[information] terminal host is switching to the embedded transport runtime'
+        : '[information] terminal host is switching to the native transport runtime'
       : '[information] tab shell is live, protocol adapter is the next milestone',
     '[information] copy/paste, scrollback, resize, macros and status rail are already wired',
     session.kind === 'local' || session.kind === 'ssh' || session.kind === 'telnet' || session.kind === 'serial'

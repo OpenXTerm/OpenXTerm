@@ -1,21 +1,25 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     fs,
     hash::{DefaultHasher, Hash, Hasher},
     io::{self, BufReader, Read, Write},
     net::{Shutdown, TcpStream},
     path::PathBuf,
+    process::Command,
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc, Mutex,
+        Arc, Mutex, MutexGuard, OnceLock,
     },
     thread,
     time::Duration,
 };
 
+use libssh_rs::{
+    Channel as LibsshChannel, Error as LibsshError, Session as LibsshSession, Sftp as LibsshSftp,
+    SshOption,
+};
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 use serialport::{DataBits, Parity, StopBits};
-use ssh2::Session as Ssh2Session;
 use tauri::{AppHandle, Emitter};
 
 use crate::models::{
@@ -23,6 +27,9 @@ use crate::models::{
     TerminalOutputPayload,
 };
 use crate::x11_support::resolve_local_x11_display;
+
+#[cfg(unix)]
+use std::os::unix::net::UnixStream;
 
 const TERMINAL_OUTPUT_EVENT: &str = "openxterm://terminal-output";
 const TERMINAL_EXIT_EVENT: &str = "openxterm://terminal-exit";
@@ -38,11 +45,54 @@ const TELNET_WONT: u8 = 252;
 const TELNET_WILL: u8 = 251;
 const TELNET_SB: u8 = 250;
 const TELNET_SE: u8 = 240;
-const SSH_CONTROL_DIR: &str = "oxt-ssh";
+const SSH_RUNTIME_METADATA_DIR: &str = "oxt-ssh-runtime";
 
 type SharedWriter = Arc<Mutex<Box<dyn Write + Send>>>;
 type ResizeHandler = Box<dyn Fn(u16, u16) -> Result<(), String> + Send + Sync>;
 type StopHandler = Box<dyn Fn() + Send + Sync>;
+
+const SSH_LOOP_IDLE_SLEEP: Duration = Duration::from_millis(20);
+const X11_ACCEPT_TIMEOUT: Duration = Duration::from_millis(1);
+const X11_PROXY_IDLE_SLEEP: Duration = Duration::from_millis(5);
+const X11_COMMAND_TIMEOUT: Duration = Duration::from_millis(700);
+const X11_PROXY_PENDING_LIMIT: usize = 4 * 1024 * 1024;
+const RECENT_TERMINAL_OUTPUT_CHAR_LIMIT: usize = 2048;
+
+#[derive(Clone)]
+struct X11ForwardConfig {
+    display: String,
+    auth_protocol: Option<String>,
+    auth_cookie: Option<String>,
+    screen_number: i32,
+}
+
+#[derive(Clone, Default)]
+struct SshRuntimeAuthState {
+    username: Option<String>,
+    password: Option<String>,
+}
+
+enum EmbeddedSshState {
+    AwaitingUsername { buffer: String },
+    AwaitingPassword { username: String, buffer: String },
+    Connecting,
+    Running { channel: Arc<Mutex<LibsshChannel>> },
+    Closed,
+}
+
+struct EmbeddedSshController {
+    app: AppHandle,
+    terminals: Arc<Mutex<HashMap<String, ActiveTerminal>>>,
+    tab_id: String,
+    session: SessionDefinition,
+    stop_flag: Arc<AtomicBool>,
+    state: Arc<Mutex<EmbeddedSshState>>,
+    terminal_size: Arc<Mutex<(u16, u16)>>,
+}
+
+struct EmbeddedSshWriter {
+    controller: Arc<EmbeddedSshController>,
+}
 
 pub struct AppRuntime {
     terminals: Arc<Mutex<HashMap<String, ActiveTerminal>>>,
@@ -114,78 +164,7 @@ impl AppRuntime {
         if session.port == 0 {
             return Err("SSH session requires a non-zero port.".into());
         }
-
-        prepare_ssh_control_socket(&tab_id)?;
-        let control_path = ssh_control_path_for_tab(&tab_id);
-        let username_missing = session.username.trim().is_empty();
-        let password_handler_enabled = session.auth_type == "password" && !username_missing;
-        let (command, x11_display) = build_interactive_ssh_command(&session, &control_path)?;
-        let x11_notice = x11_display.as_ref().map(|display| {
-            format!(
-                "\r\n[information] SSH launch plan: X11 {} requested via DISPLAY={display} ({})\r\n",
-                if session.x11_trusted { "-Y" } else { "-X" },
-                if session.x11_trusted {
-                    "trusted"
-                } else {
-                    "untrusted"
-                }
-            )
-        });
-        let x11_disabled_notice = if !session.x11_forwarding {
-            Some(
-                "\r\n[information] SSH launch plan: X11 forwarding is disabled in this profile. Enable it in the session editor before launching GUI apps.\r\n"
-                    .to_string(),
-            )
-        } else {
-            None
-        };
-        let notice_message = match (
-            x11_notice.or(x11_disabled_notice),
-            if password_handler_enabled {
-                Some("\r\n[information] Password prompt handler armed. Waiting for remote auth challenge...\r\n".to_string())
-            } else if username_missing {
-                Some("\r\n[information] Interactive login mode is active. Username and password will be entered in the terminal.\r\n".to_string())
-            } else {
-                None
-            },
-        ) {
-            (Some(x11), Some(auth)) => Some(format!("{x11}{auth}")),
-            (Some(x11), None) => Some(x11),
-            (None, Some(auth)) => Some(auth),
-            (None, None) => None,
-        };
-        let notice_message = if ssh_control_master_supported() {
-            notice_message
-        } else {
-            Some(format!(
-                "{}\r\n[information] Windows OpenSSH does not support OpenXTerm's control-socket reuse path; linked SFTP and remote status will use separate saved password/key/agent connections when available.\r\n",
-                notice_message.unwrap_or_default()
-            ))
-        };
-        let notice_message = Some(format!(
-            "{}\r\n[information] Host keys use OpenSSH known_hosts rules. New hosts are accepted automatically; changed host keys still stop the connection and require manual review.\r\n",
-            notice_message.unwrap_or_default()
-        ));
-
-        self.start_pty_session(
-      app,
-      tab_id.clone(),
-      session.clone(),
-      command,
-      ssh_status_poller_supported(&session),
-      if username_missing {
-        format!(
-          "\r\n[information] Launching SSH transport to {}:{}\r\n[information] No username is saved in this profile. Enter the remote login in the terminal.\r\n",
-          session.host, session.port
-        )
-      } else {
-        "\r\n[information] Launching SSH transport".into()
-      },
-      notice_message.as_deref(),
-      "SSH session closed.".into(),
-    )?;
-
-        Ok(true)
+        self.start_embedded_ssh_session(app, tab_id, session)
     }
 
     pub fn start_telnet_session(
@@ -386,7 +365,8 @@ impl AppRuntime {
             (terminal.stop)();
         }
 
-        cleanup_ssh_control_socket(tab_id);
+        clear_ssh_runtime_auth(tab_id);
+        cleanup_ssh_runtime_metadata(tab_id);
         Ok(())
     }
 
@@ -500,6 +480,373 @@ impl AppRuntime {
 
         Ok(true)
     }
+
+    fn start_embedded_ssh_session(
+        &self,
+        app: &AppHandle,
+        tab_id: String,
+        session: SessionDefinition,
+    ) -> Result<bool, String> {
+        self.stop_terminal(&tab_id)?;
+        prepare_ssh_runtime_metadata(&tab_id)?;
+
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        let state = Arc::new(Mutex::new(if session.username.trim().is_empty() {
+            EmbeddedSshState::AwaitingUsername {
+                buffer: String::new(),
+            }
+        } else if session.auth_type == "password"
+            && session
+                .password
+                .as_deref()
+                .filter(|value| !value.is_empty())
+                .is_none()
+        {
+            EmbeddedSshState::AwaitingPassword {
+                username: session.username.trim().to_string(),
+                buffer: String::new(),
+            }
+        } else {
+            EmbeddedSshState::Connecting
+        }));
+        let terminal_size = Arc::new(Mutex::new((DEFAULT_COLS, DEFAULT_ROWS)));
+        let controller = Arc::new(EmbeddedSshController {
+            app: app.clone(),
+            terminals: self.terminals.clone(),
+            tab_id: tab_id.clone(),
+            session: session.clone(),
+            stop_flag: stop_flag.clone(),
+            state: state.clone(),
+            terminal_size: terminal_size.clone(),
+        });
+        let resize_controller = controller.clone();
+        let stop_controller = controller.clone();
+        let writer: SharedWriter = Arc::new(Mutex::new(Box::new(EmbeddedSshWriter {
+            controller: controller.clone(),
+        })));
+
+        self.terminals
+            .lock()
+            .map_err(|_| "terminal registry is poisoned".to_string())?
+            .insert(
+                tab_id.clone(),
+                ActiveTerminal {
+                    writer,
+                    resize: Box::new(move |cols, rows| resize_controller.resize(cols, rows)),
+                    stop: Box::new(move || stop_controller.request_stop()),
+                    stop_flag,
+                },
+            );
+
+        if session.username.trim().is_empty() {
+            emit_output(app, &tab_id, "login as: ");
+        } else if session.auth_type == "password"
+            && session
+                .password
+                .as_deref()
+                .filter(|value| !value.is_empty())
+                .is_none()
+        {
+            controller.prompt_for_password(session.username.trim().to_string());
+        } else {
+            set_ssh_runtime_auth(
+                &tab_id,
+                Some(session.username.trim().to_string()),
+                session.password.clone(),
+            );
+            controller.begin_connect(
+                session.username.trim().to_string(),
+                session.password.clone(),
+            );
+        }
+
+        Ok(true)
+    }
+}
+
+impl EmbeddedSshController {
+    fn resize(&self, cols: u16, rows: u16) -> Result<(), String> {
+        let cols = cols.max(2);
+        let rows = rows.max(2);
+        if let Ok(mut terminal_size) = self.terminal_size.lock() {
+            *terminal_size = (cols, rows);
+        }
+
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| "embedded SSH state is poisoned".to_string())?;
+        if let EmbeddedSshState::Running { channel } = &*state {
+            let channel = lock_embedded_ssh_channel(channel);
+            channel
+                .change_pty_size(cols as u32, rows as u32)
+                .map_err(|error| format!("failed to resize embedded SSH PTY: {error}"))?;
+        }
+        Ok(())
+    }
+
+    fn request_stop(&self) {
+        self.stop_flag.store(true, Ordering::Relaxed);
+        clear_ssh_runtime_auth(&self.tab_id);
+        if let Ok(mut state) = self.state.lock() {
+            if let EmbeddedSshState::Running { channel } = &*state {
+                let channel = lock_embedded_ssh_channel(channel);
+                let _ = channel.close();
+            }
+            *state = EmbeddedSshState::Closed;
+        }
+    }
+
+    fn prompt_for_password(&self, username: String) {
+        if let Ok(mut state) = self.state.lock() {
+            *state = EmbeddedSshState::AwaitingPassword {
+                username: username.clone(),
+                buffer: String::new(),
+            };
+        }
+        emit_output(
+            &self.app,
+            &self.tab_id,
+            &format!("{username}@{}'s password: ", self.session.host),
+        );
+    }
+
+    fn begin_connect(&self, username: String, password_override: Option<String>) {
+        if self.stop_flag.load(Ordering::Relaxed) {
+            return;
+        }
+        if let Ok(mut state) = self.state.lock() {
+            *state = EmbeddedSshState::Connecting;
+        }
+
+        let controller = Arc::new(self.clone_for_thread());
+        thread::spawn(move || {
+            controller.connect_and_run(username, password_override);
+        });
+    }
+
+    fn clone_for_thread(&self) -> Self {
+        Self {
+            app: self.app.clone(),
+            terminals: self.terminals.clone(),
+            tab_id: self.tab_id.clone(),
+            session: self.session.clone(),
+            stop_flag: self.stop_flag.clone(),
+            state: self.state.clone(),
+            terminal_size: self.terminal_size.clone(),
+        }
+    }
+
+    fn connect_and_run(self: Arc<Self>, username: String, password_override: Option<String>) {
+        if self.stop_flag.load(Ordering::Relaxed) {
+            return;
+        }
+
+        let x11_config = match prepare_x11_forwarding(&self.session, &self.stop_flag) {
+            Ok(config) => config,
+            Err(error) => {
+                if self.session.x11_forwarding {
+                    emit_output(
+                        &self.app,
+                        &self.tab_id,
+                        &format!(
+                            "\r\n[warning] X11 forwarding was requested, but local X11 is not ready: {error}\r\n"
+                        ),
+                    );
+                }
+                None
+            }
+        };
+
+        match open_embedded_ssh_channel(
+            &self.session,
+            &username,
+            password_override.as_deref(),
+            *self
+                .terminal_size
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner()),
+            x11_config.as_ref(),
+        ) {
+            Ok((channel, x11_warning)) => {
+                let shared_channel = Arc::new(Mutex::new(channel));
+                set_ssh_runtime_auth(
+                    &self.tab_id,
+                    Some(username.clone()),
+                    password_override.clone(),
+                );
+                if let Ok(mut state) = self.state.lock() {
+                    *state = EmbeddedSshState::Running {
+                        channel: shared_channel.clone(),
+                    };
+                }
+                if let Some(warning) = x11_warning {
+                    report_x11_forwarding_failure(&self.app, &self.tab_id, &self.session, &warning);
+                } else if let Some(config) = x11_config {
+                    spawn_x11_accept_loop(
+                        self.app.clone(),
+                        self.tab_id.clone(),
+                        shared_channel.clone(),
+                        config,
+                        self.stop_flag.clone(),
+                    );
+                }
+                spawn_embedded_ssh_reader(
+                    self.app.clone(),
+                    self.terminals.clone(),
+                    self.tab_id.clone(),
+                    self.session.clone(),
+                    shared_channel,
+                    self.stop_flag.clone(),
+                );
+                if ssh_status_poller_supported(&self.session) {
+                    spawn_status_poller(
+                        self.app.clone(),
+                        self.tab_id.clone(),
+                        self.session.clone(),
+                        self.stop_flag.clone(),
+                    );
+                }
+            }
+            Err(error) => {
+                emit_output(
+                    &self.app,
+                    &self.tab_id,
+                    &format!(
+                        "\r\n[error] {}\r\n",
+                        humanize_ssh_error_message(&error, &self.session)
+                    ),
+                );
+                if should_retry_interactive_password(&error, &self.session) {
+                    self.prompt_for_password(username);
+                } else {
+                    finalize_terminal(
+                        &self.app,
+                        &self.terminals,
+                        &self.tab_id,
+                        &self.stop_flag,
+                        None,
+                        "SSH session closed.".into(),
+                    );
+                }
+            }
+        }
+    }
+
+    fn handle_input_bytes(&self, bytes: &[u8]) -> io::Result<usize> {
+        for &byte in bytes {
+            self.handle_input_byte(byte)?;
+        }
+        Ok(bytes.len())
+    }
+
+    fn handle_input_byte(&self, byte: u8) -> io::Result<()> {
+        let mut trigger: Option<(String, Option<String>)> = None;
+        {
+            let mut state = self.state.lock().map_err(|_| {
+                io::Error::new(io::ErrorKind::Other, "embedded SSH state is poisoned")
+            })?;
+            match &mut *state {
+                EmbeddedSshState::AwaitingUsername { buffer } => match byte {
+                    b'\r' | b'\n' => {
+                        let username = buffer.trim().to_string();
+                        emit_output(&self.app, &self.tab_id, "\r\n");
+                        if username.is_empty() {
+                            emit_output(
+                                &self.app,
+                                &self.tab_id,
+                                "[error] Username is required.\r\nlogin as: ",
+                            );
+                            buffer.clear();
+                        } else if self.session.auth_type == "password"
+                            && self
+                                .session
+                                .password
+                                .as_deref()
+                                .filter(|value| !value.is_empty())
+                                .is_none()
+                        {
+                            set_ssh_runtime_auth(&self.tab_id, Some(username.clone()), None);
+                            *state = EmbeddedSshState::AwaitingPassword {
+                                username: username.clone(),
+                                buffer: String::new(),
+                            };
+                            emit_output(
+                                &self.app,
+                                &self.tab_id,
+                                &format!("{username}@{}'s password: ", self.session.host),
+                            );
+                        } else {
+                            set_ssh_runtime_auth(
+                                &self.tab_id,
+                                Some(username.clone()),
+                                self.session.password.clone(),
+                            );
+                            trigger = Some((username, self.session.password.clone()));
+                        }
+                    }
+                    8 | 127 => {
+                        if !buffer.is_empty() {
+                            buffer.pop();
+                            emit_output(&self.app, &self.tab_id, "\u{8} \u{8}");
+                        }
+                    }
+                    _ if byte.is_ascii_control() => {}
+                    _ => {
+                        buffer.push(byte as char);
+                        emit_output(&self.app, &self.tab_id, &(byte as char).to_string());
+                    }
+                },
+                EmbeddedSshState::AwaitingPassword { username, buffer } => match byte {
+                    b'\r' | b'\n' => {
+                        let password = buffer.clone();
+                        emit_output(&self.app, &self.tab_id, "\r\n");
+                        set_ssh_runtime_auth(
+                            &self.tab_id,
+                            Some(username.clone()),
+                            Some(password.clone()),
+                        );
+                        trigger = Some((username.clone(), Some(password)));
+                    }
+                    8 | 127 => {
+                        if !buffer.is_empty() {
+                            buffer.pop();
+                        }
+                    }
+                    _ if byte.is_ascii_control() => {}
+                    _ => buffer.push(byte as char),
+                },
+                EmbeddedSshState::Connecting => {}
+                EmbeddedSshState::Running { channel } => {
+                    let channel = lock_embedded_ssh_channel(channel);
+                    let mut stdin = channel.stdin();
+                    stdin.write_all(&[byte])?;
+                    stdin.flush()?;
+                }
+                EmbeddedSshState::Closed => {}
+            }
+        }
+
+        if let Some((username, password_override)) = trigger {
+            self.begin_connect(username, password_override);
+        }
+
+        Ok(())
+    }
+}
+
+impl Write for EmbeddedSshWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.controller.handle_input_bytes(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+fn lock_embedded_ssh_channel(channel: &Arc<Mutex<LibsshChannel>>) -> MutexGuard<'_, LibsshChannel> {
+    channel.lock().unwrap_or_else(|poison| poison.into_inner())
 }
 
 fn spawn_pty_reader<R>(
@@ -565,6 +912,566 @@ fn spawn_pty_reader<R>(
             }
         }
     });
+}
+
+fn spawn_embedded_ssh_reader(
+    app: AppHandle,
+    terminals: Arc<Mutex<HashMap<String, ActiveTerminal>>>,
+    tab_id: String,
+    session: SessionDefinition,
+    channel: Arc<Mutex<LibsshChannel>>,
+    stop_flag: Arc<AtomicBool>,
+) {
+    thread::spawn(move || {
+        let mut stdout_buffer = [0_u8; 4096];
+        let mut stderr_buffer = [0_u8; 4096];
+        let mut recent_output = String::new();
+        let mut ssh_guidance_state = SshRuntimeGuidanceState::default();
+        let x11_failure_diagnosed = Arc::new(AtomicBool::new(false));
+        let mut stdout_previous_was_cr = false;
+        let mut stderr_previous_was_cr = false;
+
+        loop {
+            if stop_flag.load(Ordering::Relaxed) {
+                break;
+            }
+
+            let mut made_progress = false;
+            let mut should_close = false;
+            let mut close_code = None;
+            let mut close_reason = "SSH session closed.".to_string();
+
+            {
+                let channel = lock_embedded_ssh_channel(&channel);
+
+                match channel.read_nonblocking(&mut stdout_buffer, false) {
+                    Ok(size) if size > 0 => {
+                        let chunk = normalize_embedded_terminal_newlines(
+                            &stdout_buffer[..size],
+                            &mut stdout_previous_was_cr,
+                        );
+                        emit_output(&app, &tab_id, &chunk);
+                        push_recent_terminal_output(&mut recent_output, &chunk);
+                        maybe_report_ssh_runtime_guidance(
+                            &app,
+                            &tab_id,
+                            &session,
+                            &recent_output,
+                            &mut ssh_guidance_state,
+                        );
+                        maybe_report_x11_forwarding_failure(
+                            &app,
+                            &tab_id,
+                            &session,
+                            &chunk,
+                            &x11_failure_diagnosed,
+                        );
+                        made_progress = true;
+                    }
+                    Ok(_) => {}
+                    Err(LibsshError::TryAgain) => {}
+                    Err(error) => {
+                        emit_output(
+                            &app,
+                            &tab_id,
+                            &format!("\r\n[error] embedded SSH stdout failure: {error}\r\n"),
+                        );
+                        should_close = true;
+                        close_reason = error.to_string();
+                    }
+                }
+
+                if !should_close {
+                    match channel.read_nonblocking(&mut stderr_buffer, true) {
+                        Ok(size) if size > 0 => {
+                            let chunk = normalize_embedded_terminal_newlines(
+                                &stderr_buffer[..size],
+                                &mut stderr_previous_was_cr,
+                            );
+                            emit_output(&app, &tab_id, &chunk);
+                            push_recent_terminal_output(&mut recent_output, &chunk);
+                            maybe_report_ssh_runtime_guidance(
+                                &app,
+                                &tab_id,
+                                &session,
+                                &recent_output,
+                                &mut ssh_guidance_state,
+                            );
+                            maybe_report_x11_forwarding_failure(
+                                &app,
+                                &tab_id,
+                                &session,
+                                &chunk,
+                                &x11_failure_diagnosed,
+                            );
+                            made_progress = true;
+                        }
+                        Ok(_) => {}
+                        Err(LibsshError::TryAgain) => {}
+                        Err(error) => {
+                            emit_output(
+                                &app,
+                                &tab_id,
+                                &format!("\r\n[error] embedded SSH stderr failure: {error}\r\n"),
+                            );
+                            should_close = true;
+                            close_reason = error.to_string();
+                        }
+                    }
+                }
+
+                if !should_close && (channel.is_eof() || channel.is_closed()) {
+                    should_close = true;
+                    close_code = channel.get_exit_status().map(|value| value as i32);
+                }
+            }
+
+            if should_close {
+                finalize_terminal(
+                    &app,
+                    &terminals,
+                    &tab_id,
+                    &stop_flag,
+                    close_code,
+                    close_reason,
+                );
+                break;
+            }
+
+            if !made_progress {
+                thread::sleep(SSH_LOOP_IDLE_SLEEP);
+            }
+        }
+    });
+}
+
+fn normalize_embedded_terminal_newlines(bytes: &[u8], previous_was_cr: &mut bool) -> String {
+    let extra_capacity = bytes.iter().filter(|byte| **byte == b'\n').count();
+    let mut normalized = Vec::with_capacity(bytes.len() + extra_capacity);
+
+    for byte in bytes {
+        if *byte == b'\n' {
+            if !*previous_was_cr {
+                normalized.push(b'\r');
+            }
+            normalized.push(b'\n');
+            *previous_was_cr = false;
+        } else {
+            normalized.push(*byte);
+            *previous_was_cr = *byte == b'\r';
+        }
+    }
+
+    String::from_utf8_lossy(&normalized).to_string()
+}
+
+fn prepare_x11_forwarding(
+    session: &SessionDefinition,
+    stop_flag: &Arc<AtomicBool>,
+) -> Result<Option<X11ForwardConfig>, String> {
+    if !session.x11_forwarding {
+        return Ok(None);
+    }
+
+    let display = resolve_local_x11_display(session.x11_display.as_deref())?;
+    let screen_number = parse_x11_screen_number(&display);
+    let auth = resolve_x11_auth(&display, stop_flag).unwrap_or_else(|error| {
+        log::debug!("X11 auth lookup failed for {display}: {error}");
+        None
+    });
+
+    Ok(Some(X11ForwardConfig {
+        display,
+        auth_protocol: auth.as_ref().map(|value| value.0.clone()),
+        auth_cookie: auth.as_ref().map(|value| value.1.clone()),
+        screen_number,
+    }))
+}
+
+fn parse_x11_screen_number(display: &str) -> i32 {
+    display
+        .rsplit_once('.')
+        .and_then(|(_, screen)| screen.parse::<i32>().ok())
+        .unwrap_or(0)
+}
+
+fn resolve_x11_auth(
+    display: &str,
+    stop_flag: &Arc<AtomicBool>,
+) -> Result<Option<(String, String)>, String> {
+    let Some(xauth) = resolve_xauth_binary() else {
+        return Ok(None);
+    };
+
+    let mut candidates = Vec::new();
+    if let Ok(output) = run_short_command(Command::new(&xauth).args(["list", display]), stop_flag) {
+        if output.status.success() {
+            candidates.extend(parse_xauth_lines(&String::from_utf8_lossy(&output.stdout)));
+        }
+    }
+
+    if candidates.is_empty() {
+        if let Ok(output) = run_short_command(Command::new(&xauth).arg("list"), stop_flag) {
+            if output.status.success() {
+                candidates.extend(parse_xauth_lines(&String::from_utf8_lossy(&output.stdout)));
+            }
+        }
+    }
+
+    Ok(candidates.into_iter().next())
+}
+
+fn run_short_command(
+    command: &mut Command,
+    stop_flag: &Arc<AtomicBool>,
+) -> Result<std::process::Output, String> {
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("failed to start helper command: {error}"))?;
+    let started = std::time::Instant::now();
+
+    loop {
+        if stop_flag.load(Ordering::Relaxed) || started.elapsed() >= X11_COMMAND_TIMEOUT {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("helper command timed out".into());
+        }
+
+        match child.try_wait() {
+            Ok(Some(_)) => {
+                return child
+                    .wait_with_output()
+                    .map_err(|error| format!("failed to collect helper command output: {error}"));
+            }
+            Ok(None) => thread::sleep(Duration::from_millis(20)),
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!("failed while waiting for helper command: {error}"));
+            }
+        }
+    }
+}
+
+fn parse_xauth_lines(output: &str) -> Vec<(String, String)> {
+    output
+        .lines()
+        .filter_map(|line| {
+            let parts = line.split_whitespace().collect::<Vec<_>>();
+            if parts.len() < 3 {
+                return None;
+            }
+            let protocol = parts[parts.len() - 2].trim();
+            let cookie = parts[parts.len() - 1].trim();
+            if protocol.is_empty() || cookie.is_empty() {
+                None
+            } else {
+                Some((protocol.to_string(), cookie.to_string()))
+            }
+        })
+        .collect()
+}
+
+fn resolve_xauth_binary() -> Option<String> {
+    #[cfg(target_os = "macos")]
+    {
+        let candidate = "/opt/X11/bin/xauth";
+        if PathBuf::from(candidate).exists() {
+            return Some(candidate.into());
+        }
+    }
+
+    Some("xauth".into())
+}
+
+fn spawn_x11_accept_loop(
+    app: AppHandle,
+    tab_id: String,
+    session_channel: Arc<Mutex<LibsshChannel>>,
+    config: X11ForwardConfig,
+    stop_flag: Arc<AtomicBool>,
+) {
+    thread::spawn(move || {
+        while !stop_flag.load(Ordering::Relaxed) {
+            let accepted = {
+                let channel = lock_embedded_ssh_channel(&session_channel);
+                channel.accept_x11(X11_ACCEPT_TIMEOUT)
+            };
+
+            let Some(x11_channel) = accepted else {
+                thread::sleep(SSH_LOOP_IDLE_SLEEP);
+                continue;
+            };
+
+            let app = app.clone();
+            let tab_id = tab_id.clone();
+            let config = config.clone();
+            let stop_flag = stop_flag.clone();
+            thread::spawn(move || {
+                if let Err(error) = proxy_x11_channel(x11_channel, &config, &stop_flag) {
+                    emit_output(
+                        &app,
+                        &tab_id,
+                        &format!("\r\n[warning] X11 channel closed: {error}\r\n"),
+                    );
+                }
+            });
+        }
+    });
+}
+
+fn proxy_x11_channel(
+    x11_channel: LibsshChannel,
+    config: &X11ForwardConfig,
+    stop_flag: &Arc<AtomicBool>,
+) -> Result<(), String> {
+    let mut local = connect_local_x11_display(&config.display)?;
+    local.set_nonblocking(true)?;
+    let mut remote_buffer = [0_u8; 16 * 1024];
+    let mut local_buffer = [0_u8; 16 * 1024];
+    let mut remote_to_local = VecDeque::<u8>::new();
+    let mut local_to_remote = VecDeque::<u8>::new();
+
+    while !stop_flag.load(Ordering::Relaxed) && !x11_channel.is_closed() && !x11_channel.is_eof() {
+        let mut made_progress = false;
+
+        made_progress |= write_pending_to_local_x11(&mut local, &mut remote_to_local)?;
+        made_progress |= write_pending_to_ssh_x11(&x11_channel, &mut local_to_remote)?;
+
+        if remote_to_local.len() < X11_PROXY_PENDING_LIMIT {
+            match x11_channel.read_nonblocking(&mut remote_buffer, false) {
+                Ok(0) => {
+                    if x11_channel.is_closed() || x11_channel.is_eof() {
+                        break;
+                    }
+                }
+                Ok(size) => {
+                    remote_to_local.extend(&remote_buffer[..size]);
+                    made_progress = true;
+                }
+                Err(LibsshError::TryAgain) => {}
+                Err(error) => return Err(format!("failed to read SSH X11 channel: {error}")),
+            }
+        }
+
+        if local_to_remote.len() < X11_PROXY_PENDING_LIMIT {
+            match local.read(&mut local_buffer) {
+                Ok(0) => break,
+                Ok(size) => {
+                    local_to_remote.extend(&local_buffer[..size]);
+                    made_progress = true;
+                }
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        io::ErrorKind::WouldBlock
+                            | io::ErrorKind::TimedOut
+                            | io::ErrorKind::Interrupted
+                    ) => {}
+                Err(error) => return Err(format!("failed to read local X11 display: {error}")),
+            }
+        }
+
+        if !made_progress {
+            thread::sleep(X11_PROXY_IDLE_SLEEP);
+        }
+    }
+
+    let _ = x11_channel.close();
+    local.shutdown();
+    Ok(())
+}
+
+fn write_pending_to_local_x11(
+    local: &mut LocalX11Stream,
+    pending: &mut VecDeque<u8>,
+) -> Result<bool, String> {
+    let mut made_progress = false;
+
+    while !pending.is_empty() {
+        let (front, _) = pending.as_slices();
+        if front.is_empty() {
+            break;
+        }
+
+        match local.write(front) {
+            Ok(0) => return Err("local X11 display stopped accepting data".into()),
+            Ok(size) => {
+                pending.drain(..size);
+                made_progress = true;
+            }
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::WouldBlock
+                        | io::ErrorKind::TimedOut
+                        | io::ErrorKind::Interrupted
+                ) =>
+            {
+                break;
+            }
+            Err(error) => return Err(format!("failed to write to local X11 display: {error}")),
+        }
+    }
+
+    Ok(made_progress)
+}
+
+fn write_pending_to_ssh_x11(
+    x11_channel: &LibsshChannel,
+    pending: &mut VecDeque<u8>,
+) -> Result<bool, String> {
+    let mut made_progress = false;
+
+    while !pending.is_empty() {
+        let (front, _) = pending.as_slices();
+        if front.is_empty() {
+            break;
+        }
+
+        let write_result = {
+            let mut stdin = x11_channel.stdin();
+            stdin.write(front)
+        };
+
+        match write_result {
+            Ok(0) => return Err("SSH X11 channel stopped accepting data".into()),
+            Ok(size) => {
+                pending.drain(..size);
+                made_progress = true;
+            }
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::WouldBlock
+                        | io::ErrorKind::TimedOut
+                        | io::ErrorKind::Interrupted
+                ) =>
+            {
+                break;
+            }
+            Err(error) => return Err(format!("failed to write to SSH X11 channel: {error}")),
+        }
+    }
+
+    Ok(made_progress)
+}
+
+enum LocalX11Stream {
+    Tcp(TcpStream),
+    #[cfg(unix)]
+    Unix(UnixStream),
+}
+
+impl LocalX11Stream {
+    fn set_nonblocking(&self, nonblocking: bool) -> Result<(), String> {
+        match self {
+            LocalX11Stream::Tcp(stream) => stream
+                .set_nonblocking(nonblocking)
+                .map_err(|error| format!("failed to configure local X11 TCP stream: {error}")),
+            #[cfg(unix)]
+            LocalX11Stream::Unix(stream) => stream
+                .set_nonblocking(nonblocking)
+                .map_err(|error| format!("failed to configure local X11 Unix stream: {error}")),
+        }
+    }
+
+    fn shutdown(&self) {
+        match self {
+            LocalX11Stream::Tcp(stream) => {
+                let _ = stream.shutdown(Shutdown::Both);
+            }
+            #[cfg(unix)]
+            LocalX11Stream::Unix(stream) => {
+                let _ = stream.shutdown(Shutdown::Both);
+            }
+        }
+    }
+}
+
+impl Read for LocalX11Stream {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match self {
+            LocalX11Stream::Tcp(stream) => stream.read(buf),
+            #[cfg(unix)]
+            LocalX11Stream::Unix(stream) => stream.read(buf),
+        }
+    }
+}
+
+impl Write for LocalX11Stream {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        match self {
+            LocalX11Stream::Tcp(stream) => stream.write(buf),
+            #[cfg(unix)]
+            LocalX11Stream::Unix(stream) => stream.write(buf),
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        match self {
+            LocalX11Stream::Tcp(stream) => stream.flush(),
+            #[cfg(unix)]
+            LocalX11Stream::Unix(stream) => stream.flush(),
+        }
+    }
+}
+
+fn connect_local_x11_display(display: &str) -> Result<LocalX11Stream, String> {
+    #[cfg(unix)]
+    {
+        if display.starts_with('/') {
+            return UnixStream::connect(display)
+                .map(LocalX11Stream::Unix)
+                .map_err(|error| format!("failed to connect to X11 display {display}: {error}"));
+        }
+
+        if let Some(display_number) = parse_x11_display_number(display) {
+            if display.starts_with(':') || display.starts_with("unix:") {
+                let path = format!("/tmp/.X11-unix/X{display_number}");
+                return UnixStream::connect(&path)
+                    .map(LocalX11Stream::Unix)
+                    .map_err(|error| {
+                        format!("failed to connect to local X11 socket {path}: {error}")
+                    });
+            }
+        }
+    }
+
+    let (host, display_number) = parse_tcp_x11_display(display)?;
+    let port = 6000 + display_number;
+    TcpStream::connect((host.as_str(), port))
+        .map(LocalX11Stream::Tcp)
+        .map_err(|error| format!("failed to connect to local X11 display {host}:{port}: {error}"))
+}
+
+fn parse_tcp_x11_display(display: &str) -> Result<(String, u16), String> {
+    if display.starts_with(':') {
+        return Ok((
+            "127.0.0.1".into(),
+            parse_x11_display_number(display).unwrap_or(0),
+        ));
+    }
+
+    let Some((host, rest)) = display.rsplit_once(':') else {
+        return Err(format!("unsupported X11 DISPLAY value: {display}"));
+    };
+    let display_number = rest
+        .split('.')
+        .next()
+        .and_then(|value| value.parse::<u16>().ok())
+        .ok_or_else(|| format!("unsupported X11 DISPLAY value: {display}"))?;
+    let host = if host.trim().is_empty() {
+        "127.0.0.1"
+    } else {
+        host.trim()
+    };
+    Ok((host.to_string(), display_number))
+}
+
+fn parse_x11_display_number(display: &str) -> Option<u16> {
+    let rest = display.rsplit_once(':')?.1;
+    rest.split('.').next()?.parse::<u16>().ok()
 }
 
 fn spawn_telnet_reader(
@@ -822,186 +1729,248 @@ fn fetch_ssh_status(
     session: &SessionDefinition,
     tab_id: &str,
 ) -> Result<SessionStatusSnapshot, String> {
-    if !ssh_control_master_supported() {
-        return fetch_ssh_status_with_native_session(session, tab_id);
-    }
-
-    let output = run_ssh_control_command(session, tab_id, remote_status_script())
-        .map_err(|error| format!("failed to launch SSH status probe: {error}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return Err(if stderr.is_empty() {
-            "SSH status probe failed".into()
-        } else {
-            humanize_ssh_error_message(&stderr, session)
-        });
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout = run_remote_ssh_script(session, tab_id)?;
     let mut parsed = parse_status_output(&stdout, session);
     parsed.mode = "live".into();
     parsed.latency = measure_latency(&session.host).unwrap_or_else(|_| "--".into());
     Ok(parsed)
 }
 
-fn fetch_ssh_status_with_native_session(
+fn run_remote_ssh_script(session: &SessionDefinition, tab_id: &str) -> Result<String, String> {
+    run_remote_ssh_script_with_label(session, tab_id, remote_status_script(), "status probe")
+}
+
+fn run_remote_ssh_script_with_label(
     session: &SessionDefinition,
     tab_id: &str,
-) -> Result<SessionStatusSnapshot, String> {
-    let username = ssh_status_username(session, tab_id)?;
-    let ssh = connect_native_ssh(session, &username)?;
-    let mut channel = ssh
-        .channel_session()
-        .map_err(|error| format!("failed to open SSH status channel: {error}"))?;
+    remote_script: &str,
+    label: &str,
+) -> Result<String, String> {
+    let ssh = connect_embedded_ssh_session(session, Some(tab_id), label)?;
+    let channel = ssh
+        .new_channel()
+        .map_err(|error| format!("failed to open SSH {label} channel: {error}"))?;
     channel
-        .exec(&format!("sh -lc {}", shell_quote(remote_status_script())))
-        .map_err(|error| format!("failed to execute SSH status probe: {error}"))?;
+        .open_session()
+        .map_err(|error| format!("failed to open SSH {label} session: {error}"))?;
+    channel
+        .request_exec(&format!("sh -lc {}", shell_quote(remote_script)))
+        .map_err(|error| format!("failed to execute SSH {label}: {error}"))?;
 
     let mut stdout = String::new();
     channel
+        .stdout()
         .read_to_string(&mut stdout)
-        .map_err(|error| format!("failed to read SSH status output: {error}"))?;
+        .map_err(|error| format!("failed to read SSH {label} output: {error}"))?;
     let mut stderr = String::new();
     channel
         .stderr()
         .read_to_string(&mut stderr)
-        .map_err(|error| format!("failed to read SSH status error output: {error}"))?;
+        .map_err(|error| format!("failed to read SSH {label} error output: {error}"))?;
     channel
-        .wait_close()
-        .map_err(|error| format!("failed to close SSH status channel: {error}"))?;
+        .close()
+        .map_err(|error| format!("failed to close SSH {label} channel: {error}"))?;
 
     let exit_status = channel
-        .exit_status()
-        .map_err(|error| format!("failed to read SSH status exit code: {error}"))?;
+        .get_exit_status()
+        .ok_or_else(|| format!("failed to read SSH {label} exit code"))?;
     if exit_status != 0 {
         let detail = stderr.trim();
         return Err(if detail.is_empty() {
-            format!("SSH status probe failed with exit code {exit_status}")
+            format!("SSH {label} failed with exit code {exit_status}")
         } else {
             humanize_ssh_error_message(detail, session)
         });
     }
 
-    let mut parsed = parse_status_output(&stdout, session);
-    parsed.mode = "live".into();
-    parsed.latency = measure_latency(&session.host).unwrap_or_else(|_| "--".into());
-    Ok(parsed)
+    Ok(stdout)
 }
 
-fn connect_native_ssh(session: &SessionDefinition, username: &str) -> Result<Ssh2Session, String> {
-    let tcp = TcpStream::connect((session.host.as_str(), session.port)).map_err(|error| {
+fn open_embedded_ssh_channel(
+    session: &SessionDefinition,
+    username: &str,
+    password_override: Option<&str>,
+    terminal_size: (u16, u16),
+    x11_config: Option<&X11ForwardConfig>,
+) -> Result<(LibsshChannel, Option<String>), String> {
+    let ssh = connect_embedded_ssh_session_with_username(
+        session,
+        username,
+        password_override,
+        "interactive session",
+    )?;
+
+    let channel = ssh
+        .new_channel()
+        .map_err(|error| format!("failed to create embedded SSH channel: {error}"))?;
+    channel
+        .open_session()
+        .map_err(|error| format!("failed to open embedded SSH session channel: {error}"))?;
+    channel
+        .request_pty(
+            "xterm-256color",
+            terminal_size.0.max(2) as u32,
+            terminal_size.1.max(2) as u32,
+        )
+        .map_err(|error| format!("failed to allocate embedded SSH PTY: {error}"))?;
+    let _ = channel.request_env("TERM", "xterm-256color");
+    let _ = channel.request_env("COLORTERM", "truecolor");
+    let x11_warning = if let Some(config) = x11_config {
+        let request_result = channel.request_x11(
+            false,
+            config.auth_protocol.as_deref(),
+            config.auth_cookie.as_deref(),
+            config.screen_number,
+        );
+
+        match request_result {
+            Ok(()) => None,
+            Err(error) => Some(format!(
+                "The SSH server rejected X11 forwarding for this session: {error}"
+            )),
+        }
+    } else {
+        None
+    };
+    channel
+        .request_shell()
+        .map_err(|error| format!("failed to start embedded SSH shell: {error}"))?;
+
+    Ok((channel, x11_warning))
+}
+
+fn should_retry_interactive_password(error: &str, session: &SessionDefinition) -> bool {
+    if session.auth_type != "password"
+        || session
+            .password
+            .as_deref()
+            .filter(|value| !value.is_empty())
+            .is_some()
+    {
+        return false;
+    }
+
+    let normalized = error.to_ascii_lowercase();
+    normalized.contains("password authentication failed")
+        || normalized.contains("authentication failed")
+        || normalized.contains("access denied")
+}
+
+fn connect_embedded_ssh_session_with_username(
+    session: &SessionDefinition,
+    username: &str,
+    password_override: Option<&str>,
+    context: &str,
+) -> Result<LibsshSession, String> {
+    let ssh = LibsshSession::new()
+        .map_err(|error| format!("failed to create embedded SSH {context}: {error}"))?;
+    ssh.set_option(SshOption::Hostname(session.host.clone()))
+        .map_err(|error| format!("failed to configure embedded SSH host: {error}"))?;
+    ssh.set_option(SshOption::Port(session.port))
+        .map_err(|error| format!("failed to configure embedded SSH port: {error}"))?;
+    ssh.set_option(SshOption::User(Some(username.to_string())))
+        .map_err(|error| format!("failed to configure embedded SSH username: {error}"))?;
+    ssh.set_option(SshOption::KnownHosts(None))
+        .map_err(|error| format!("failed to configure embedded SSH known_hosts path: {error}"))?;
+    ssh.set_option(SshOption::GlobalKnownHosts(None))
+        .map_err(|error| {
+            format!("failed to configure embedded SSH global known_hosts path: {error}")
+        })?;
+    ssh.connect().map_err(|error| {
         humanize_ssh_error_message(
-            &format!(
-            "failed to connect to {}:{} for SSH status: {error}",
-            session.host, session.port
-            ),
+            &format!("embedded SSH {context} connect failed: {error}"),
             session,
         )
     })?;
-    let mut ssh = Ssh2Session::new()
-        .map_err(|error| format!("failed to create SSH status session: {error}"))?;
-    ssh.set_tcp_stream(tcp);
-    ssh.handshake()
-        .map_err(|error| humanize_ssh_error_message(&format!("SSH status handshake failed: {error}"), session))?;
 
     match session.auth_type.as_str() {
         "password" => {
-            let password = session
-                .password
-                .as_deref()
+            let password = password_override
                 .filter(|value| !value.is_empty())
+                .map(str::to_string)
+                .or_else(|| {
+                    session
+                        .password
+                        .as_deref()
+                        .filter(|value| !value.is_empty())
+                        .map(str::to_string)
+                })
                 .ok_or_else(windows_credential_reuse_message)?;
-            ssh.userauth_password(username, password)
-                .map_err(|error| humanize_ssh_error_message(&format!("SSH status password authentication failed: {error}"), session))?;
+            ssh.userauth_password(None, Some(&password))
+                .map_err(|error| {
+                    humanize_ssh_error_message(
+                        &format!("embedded SSH {context} password authentication failed: {error}"),
+                        session,
+                    )
+                })?;
         }
         "key" => {
             let key_path = session
                 .key_path
                 .as_ref()
                 .filter(|value| !value.trim().is_empty())
-                .ok_or_else(|| "SSH status key authentication requires a key path".to_string())?;
+                .ok_or_else(|| {
+                    format!("embedded SSH {context} key authentication requires a key path")
+                })?;
             let expanded = expand_tilde(key_path);
-            let passphrase = session
-                .password
-                .as_deref()
-                .filter(|value| !value.is_empty());
-            ssh.userauth_pubkey_file(username, None, expanded.as_ref(), passphrase)
-                .map_err(|error| humanize_ssh_error_message(&format!("SSH status key authentication failed: {error}"), session))?;
+            let passphrase = password_override
+                .filter(|value| !value.is_empty())
+                .or_else(|| {
+                    session
+                        .password
+                        .as_deref()
+                        .filter(|value| !value.is_empty())
+                });
+            ssh.userauth_public_key_auto(Some(&expanded), passphrase)
+                .map_err(|error| {
+                    humanize_ssh_error_message(
+                        &format!("embedded SSH {context} key authentication failed: {error}"),
+                        session,
+                    )
+                })?;
         }
         _ => {
-            ssh.userauth_agent(username)
-                .map_err(|error| humanize_ssh_error_message(&format!("SSH status agent authentication failed: {error}"), session))?;
+            ssh.userauth_agent(Some(username)).map_err(|error| {
+                humanize_ssh_error_message(
+                    &format!("embedded SSH {context} agent authentication failed: {error}"),
+                    session,
+                )
+            })?;
         }
-    }
-
-    if !ssh.authenticated() {
-        return Err(humanize_ssh_error_message(
-            "SSH status authentication was rejected by the remote host",
-            session,
-        ));
     }
 
     Ok(ssh)
 }
 
-fn run_ssh_control_command(
-    session: &SessionDefinition,
-    tab_id: &str,
-    remote_script: &str,
-) -> Result<std::process::Output, String> {
-    let target = ssh_status_target(session, tab_id)?;
-    let mut command = std::process::Command::new("ssh");
-
-    if ssh_control_master_supported() {
-        let control_path = ssh_control_path_for_tab(tab_id);
-        if !control_path.exists() {
-            return Err("waiting for SSH login".into());
-        }
-
-        command.arg("-S").arg(&control_path);
-    } else if let Some(key_path) = session
-        .key_path
-        .as_ref()
+pub(crate) fn ssh_helper_tab_id<'a>(
+    session: &'a SessionDefinition,
+    runtime_tab_id: Option<&'a str>,
+) -> Option<&'a str> {
+    runtime_tab_id
         .filter(|value| !value.trim().is_empty())
-    {
-        command.arg("-i").arg(expand_tilde(key_path));
-    }
-
-    command
-        .arg("-x")
-        .arg("-o")
-        .arg("BatchMode=yes")
-        .arg("-o")
-        .arg("ControlMaster=no")
-        .arg("-o")
-        .arg("NumberOfPasswordPrompts=0")
-        .arg("-o")
-        .arg("LogLevel=ERROR")
-        .arg("-p")
-        .arg(session.port.to_string())
-        .arg(target)
-        .arg("sh")
-        .arg("-lc")
-        .arg(shell_quote(remote_script))
-        .output()
-        .map_err(|error| format!("failed to execute SSH status command: {error}"))
+        .or_else(|| {
+            session
+                .linked_ssh_tab_id
+                .as_deref()
+                .filter(|value| !value.trim().is_empty())
+        })
 }
 
-fn ssh_status_target(session: &SessionDefinition, tab_id: &str) -> Result<String, String> {
-    Ok(format!(
-        "{}@{}",
-        ssh_status_username(session, tab_id)?,
-        session.host
-    ))
-}
-
-fn ssh_status_username(session: &SessionDefinition, tab_id: &str) -> Result<String, String> {
+pub(crate) fn ssh_helper_username(
+    session: &SessionDefinition,
+    runtime_tab_id: Option<&str>,
+) -> Result<String, String> {
     let username = if session.username.trim().is_empty() {
-        fs::read_to_string(ssh_control_user_path_for_tab(tab_id))
-            .map_err(|_| "waiting for SSH username".to_string())?
-            .trim()
-            .to_string()
+        ssh_helper_tab_id(session, runtime_tab_id)
+            .and_then(ssh_runtime_username)
+            .or_else(|| {
+                ssh_helper_tab_id(session, runtime_tab_id).and_then(|tab_id| {
+                    fs::read_to_string(ssh_runtime_username_path_for_tab(tab_id))
+                        .ok()
+                        .map(|value| value.trim().to_string())
+                })
+            })
+            .unwrap_or_default()
     } else {
         session.username.trim().to_string()
     };
@@ -1011,6 +1980,38 @@ fn ssh_status_username(session: &SessionDefinition, tab_id: &str) -> Result<Stri
     }
 
     Ok(username)
+}
+
+fn ssh_helper_password(
+    session: &SessionDefinition,
+    runtime_tab_id: Option<&str>,
+) -> Option<String> {
+    session
+        .password
+        .as_deref()
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .or_else(|| ssh_helper_tab_id(session, runtime_tab_id).and_then(ssh_runtime_password))
+}
+
+pub(crate) fn connect_embedded_ssh_session(
+    session: &SessionDefinition,
+    runtime_tab_id: Option<&str>,
+    context: &str,
+) -> Result<LibsshSession, String> {
+    let username = ssh_helper_username(session, runtime_tab_id)?;
+    let password = ssh_helper_password(session, runtime_tab_id);
+    connect_embedded_ssh_session_with_username(session, &username, password.as_deref(), context)
+}
+
+pub(crate) fn open_embedded_sftp(
+    session: &SessionDefinition,
+    runtime_tab_id: Option<&str>,
+    context: &str,
+) -> Result<LibsshSftp, String> {
+    let ssh = connect_embedded_ssh_session(session, runtime_tab_id, context)?;
+    ssh.sftp()
+        .map_err(|error| format!("failed to open embedded SSH SFTP subsystem: {error}"))
 }
 
 fn fetch_local_status(session: &SessionDefinition) -> Result<SessionStatusSnapshot, String> {
@@ -1163,8 +2164,17 @@ fn handle_password_prompt(
 
 fn push_recent_terminal_output(recent_output: &mut String, chunk: &str) {
     recent_output.push_str(&chunk.to_ascii_lowercase());
-    if recent_output.len() > 1024 {
-        let drain_len = recent_output.len() - 1024;
+    let overflow_chars = recent_output
+        .chars()
+        .count()
+        .saturating_sub(RECENT_TERMINAL_OUTPUT_CHAR_LIMIT);
+
+    if overflow_chars > 0 {
+        let drain_len = recent_output
+            .char_indices()
+            .nth(overflow_chars)
+            .map(|(index, _)| index)
+            .unwrap_or_else(|| recent_output.len());
         recent_output.drain(..drain_len);
     }
 }
@@ -1286,12 +2296,39 @@ fn maybe_report_x11_forwarding_failure(
         return;
     }
 
-    if !chunk
-        .to_ascii_lowercase()
-        .contains("x11 forwarding request failed on channel")
+    let normalized = chunk.to_ascii_lowercase();
+    if normalized.contains("no matching fbconfigs")
+        || normalized.contains("glxcreatecontext failed")
+        || normalized.contains("glxbadcontext")
+        || normalized.contains("could not create gl context")
+        || normalized.contains("failed to load driver: swrast")
+        || normalized.contains("glx without the glx_arb_create_context extension")
+        || normalized.contains("apple-dri")
     {
+        if x11_failure_diagnosed
+            .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+        {
+            emit_output(
+                app,
+                tab_id,
+                "\r\n[information] X11 forwarding is active, but this remote app needs GLX/OpenGL support from the local X server. On macOS/XQuartz, indirect GLX is limited and GLX apps such as `glxgears` may still fail even after enabling `+iglx`. Prefer 2D X11 apps for forwarding, or launch Chromium with `--disable-gpu --use-gl=swiftshader`.\r\n",
+            );
+        }
         return;
     }
+
+    let reason = if normalized.contains("x11 forwarding request failed on channel") {
+        "The SSH server rejected the X11 forwarding request for this interactive session."
+    } else if normalized.contains("missing x server or $display")
+        || normalized.contains("cannot open display")
+        || normalized.contains("can't open display")
+        || normalized.contains("unable to open display")
+    {
+        "A remote GUI command could not find a usable DISPLAY. X11 forwarding is not active in this shell."
+    } else {
+        return;
+    };
 
     if x11_failure_diagnosed
         .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
@@ -1300,11 +2337,20 @@ fn maybe_report_x11_forwarding_failure(
         return;
     }
 
-    emit_output(
-        app,
-        tab_id,
-        "\r\n[warning] The SSH server rejected the X11 forwarding request for this interactive session.\r\n",
-    );
+    report_x11_forwarding_failure(app, tab_id, session, reason);
+}
+
+fn report_x11_forwarding_failure(
+    app: &AppHandle,
+    tab_id: &str,
+    session: &SessionDefinition,
+    reason: &str,
+) {
+    if session.kind != "ssh" || !session.x11_forwarding {
+        return;
+    }
+
+    emit_output(app, tab_id, &format!("\r\n[warning] {reason}\r\n"));
 
     let app = app.clone();
     let tab_id = tab_id.to_string();
@@ -1399,18 +2445,8 @@ if [ -r /proc/sys/net/ipv6/conf/all/disable_ipv6 ]; then
   printf '__OXT__ipv6_disabled=%s\n' "$(cat /proc/sys/net/ipv6/conf/all/disable_ipv6 2>/dev/null)"
 fi
 "#;
-    let output = run_ssh_control_command(session, tab_id, remote_script)?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return Err(if stderr.is_empty() {
-            "diagnostic SSH command failed".into()
-        } else {
-            stderr
-        });
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout =
+        run_remote_ssh_script_with_label(session, tab_id, remote_script, "X11 diagnostic")?;
     let mut facts = HashMap::<String, String>::new();
     for line in stdout.lines() {
         let Some(payload) = line.strip_prefix("__OXT__") else {
@@ -1552,7 +2588,8 @@ fn finalize_terminal(
     if let Ok(mut registry) = terminals.lock() {
         registry.remove(tab_id);
     }
-    cleanup_ssh_control_socket(tab_id);
+    clear_ssh_runtime_auth(tab_id);
+    cleanup_ssh_runtime_metadata(tab_id);
 
     if should_emit {
         emit_exit(
@@ -1670,9 +2707,7 @@ fn local_home_dir() -> Option<String> {
     }
 }
 
-fn resolve_local_working_directory(
-    session: &SessionDefinition,
-) -> Result<Option<String>, String> {
+fn resolve_local_working_directory(session: &SessionDefinition) -> Result<Option<String>, String> {
     let Some(value) = session
         .local_working_directory
         .as_ref()
@@ -1700,53 +2735,95 @@ fn resolve_local_working_directory(
     Ok(Some(path.to_string_lossy().to_string()))
 }
 
+fn ssh_runtime_auth_store() -> &'static Mutex<HashMap<String, SshRuntimeAuthState>> {
+    static SSH_RUNTIME_AUTH: OnceLock<Mutex<HashMap<String, SshRuntimeAuthState>>> =
+        OnceLock::new();
+    SSH_RUNTIME_AUTH.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn set_ssh_runtime_auth(tab_id: &str, username: Option<String>, password: Option<String>) {
+    if let Ok(mut store) = ssh_runtime_auth_store().lock() {
+        let entry = store.entry(tab_id.to_string()).or_default();
+        if let Some(username) = username {
+            entry.username = Some(username.clone());
+            let _ = fs::write(
+                ssh_runtime_username_path_for_tab(tab_id),
+                format!("{username}\n"),
+            );
+        }
+        if let Some(password) = password {
+            entry.password = Some(password);
+        }
+    }
+}
+
+pub(crate) fn ssh_runtime_username(tab_id: &str) -> Option<String> {
+    ssh_runtime_auth_store()
+        .lock()
+        .ok()
+        .and_then(|store| store.get(tab_id).and_then(|entry| entry.username.clone()))
+}
+
+pub(crate) fn ssh_runtime_password(tab_id: &str) -> Option<String> {
+    ssh_runtime_auth_store()
+        .lock()
+        .ok()
+        .and_then(|store| store.get(tab_id).and_then(|entry| entry.password.clone()))
+}
+
+fn clear_ssh_runtime_auth(tab_id: &str) {
+    if let Ok(mut store) = ssh_runtime_auth_store().lock() {
+        store.remove(tab_id);
+    }
+}
+
 #[cfg(not(windows))]
-pub fn ssh_control_path_for_tab(tab_id: &str) -> PathBuf {
+fn ssh_runtime_metadata_base_path_for_tab(tab_id: &str) -> PathBuf {
     let mut hasher = DefaultHasher::new();
     tab_id.hash(&mut hasher);
     PathBuf::from("/tmp")
-        .join(SSH_CONTROL_DIR)
-        .join(format!("{:016x}.sock", hasher.finish()))
+        .join(SSH_RUNTIME_METADATA_DIR)
+        .join(format!("{:016x}.runtime", hasher.finish()))
 }
 
 #[cfg(windows)]
-pub fn ssh_control_path_for_tab(tab_id: &str) -> PathBuf {
+fn ssh_runtime_metadata_base_path_for_tab(tab_id: &str) -> PathBuf {
     let mut hasher = DefaultHasher::new();
     tab_id.hash(&mut hasher);
     std::env::temp_dir()
-        .join(SSH_CONTROL_DIR)
-        .join(format!("{:016x}.sock", hasher.finish()))
+        .join(SSH_RUNTIME_METADATA_DIR)
+        .join(format!("{:016x}.runtime", hasher.finish()))
 }
 
-pub fn ssh_control_user_path_for_tab(tab_id: &str) -> PathBuf {
-    ssh_control_path_for_tab(tab_id).with_extension("user")
+fn ssh_runtime_username_path_for_tab(tab_id: &str) -> PathBuf {
+    ssh_runtime_metadata_base_path_for_tab(tab_id).with_extension("user")
 }
 
-fn prepare_ssh_control_socket(tab_id: &str) -> Result<(), String> {
-    let control_path = ssh_control_path_for_tab(tab_id);
-    if let Some(parent) = control_path.parent() {
+fn prepare_ssh_runtime_metadata(tab_id: &str) -> Result<(), String> {
+    let metadata_path = ssh_runtime_metadata_base_path_for_tab(tab_id);
+    if let Some(parent) = metadata_path.parent() {
         fs::create_dir_all(parent).map_err(|error| {
             format!(
-                "failed to prepare SSH control directory {}: {error}",
+                "failed to prepare SSH runtime metadata directory {}: {error}",
                 parent.display()
             )
         })?;
     }
 
-    if control_path.exists() {
-        fs::remove_file(&control_path).map_err(|error| {
+    if metadata_path.exists() {
+        fs::remove_file(&metadata_path).map_err(|error| {
             format!(
-                "failed to remove stale SSH control socket {}: {error}",
-                control_path.display()
+                "failed to remove stale SSH runtime metadata {}: {error}",
+                metadata_path.display()
             )
         })?;
     }
-    let user_path = ssh_control_user_path_for_tab(tab_id);
-    if user_path.exists() {
-        fs::remove_file(&user_path).map_err(|error| {
+    let username_path = ssh_runtime_username_path_for_tab(tab_id);
+    if username_path.exists() {
+        fs::remove_file(&username_path).map_err(|error| {
             format!(
                 "failed to remove stale SSH login metadata {}: {error}",
-                user_path.display()
+                username_path.display()
             )
         })?;
     }
@@ -1754,266 +2831,14 @@ fn prepare_ssh_control_socket(tab_id: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn cleanup_ssh_control_socket(tab_id: &str) {
-    let control_path = ssh_control_path_for_tab(tab_id);
-    let _ = fs::remove_file(control_path);
-    let _ = fs::remove_file(ssh_control_user_path_for_tab(tab_id));
-}
-
-fn build_interactive_ssh_command(
-    session: &SessionDefinition,
-    control_path: &PathBuf,
-) -> Result<(CommandBuilder, Option<String>), String> {
-    if session.username.trim().is_empty() {
-        return build_prompted_ssh_command(session, control_path);
-    }
-
-    let mut command = CommandBuilder::new("ssh");
-    let control_path = ssh_control_master_supported().then_some(control_path);
-    apply_common_ssh_args(&mut command, session, false, control_path);
-    command.env("TERM", "xterm-256color");
-    let x11_display = apply_local_x11_environment(&mut command, session)?;
-    Ok((command, x11_display))
-}
-
-#[cfg(not(windows))]
-fn build_prompted_ssh_command(
-    session: &SessionDefinition,
-    control_path: &PathBuf,
-) -> Result<(CommandBuilder, Option<String>), String> {
-    let mut command = CommandBuilder::new("sh");
-    command.args([
-        "-lc",
-        r#"printf 'login as: '
-IFS= read -r OPENXTERM_SSH_LOGIN
-if [ -z "$OPENXTERM_SSH_LOGIN" ]; then
-  printf '\r\n[error] Username is required.\r\n'
-  exit 1
-fi
-printf '%s\n' "$OPENXTERM_SSH_LOGIN" > "$OPENXTERM_SSH_LOGIN_PATH"
-set -- \
-  -o BatchMode=no \
-  -o NumberOfPasswordPrompts=1 \
-  -o PreferredAuthentications=publickey,keyboard-interactive,password \
-  -o PubkeyAuthentication=yes \
-  -o KbdInteractiveAuthentication=yes \
-  -o StrictHostKeyChecking=accept-new \
-  -o UpdateHostKeys=yes \
-  -o ConnectTimeout=5 \
-  -o ServerAliveInterval=30 \
-  -o ServerAliveCountMax=3 \
-  -o ControlMaster=yes \
-  -o ControlPersist=no \
-  -o ControlPath="$OPENXTERM_SSH_CONTROL_PATH" \
-  -o LogLevel=ERROR
-if [ "$OPENXTERM_SSH_X11" = "1" ]; then
-  if [ "$OPENXTERM_SSH_X11_TRUSTED" = "1" ]; then
-    set -- "$@" -Y -o ForwardX11=yes -o ForwardX11Trusted=yes
-  else
-    set -- "$@" -X -o ForwardX11=yes -o ForwardX11Trusted=no -o ForwardX11Timeout=0
-  fi
-  if [ -n "$OPENXTERM_SSH_XAUTH_LOCATION" ]; then
-    set -- "$@" -o "XAuthLocation=$OPENXTERM_SSH_XAUTH_LOCATION"
-  fi
-fi
-if [ -n "$OPENXTERM_SSH_KEY" ]; then
-  set -- "$@" -i "$OPENXTERM_SSH_KEY"
-fi
-set -- "$@" -p "$OPENXTERM_SSH_PORT" "$OPENXTERM_SSH_LOGIN@$OPENXTERM_SSH_HOST"
-exec ssh "$@"
-"#,
-    ]);
-    configure_prompted_ssh_environment(command, session, control_path)
-}
-
-#[cfg(windows)]
-fn build_prompted_ssh_command(
-    session: &SessionDefinition,
-    control_path: &PathBuf,
-) -> Result<(CommandBuilder, Option<String>), String> {
-    let mut command = CommandBuilder::new("powershell.exe");
-    command.args([
-        "-NoLogo",
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-Command",
-        r#"Write-Host -NoNewline 'login as: '
-$openxtermSshLogin = [Console]::ReadLine()
-if ([string]::IsNullOrWhiteSpace($openxtermSshLogin)) {
-  Write-Host "`r`n[error] Username is required.`r`n"
-  exit 1
-}
-[System.IO.File]::WriteAllText($env:OPENXTERM_SSH_LOGIN_PATH, "$openxtermSshLogin`n")
-$sshArgs = @(
-  '-o', 'BatchMode=no',
-  '-o', 'NumberOfPasswordPrompts=1',
-  '-o', 'PreferredAuthentications=publickey,keyboard-interactive,password',
-  '-o', 'PubkeyAuthentication=yes',
-  '-o', 'KbdInteractiveAuthentication=yes',
-  '-o', 'StrictHostKeyChecking=accept-new',
-  '-o', 'UpdateHostKeys=yes',
-  '-o', 'ConnectTimeout=5',
-  '-o', 'ServerAliveInterval=30',
-  '-o', 'ServerAliveCountMax=3',
-  '-o', 'LogLevel=ERROR'
-)
-if ($env:OPENXTERM_SSH_X11 -eq '1') {
-  if ($env:OPENXTERM_SSH_X11_TRUSTED -eq '1') {
-    $sshArgs += @('-Y', '-o', 'ForwardX11=yes', '-o', 'ForwardX11Trusted=yes')
-  } else {
-    $sshArgs += @('-X', '-o', 'ForwardX11=yes', '-o', 'ForwardX11Trusted=no', '-o', 'ForwardX11Timeout=0')
-  }
-  if (![string]::IsNullOrWhiteSpace($env:OPENXTERM_SSH_XAUTH_LOCATION)) {
-    $sshArgs += @('-o', "XAuthLocation=$env:OPENXTERM_SSH_XAUTH_LOCATION")
-  }
-}
-if (![string]::IsNullOrWhiteSpace($env:OPENXTERM_SSH_KEY)) {
-  $sshArgs += @('-i', $env:OPENXTERM_SSH_KEY)
-}
-$sshArgs += @('-p', $env:OPENXTERM_SSH_PORT, "$openxtermSshLogin@$($env:OPENXTERM_SSH_HOST)")
-& ssh @sshArgs
-exit $LASTEXITCODE
-"#,
-    ]);
-    configure_prompted_ssh_environment(command, session, control_path)
-}
-
-fn configure_prompted_ssh_environment(
-    mut command: CommandBuilder,
-    session: &SessionDefinition,
-    control_path: &PathBuf,
-) -> Result<(CommandBuilder, Option<String>), String> {
-    command.env("TERM", "xterm-256color");
-    command.env("OPENXTERM_SSH_HOST", &session.host);
-    command.env("OPENXTERM_SSH_PORT", &session.port.to_string());
-    command.env(
-        "OPENXTERM_SSH_CONTROL_PATH",
-        control_path.to_string_lossy().to_string(),
-    );
-    command.env(
-        "OPENXTERM_SSH_LOGIN_PATH",
-        control_path
-            .with_extension("user")
-            .to_string_lossy()
-            .to_string(),
-    );
-    command.env(
-        "OPENXTERM_SSH_KEY",
-        &session
-            .key_path
-            .as_ref()
-            .filter(|value| !value.trim().is_empty())
-            .map(|value| expand_tilde(value))
-            .unwrap_or_default(),
-    );
-    command.env(
-        "OPENXTERM_SSH_X11",
-        if session.x11_forwarding { "1" } else { "0" },
-    );
-    command.env(
-        "OPENXTERM_SSH_X11_TRUSTED",
-        if session.x11_trusted { "1" } else { "0" },
-    );
-    command.env(
-        "OPENXTERM_SSH_XAUTH_LOCATION",
-        resolve_local_xauth_location().unwrap_or_default(),
-    );
-    let x11_display = apply_local_x11_environment(&mut command, session)?;
-    Ok((command, x11_display))
-}
-
-fn apply_common_ssh_args(
-    command: &mut CommandBuilder,
-    session: &SessionDefinition,
-    batch_mode: bool,
-    control_path: Option<&PathBuf>,
-) {
-    command.args([
-        "-o",
-        if batch_mode {
-            "BatchMode=yes"
-        } else {
-            "BatchMode=no"
-        },
-        "-o",
-        if batch_mode {
-            "NumberOfPasswordPrompts=0"
-        } else {
-            "NumberOfPasswordPrompts=1"
-        },
-        "-o",
-        "PreferredAuthentications=publickey,keyboard-interactive,password",
-        "-o",
-        "PubkeyAuthentication=yes",
-        "-o",
-        "KbdInteractiveAuthentication=yes",
-        "-o",
-        "StrictHostKeyChecking=accept-new",
-        "-o",
-        "UpdateHostKeys=yes",
-        "-o",
-        "ConnectTimeout=5",
-        "-o",
-        "ServerAliveInterval=30",
-        "-o",
-        "ServerAliveCountMax=3",
-        "-o",
-        "LogLevel=ERROR",
-        "-p",
-        &session.port.to_string(),
-    ]);
-
-    if let Some(control_path) = control_path {
-        command.args(["-o", "ControlMaster=yes", "-o", "ControlPersist=no", "-o"]);
-        command.arg(format!("ControlPath={}", control_path.display()));
-    }
-
-    if session.x11_forwarding {
-        if session.x11_trusted {
-            command.arg("-Y");
-            command.args(["-o", "ForwardX11=yes", "-o", "ForwardX11Trusted=yes"]);
-        } else {
-            command.arg("-X");
-            command.args([
-                "-o",
-                "ForwardX11=yes",
-                "-o",
-                "ForwardX11Trusted=no",
-                "-o",
-                "ForwardX11Timeout=0",
-            ]);
-        }
-        if let Some(xauth_location) = resolve_local_xauth_location() {
-            command.args(["-o", &format!("XAuthLocation={xauth_location}")]);
-        }
-    }
-
-    if let Some(key_path) = session
-        .key_path
-        .as_ref()
-        .filter(|value| !value.trim().is_empty())
-    {
-        command.args(["-i", &expand_tilde(key_path)]);
-    }
-
-    command.arg(build_target(session));
-}
-
-fn ssh_control_master_supported() -> bool {
-    !cfg!(windows)
+fn cleanup_ssh_runtime_metadata(tab_id: &str) {
+    let metadata_path = ssh_runtime_metadata_base_path_for_tab(tab_id);
+    let _ = fs::remove_file(metadata_path);
+    let _ = fs::remove_file(ssh_runtime_username_path_for_tab(tab_id));
 }
 
 fn ssh_status_poller_supported(session: &SessionDefinition) -> bool {
     session.kind == "ssh"
-}
-
-fn build_target(session: &SessionDefinition) -> String {
-    if session.username.trim().is_empty() {
-        session.host.clone()
-    } else {
-        format!("{}@{}", session.username, session.host)
-    }
 }
 
 fn expand_tilde(value: &str) -> String {
@@ -2030,7 +2855,7 @@ fn expand_tilde(value: &str) -> String {
 }
 
 fn windows_credential_reuse_message() -> String {
-    "Windows cannot reuse the password typed into the interactive SSH terminal. Save a password in the session, use a key, or use SSH agent authentication for live status and linked SFTP.".into()
+    "OpenXTerm needs a saved password or a live interactive password from the active SSH tab to reuse this connection for status or linked SFTP. Keep the SSH tab connected, save a password, or use key/agent authentication.".into()
 }
 
 fn humanize_ssh_error_message(error: &str, session: &SessionDefinition) -> String {
@@ -2086,38 +2911,6 @@ fn humanize_ssh_error_message(error: &str, session: &SessionDefinition) -> Strin
     }
 
     normalized.to_string()
-}
-
-fn apply_local_x11_environment(
-    command: &mut CommandBuilder,
-    session: &SessionDefinition,
-) -> Result<Option<String>, String> {
-    if !session.x11_forwarding {
-        return Ok(None);
-    }
-
-    let display = resolve_local_x11_display(session.x11_display.as_deref())?;
-    command.env("DISPLAY", &display);
-
-    if let Ok(xauthority) = std::env::var("XAUTHORITY") {
-        if !xauthority.trim().is_empty() {
-            command.env("XAUTHORITY", xauthority);
-        }
-    }
-
-    Ok(Some(display))
-}
-
-fn resolve_local_xauth_location() -> Option<String> {
-    #[cfg(target_os = "macos")]
-    {
-        let candidate = "/opt/X11/bin/xauth";
-        if PathBuf::from(candidate).exists() {
-            return Some(candidate.into());
-        }
-    }
-
-    None
 }
 
 fn shell_quote(value: &str) -> String {

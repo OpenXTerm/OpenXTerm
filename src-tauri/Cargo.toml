@@ -28,12 +28,9 @@ log = "0.4"
 tauri = { version = "2.10.3", features = [] }
 tauri-plugin-log = "2"
 font-kit = "0.14"
-
-[target.'cfg(not(windows))'.dependencies]
-ssh2 = { version = "0.9", features = ["vendored-openssl"] }
+libssh-rs = { version = "0.3", features = ["vendored", "vendored-openssl"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
-ssh2 = "0.9"
 windows-core = "0.61"
 windows = { version = "0.61", features = [
     "Security_Credentials_UI",

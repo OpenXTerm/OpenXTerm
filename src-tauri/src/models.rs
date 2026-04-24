@@ -178,3 +178,20 @@ pub struct LocalX11SupportPayload {
     pub message: String,
     pub detail: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibsshProbePayload {
+    pub backend: String,
+    pub authenticated_user: String,
+    pub known_hosts: String,
+    pub pty_supported: bool,
+    pub pty_term: String,
+    pub remote_command: String,
+    pub exec_stdout: String,
+    pub exec_stderr: String,
+    pub exec_exit_status: Option<i32>,
+    pub remote_path: String,
+    pub sftp_entries: Vec<RemoteFileEntry>,
+    pub notes: Vec<String>,
+}

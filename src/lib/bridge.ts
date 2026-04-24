@@ -6,6 +6,7 @@ import { buildFileEntries } from './sessionUtils'
 import type {
   AppBootstrap,
   FileDownloadResult,
+  LibsshProbePayload,
   LocalX11Support,
   MacroDefinition,
   MenuActionPayload,
@@ -203,6 +204,18 @@ export async function listSystemFontFamilies() {
     'Ubuntu Mono',
     'DejaVu Sans Mono',
   ]
+}
+
+export async function runLibsshProbe(
+  session: SessionDefinition,
+  remoteCommand?: string,
+  remotePath?: string,
+) {
+  if (!isTauriRuntime()) {
+    throw new Error('libssh-rs probe is available only in the desktop Tauri build.')
+  }
+
+  return invoke<LibsshProbePayload>('run_libssh_probe', { session, remoteCommand, remotePath })
 }
 
 export async function startSshSession(tabId: string, session: SessionDefinition) {

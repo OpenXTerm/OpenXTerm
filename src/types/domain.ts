@@ -66,6 +66,21 @@ export interface LocalX11Support {
   detail: string
 }
 
+export interface LibsshProbePayload {
+  backend: string
+  authenticatedUser: string
+  knownHosts: string
+  ptySupported: boolean
+  ptyTerm: string
+  remoteCommand: string
+  execStdout: string
+  execStderr: string
+  execExitStatus?: number | null
+  remotePath: string
+  sftpEntries: RemoteFileEntry[]
+  notes: string[]
+}
+
 export interface AppBootstrap {
   sessions: SessionDefinition[]
   sessionFolders: SessionFolderDefinition[]

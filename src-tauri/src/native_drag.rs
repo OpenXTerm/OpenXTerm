@@ -18,33 +18,31 @@ use std::{
 
 use tauri::{AppHandle, Window};
 #[cfg(target_os = "windows")]
-use windows_core::{implement, BOOL, Error as WindowsError, HRESULT};
-#[cfg(target_os = "windows")]
-use windows::{
-    Win32::{
-        Foundation::{
-            DATA_S_SAMEFORMATETC, DRAGDROP_S_CANCEL, DRAGDROP_S_DROP,
-            DRAGDROP_S_USEDEFAULTCURSORS, DV_E_FORMATETC, DV_E_TYMED, E_FAIL, E_NOTIMPL,
-            E_POINTER, OLE_E_ADVISENOTSUPPORTED, S_FALSE, S_OK,
+use windows::Win32::{
+    Foundation::{
+        DATA_S_SAMEFORMATETC, DRAGDROP_S_CANCEL, DRAGDROP_S_DROP, DRAGDROP_S_USEDEFAULTCURSORS,
+        DV_E_FORMATETC, DV_E_TYMED, E_FAIL, E_NOTIMPL, E_POINTER, OLE_E_ADVISENOTSUPPORTED,
+        S_FALSE, S_OK,
+    },
+    Storage::FileSystem::FILE_ATTRIBUTE_NORMAL,
+    System::{
+        Com::{
+            IAdviseSink, IDataObject, IDataObject_Impl, IEnumFORMATETC, IEnumFORMATETC_Impl,
+            IEnumSTATDATA, DATADIR_GET, FORMATETC, STGMEDIUM, STGMEDIUM_0, TYMED_HGLOBAL,
+            TYMED_ISTREAM,
         },
-        Storage::FileSystem::FILE_ATTRIBUTE_NORMAL,
-        System::{
-            Com::{
-                DATADIR_GET, FORMATETC, IAdviseSink, IDataObject, IDataObject_Impl,
-                IEnumFORMATETC, IEnumFORMATETC_Impl, IEnumSTATDATA, STGMEDIUM, STGMEDIUM_0,
-                TYMED_HGLOBAL, TYMED_ISTREAM,
-            },
-            DataExchange::RegisterClipboardFormatW,
-            Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE, GMEM_ZEROINIT},
-            Ole::{DoDragDrop, DROPEFFECT, DROPEFFECT_COPY, IDropSource, IDropSource_Impl},
-            SystemServices::{MODIFIERKEYS_FLAGS, MK_LBUTTON},
-        },
-        UI::Shell::{
-            CFSTR_FILECONTENTS, CFSTR_FILEDESCRIPTORW, FD_ATTRIBUTES, FD_PROGRESSUI, FD_UNICODE,
-            FILEDESCRIPTORW, SHCreateMemStream,
-        },
+        DataExchange::RegisterClipboardFormatW,
+        Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE, GMEM_ZEROINIT},
+        Ole::{DoDragDrop, IDropSource, IDropSource_Impl, DROPEFFECT, DROPEFFECT_COPY},
+        SystemServices::{MK_LBUTTON, MODIFIERKEYS_FLAGS},
+    },
+    UI::Shell::{
+        SHCreateMemStream, CFSTR_FILECONTENTS, CFSTR_FILEDESCRIPTORW, FD_ATTRIBUTES, FD_PROGRESSUI,
+        FD_UNICODE, FILEDESCRIPTORW,
     },
 };
+#[cfg(target_os = "windows")]
+use windows_core::{implement, Error as WindowsError, BOOL, HRESULT};
 
 use crate::{
     file_ops,
@@ -327,7 +325,11 @@ struct WindowsVirtualFileDataObject {
 
 #[cfg(target_os = "windows")]
 impl WindowsVirtualFileDataObject {
-    fn new(app: AppHandle, session: SessionDefinition, entries: Vec<WindowsVirtualDragEntry>) -> Self {
+    fn new(
+        app: AppHandle,
+        session: SessionDefinition,
+        entries: Vec<WindowsVirtualDragEntry>,
+    ) -> Self {
         Self {
             app,
             session,
@@ -378,7 +380,10 @@ impl WindowsVirtualFileDataObject {
         let bytes = fs::read(&staged_path).map_err(|error| {
             WindowsError::new(
                 E_FAIL,
-                format!("failed to read staged drag file {}: {error}", staged_path.display()),
+                format!(
+                    "failed to read staged drag file {}: {error}",
+                    staged_path.display()
+                ),
             )
         })?;
         let stream = unsafe { SHCreateMemStream(Some(&bytes)) }
@@ -394,9 +399,10 @@ impl WindowsVirtualFileDataObject {
     }
 
     fn stage_file_for_contents(&self, entry_index: usize) -> Result<PathBuf, WindowsError> {
-        let mut staged_paths = self.staged_paths.lock().map_err(|_| {
-            WindowsError::new(E_FAIL, "failed to lock Windows drag cache")
-        })?;
+        let mut staged_paths = self
+            .staged_paths
+            .lock()
+            .map_err(|_| WindowsError::new(E_FAIL, "failed to lock Windows drag cache"))?;
         if let Some(path) = staged_paths.get(entry_index).and_then(|path| path.clone()) {
             return Ok(path);
         }
@@ -424,7 +430,8 @@ impl WindowsVirtualFileDataObject {
 #[cfg(target_os = "windows")]
 impl IDataObject_Impl for WindowsVirtualFileDataObject_Impl {
     fn GetData(&self, format_in: *const FORMATETC) -> windows_core::Result<STGMEDIUM> {
-        let format_in = unsafe { format_in.as_ref() }.ok_or_else(|| WindowsError::from(E_POINTER))?;
+        let format_in =
+            unsafe { format_in.as_ref() }.ok_or_else(|| WindowsError::from(E_POINTER))?;
         let (descriptor_format, contents_format) = windows_drag_formats();
 
         if format_in.cfFormat == descriptor_format {
@@ -510,7 +517,10 @@ impl IDataObject_Impl for WindowsVirtualFileDataObject_Impl {
             return Err(WindowsError::from(E_NOTIMPL));
         }
 
-        Ok(WindowsFormatEtcEnumerator::new(WindowsVirtualFileDataObject::supported_formats().to_vec()).into())
+        Ok(WindowsFormatEtcEnumerator::new(
+            WindowsVirtualFileDataObject::supported_formats().to_vec(),
+        )
+        .into())
     }
 
     fn DAdvise(
@@ -664,7 +674,10 @@ fn hglobal_from_bytes(bytes: &[u8]) -> windows_core::Result<windows::Win32::Foun
     let hglobal = unsafe { GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, bytes.len()) }?;
     let buffer = unsafe { GlobalLock(hglobal) } as *mut u8;
     if buffer.is_null() {
-        return Err(WindowsError::new(E_FAIL, "failed to lock Windows drag buffer"));
+        return Err(WindowsError::new(
+            E_FAIL,
+            "failed to lock Windows drag buffer",
+        ));
     }
 
     unsafe {
@@ -686,11 +699,7 @@ struct WindowsDropSource;
 
 #[cfg(target_os = "windows")]
 impl IDropSource_Impl for WindowsDropSource_Impl {
-    fn QueryContinueDrag(
-        &self,
-        escape_pressed: BOOL,
-        key_state: MODIFIERKEYS_FLAGS,
-    ) -> HRESULT {
+    fn QueryContinueDrag(&self, escape_pressed: BOOL, key_state: MODIFIERKEYS_FLAGS) -> HRESULT {
         if escape_pressed.as_bool() {
             DRAGDROP_S_CANCEL
         } else if !key_state.contains(MK_LBUTTON) {

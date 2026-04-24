@@ -69,6 +69,7 @@ CI/CD workflow:
 - [`src-tauri/src/runtime.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/runtime.rs): live Local / SSH / Telnet / Serial runtime and X11 diagnostics
 - [`src-tauri/src/file_ops.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/file_ops.rs): remote file ops and transfer progress
 - [`src-tauri/src/font_support.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/font_support.rs): system font enumeration through `font-kit`
+- [`src-tauri/src/libssh_spike.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/libssh_spike.rs): embedded `libssh-rs` spike for helper/backend evaluation
 - [`src-tauri/src/x11_support.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/x11_support.rs): local X11 / XQuartz / X server detection helpers
 - [`src-tauri/src/native_drag.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/native_drag.rs): native drag bridge
 - [`src-tauri/src/native_drag_macos.m`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/native_drag_macos.m): macOS AppKit drag implementation
@@ -187,38 +188,33 @@ Relevant files:
 
 ### SSH sessions without username are special
 
-If `session.username` is empty, OpenSSH cannot “just ask for login” on its own because `ssh host` uses the local OS username.
+If `session.username` is empty, the embedded SSH runtime cannot connect yet because it still needs a resolved remote login before authentication starts.
 
 Current behavior in [`runtime.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/runtime.rs):
 
-- local PTY wrapper prints `login as:`
-- entered value is used to `exec ssh user@host`
-- password is then entered normally in terminal
-- automatic password handler is disabled for this mode
+- the terminal prints `login as:` locally
+- entered value is cached in per-tab runtime metadata before the SSH connection is opened
+- if password auth is selected and the profile has no saved password, the terminal then prompts locally for `<user>@<host>'s password:`
+- the entered password is kept in runtime memory for the life of that tab so linked SFTP/status helpers can reuse it without persisting it to storage
 
-Important platform nuance:
+Do not change this back to “just use the local OS username” if the goal is MobaXterm-like login behavior.
 
-- on Unix-like targets, the prompt wrapper is `sh -lc`
-- on Windows, the prompt wrapper is `powershell.exe -Command`
-- the selected login is persisted in per-tab metadata so later status/SFTP helpers can resolve the real remote username
+### Linked SFTP and status use helper SSH sessions, not OpenSSH control sockets
 
-Do not change this back to plain `ssh host` if the goal is MobaXterm-like login behavior.
-
-### Windows SSH status and linked SFTP do not reuse OpenSSH control sockets
-
-Windows OpenSSH does not provide the Unix control-socket reuse path that OpenXTerm uses on macOS/Linux.
+OpenXTerm no longer relies on OpenSSH control-socket reuse for live SSH tabs.
 
 Current behavior:
 
-- terminal SSH sessions still launch through system `ssh`
-- live status on Windows uses a separate native `ssh2` session
-- linked SFTP on Windows uses a separate native `ssh2` SFTP connection
-- the effective username can come from the interactive `login as:` prompt metadata when the saved profile leaves `username` empty
+- terminal SSH tabs use the embedded `libssh-rs` runtime
+- live status uses a separate embedded helper SSH session
+- linked SFTP uses a separate embedded helper SSH/SFTP session
+- helper connections can resolve username from per-tab runtime metadata when the saved profile leaves `username` empty
+- helper connections can reuse a live interactively entered password from per-tab runtime metadata while the SSH tab is still connected
 
 Operational consequence:
 
-- if the user typed a password only into the interactive terminal and did not save credentials in the session, Windows cannot reuse that password for status polling or linked SFTP
-- live status / linked SFTP on Windows therefore require one of:
+- if the user closes the live SSH tab, transient username/password metadata is cleared with it
+- after that point, helper reconnects still require one of:
   - saved password in the profile
   - private key auth
   - working SSH agent auth
@@ -229,11 +225,13 @@ Relevant files:
 - [`src-tauri/src/runtime.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/runtime.rs)
 - [`src-tauri/src/file_ops.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/file_ops.rs)
 
-### X11 forwarding is built-in SSH forwarding only
+### X11 forwarding uses the embedded SSH bridge
 
-OpenXTerm's GUI forwarding path is the standard OpenSSH X11 mode:
+OpenXTerm's GUI forwarding path uses the embedded `libssh-rs` runtime:
 
-- `ssh -X` / `-Y`
+- request X11 forwarding on the live SSH session channel
+- accept SSH X11 channels from the server
+- proxy each X11 channel to the user's local X server
 - local X server on the user's desktop
 - no extra GUI transport installed on the remote host by OpenXTerm
 
@@ -298,7 +296,7 @@ The lower bar is no longer a mock/preview strip. It is driven by live state:
 
 Current Windows nuance:
 
-- Windows SSH status should attempt a real status probe through a separate native `ssh2` connection
+- Windows SSH status should attempt a real status probe through the embedded helper connection
 - showing `limited` is not the steady-state success path anymore; missing saved credentials should become an explicit error instead
 
 Relevant files:
@@ -375,23 +373,25 @@ This is the practical feature state as of April 16, 2026:
 - terminal stopped footer with restart/save shortcuts exists
 - terminal search exists through `Ctrl+F` / `Cmd+F`, topbar search, and terminal menu actions
 - linked SFTP session discovery from live SSH tabs exists
-- Windows linked SFTP fallback through native `ssh2` exists
+- live SSH terminal tabs now run through an embedded `libssh-rs` backend instead of system `ssh`
+- linked SFTP and live status helper flows now run through embedded helper SSH sessions
 - app lock via system auth exists
 - X11 session settings and runtime diagnostics exist
+- embedded `libssh-rs` probe exists for backend evaluation and backend comparison work
 - per-session terminal font / size / foreground / background exist
 - local sessions can persist their own working directory
 - session editor is compact and tabbed
 - system font enumeration for the terminal editor exists
 - status bar is live and session-aware
-- Windows SSH status fallback through native `ssh2` exists
 - non-macOS topbar menus are clickable dropdowns
 - frontend error-only console logging exists for status, transfers, terminal launch/input, and file-browser flows
 - GitHub Actions CI/CD exists for Linux X64, Windows X64, Windows ARM64, macOS ARM64, and macOS X64
 
 Important caveats:
 
-- built-in X11 forwarding still depends on a working local X server and correct remote `sshd` behavior
-- on Windows, interactive terminal password entry alone is not enough for linked SFTP/status reuse; those helper connections need saved password, key, or agent auth
+- embedded X11 forwarding still depends on a working local X server and correct remote `sshd` behavior
+- linked SFTP/status can reuse an interactively entered SSH password only while the live SSH tab that captured it is still running
+- after the live tab stops, helper reconnects fall back to saved password, key, or agent auth
 - on Windows, drag-out starts immediately and only stages the remote file into the local temp cache lazily if the shell requests file contents on drop
 - GitHub Actions currently publishes unsigned / unnotarized bundles unless release signing secrets are added in the future
 

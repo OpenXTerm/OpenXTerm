@@ -1,6 +1,7 @@
 mod commands;
 mod file_ops;
 mod font_support;
+mod libssh_spike;
 mod models;
 mod native_drag;
 mod native_menu;
@@ -38,6 +39,7 @@ pub fn run() {
             commands::inspect_local_x11_support,
             commands::open_external_target,
             commands::list_system_font_families,
+            commands::run_libssh_probe,
             commands::start_local_session,
             commands::start_ssh_session,
             commands::start_telnet_session,

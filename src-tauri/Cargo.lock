@@ -2015,17 +2015,28 @@ dependencies = [
 ]
 
 [[package]]
-name = "libssh2-sys"
-version = "0.3.1"
+name = "libssh-rs"
+version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "220e4f05ad4a218192533b300327f5150e809b54c4ec83b5a1d91833601811b9"
+checksum = "3066e110d6bb95a5addbd9c2ee595efdaeecaddd4793f3803dfee2968a74c685"
+dependencies = [
+ "bitflags 1.3.2",
+ "libc",
+ "libssh-rs-sys",
+ "openssl-sys",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "libssh-rs-sys"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "01d528ea9ac190fa364ff12193da82222dfc645e7ab28666ae91493bd288a1a0"
 dependencies = [
  "cc",
- "libc",
  "libz-sys",
  "openssl-sys",
  "pkg-config",
- "vcpkg",
 ]
 
 [[package]]
@@ -2472,12 +2483,12 @@ version = "0.1.0"
 dependencies = [
  "cc",
  "font-kit",
+ "libssh-rs",
  "log",
  "portable-pty",
  "serde",
  "serde_json",
  "serialport",
- "ssh2",
  "tauri",
  "tauri-build",
  "tauri-plugin-log",
@@ -3682,18 +3693,6 @@ dependencies = [
  "gobject-sys",
  "libc",
  "system-deps",
-]
-
-[[package]]
-name = "ssh2"
-version = "0.9.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f84d13b3b8a0d4e91a2629911e951db1bb8671512f5c09d7d4ba34500ba68c8"
-dependencies = [
- "bitflags 2.11.0",
- "libc",
- "libssh2-sys",
- "parking_lot",
 ]
 
 [[package]]
