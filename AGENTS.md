@@ -47,6 +47,7 @@ CI/CD workflow:
 - matrix targets currently are Linux X64, Windows X64, Windows ARM64, macOS ARM64, and macOS X64
 - manual runs require a `version` like `0.2.0` and a `release_type` of `release` or `prerelease`
 - CI bumps release version files with `npm run version:set -- <version>`, creates a release commit on `main`, then tags it as `v<version>`
+- if a release run fails after tag creation, rerunning the same version reuses that tag
 - the release job generates release notes from the previous semver-like version tag
 - the selected tag publishes GitHub Release assets from those bundle outputs
 - Windows release jobs also add portable ZIP archives alongside the Tauri installer outputs

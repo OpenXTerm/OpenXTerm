@@ -52,6 +52,8 @@ The workflow is started only with `workflow_dispatch`.
 
 Every run creates a release commit/tag, builds bundles, and publishes a GitHub Release for the selected version. Use `release_type=prerelease` for alpha/beta builds.
 
+If a run fails after the tag has already been created, rerun the same version. The workflow reuses the existing tag and republishes release assets.
+
 ## Version Rule
 
 The workflow fails early if the generated release version does not match all app version files:

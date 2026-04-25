@@ -71,8 +71,10 @@ jobs:
           git fetch --force --tags origin
 
           if git rev-parse -q --verify "refs/tags/$RELEASE_TAG" >/dev/null; then
-            echo "Tag $RELEASE_TAG already exists"
-            exit 1
+            echo "Tag $RELEASE_TAG already exists; reusing it for this release run"
+            echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+            echo "release_version=$RELEASE_VERSION" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
 
           node script/set_version.mjs "$RELEASE_VERSION"
@@ -285,7 +287,13 @@ jobs:
           name: ${{ matrix.artifact_name }}
           if-no-files-found: error
           path: |
-            src-tauri/target/${{ matrix.target }}/release/bundle/**
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.AppImage
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.deb
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.dmg
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.exe
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.msi
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.rpm
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.tar.gz
             release-portable/*.zip
 
   release:
@@ -375,4 +383,13 @@ jobs:
           name: OpenXTerm ${{ needs.prepare-release.outputs.release_tag }}
           prerelease: ${{ inputs.release_type == 'prerelease' }}
           body_path: release-notes.md
-          files: release-assets/**/*
+          overwrite_files: true
+          files: |
+            release-assets/**/*.AppImage
+            release-assets/**/*.deb
+            release-assets/**/*.dmg
+            release-assets/**/*.exe
+            release-assets/**/*.msi
+            release-assets/**/*.rpm
+            release-assets/**/*.tar.gz
+            release-assets/**/*.zip
