@@ -162,12 +162,17 @@ OpenXTerm/
       commands.rs
       file_ops.rs
       font_support.rs
+      libssh_spike.rs
       models.rs
       native_drag.rs
+      native_menu.rs
       runtime.rs
       storage.rs
+      system_auth.rs
       x11_support.rs
   docs/
+    architecture/
+    qa/
   script/
 ```
 

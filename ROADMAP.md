@@ -54,6 +54,7 @@ OpenXTerm is independent software. It is not affiliated with, endorsed by, or co
 - X11 runtime diagnostics for common `sshd` and `xauth` issues.
 - Clickable non-macOS topbar menus.
 - Error-only frontend console logging for operational failures.
+- Macros with create, edit, run, and delete.
 - MIT license.
 - Agent documentation in `AGENTS.md`.
 - Public README refresh.
@@ -149,13 +150,13 @@ Goal: terminal sessions and linked SFTP should become predictable enough for dai
 - Improved SSH runtime/status error messages for common auth, DNS, reachability, and host-key failures.
 - Terminal search.
 - Local-session working-directory support.
+- SFTP password reuse through active SSH sessions via embedded helper.
+- Migrated live terminal SSH to embedded `libssh-rs` backend.
 
 ### In Progress
 
 - SSH edge-case cleanup.
-- SFTP reuse through active SSH sessions.
 - Remote status polling accuracy.
-- Finishing the post-migration cleanup now that live terminal SSH already runs on the embedded backend.
 - Manual copy/paste and resize verification across macOS, Linux, and Windows.
 
 ### TODO
@@ -173,6 +174,9 @@ Goal: SFTP should cover common daily file-management tasks.
 - Download.
 - Batch progress for multiple files.
 - Native desktop drag-out.
+- Drag-in upload from desktop into the file browser.
+- Rename remote files and folders.
+- Cancel transfer.
 
 ### In Progress
 
@@ -181,13 +185,11 @@ Goal: SFTP should cover common daily file-management tasks.
 
 ### TODO
 
-- Rename remote files/folders.
 - Chmod support.
 - Sort by name, size, date, and type.
 - Breadcrumb with manual path input.
 - Remote folder download hardening.
 - Overwrite/skip/rename conflict handling.
-- Cancel transfer.
 - Retry failed transfer.
 - Better permission/no-space/disconnect errors.
 - Better Windows auth guidance when terminal password entry cannot be reused.

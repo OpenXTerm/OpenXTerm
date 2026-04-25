@@ -43,7 +43,7 @@ cargo build --manifest-path src-tauri/Cargo.toml
 
 CI/CD workflow:
 
-- [`.github/workflows/ci-cd.yml`](/Volumes/EXT/Projects/OpenXTerm/.github/workflows/ci-cd.yml) runs verification plus a five-platform bundle matrix only through manual `workflow_dispatch`
+- [`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml) runs verification plus a five-platform bundle matrix only through manual `workflow_dispatch`
 - matrix targets currently are Linux X64, Windows X64, Windows ARM64, macOS ARM64, and macOS X64
 - manual runs require a `version` like `0.2.0` and a `release_type` of `release` or `prerelease`
 - CI bumps release version files with `npm run version:set -- <version>`, creates a release commit on `main`, then tags it as `v<version>`
@@ -51,45 +51,47 @@ CI/CD workflow:
 - the release job generates release notes from the previous semver-like version tag
 - the selected tag publishes GitHub Release assets from those bundle outputs
 - Windows release jobs also add portable ZIP archives alongside the Tauri installer outputs
-- release steps are documented in [`docs/releasing.md`](/Volumes/EXT/Projects/OpenXTerm/docs/releasing.md)
+- release steps are documented in [`docs/releasing.md`](docs/releasing.md)
 
 ## Repo Map
 
 ### Frontend
 
-- [`src/App.tsx`](/Volumes/EXT/Projects/OpenXTerm/src/App.tsx): top-level wiring, modals, sidebar/workspace composition
-- [`src/state/useOpenXTermStore.ts`](/Volumes/EXT/Projects/OpenXTerm/src/state/useOpenXTermStore.ts): central state and most app workflows
-- [`src/components/forms/SessionEditorModal.tsx`](/Volumes/EXT/Projects/OpenXTerm/src/components/forms/SessionEditorModal.tsx): compact tabbed session editor, X11 assistant, per-session terminal style, font picker
-- [`src/components/forms/AppLockOverlay.tsx`](/Volumes/EXT/Projects/OpenXTerm/src/components/forms/AppLockOverlay.tsx): lock screen for system auth / Touch ID / PIN flows
-- [`src/components/sidebar/Sidebar.tsx`](/Volumes/EXT/Projects/OpenXTerm/src/components/sidebar/Sidebar.tsx): sessions tree, session-folder drag/drop, SFTP sidebar, tools, macros
-- [`src/components/status/StatusBar.tsx`](/Volumes/EXT/Projects/OpenXTerm/src/components/status/StatusBar.tsx): live lower rail, CPU history graph, lock button
-- [`src/components/workspace/Workspace.tsx`](/Volumes/EXT/Projects/OpenXTerm/src/components/workspace/Workspace.tsx): active tab rendering
-- [`src/components/workspace/TerminalSurface.tsx`](/Volumes/EXT/Projects/OpenXTerm/src/components/workspace/TerminalSurface.tsx): xterm host, stopped-session UX, per-session appearance application
-- [`src/components/workspace/FileBrowserView.tsx`](/Volumes/EXT/Projects/OpenXTerm/src/components/workspace/FileBrowserView.tsx): remote directory UI, upload/download/drag flows
-- [`src/lib/bridge.ts`](/Volumes/EXT/Projects/OpenXTerm/src/lib/bridge.ts): Tauri invoke/listen boundary
-- [`src/lib/sessionUtils.ts`](/Volumes/EXT/Projects/OpenXTerm/src/lib/sessionUtils.ts): shared tab/session helpers and startup transcript copy
-- [`src/lib/mobaxtermImport.ts`](/Volumes/EXT/Projects/OpenXTerm/src/lib/mobaxtermImport.ts): `.mxtsessions` parser
-- [`src/lib/transferBatch.ts`](/Volumes/EXT/Projects/OpenXTerm/src/lib/transferBatch.ts): batch transfer aggregation
-- [`src/index.css`](/Volumes/EXT/Projects/OpenXTerm/src/index.css): main app styling, including session editor and font picker layout
+- [`src/App.tsx`](src/App.tsx): top-level wiring, modals, sidebar/workspace composition
+- [`src/state/useOpenXTermStore.ts`](src/state/useOpenXTermStore.ts): central state and most app workflows
+- [`src/components/forms/SessionEditorModal.tsx`](src/components/forms/SessionEditorModal.tsx): compact tabbed session editor, X11 assistant, per-session terminal style, font picker
+- [`src/components/forms/AppLockOverlay.tsx`](src/components/forms/AppLockOverlay.tsx): lock screen for system auth / Touch ID / PIN flows
+- [`src/components/sidebar/Sidebar.tsx`](src/components/sidebar/Sidebar.tsx): sessions tree, session-folder drag/drop, SFTP sidebar, tools, macros
+- [`src/components/status/StatusBar.tsx`](src/components/status/StatusBar.tsx): live lower rail, CPU history graph, lock button
+- [`src/components/workspace/Workspace.tsx`](src/components/workspace/Workspace.tsx): active tab rendering
+- [`src/components/workspace/TerminalSurface.tsx`](src/components/workspace/TerminalSurface.tsx): xterm host, stopped-session UX, per-session appearance application
+- [`src/components/workspace/FileBrowserView.tsx`](src/components/workspace/FileBrowserView.tsx): remote directory UI, upload/download/drag flows
+- [`src/lib/bridge.ts`](src/lib/bridge.ts): Tauri invoke/listen boundary
+- [`src/lib/sessionUtils.ts`](src/lib/sessionUtils.ts): shared tab/session helpers and startup transcript copy
+- [`src/lib/mobaxtermImport.ts`](src/lib/mobaxtermImport.ts): `.mxtsessions` parser
+- [`src/lib/transferBatch.ts`](src/lib/transferBatch.ts): batch transfer aggregation
+- [`src/index.css`](src/index.css): main app styling, including session editor and font picker layout
 
 ### Backend
 
-- [`src-tauri/src/lib.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/lib.rs): Tauri app bootstrap and command registration
-- [`src-tauri/src/commands.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/commands.rs): invoke handlers
-- [`src-tauri/src/runtime.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/runtime.rs): live Local / SSH / Telnet / Serial runtime and X11 diagnostics
-- [`src-tauri/src/file_ops.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/file_ops.rs): remote file ops and transfer progress
-- [`src-tauri/src/font_support.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/font_support.rs): system font enumeration through `font-kit`
-- [`src-tauri/src/libssh_spike.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/libssh_spike.rs): embedded `libssh-rs` spike for helper/backend evaluation
-- [`src-tauri/src/x11_support.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/x11_support.rs): local X11 / XQuartz / X server detection helpers
-- [`src-tauri/src/native_drag.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/native_drag.rs): native drag bridge
-- [`src-tauri/src/native_drag_macos.m`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/native_drag_macos.m): macOS AppKit drag implementation
-- [`src-tauri/src/storage.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/storage.rs): persistence
-- [`src-tauri/src/models.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/models.rs): serde models mirrored from TS
+- [`src-tauri/src/lib.rs`](src-tauri/src/lib.rs): Tauri app bootstrap and command registration
+- [`src-tauri/src/commands.rs`](src-tauri/src/commands.rs): invoke handlers
+- [`src-tauri/src/runtime.rs`](src-tauri/src/runtime.rs): live Local / SSH / Telnet / Serial runtime and X11 diagnostics
+- [`src-tauri/src/file_ops.rs`](src-tauri/src/file_ops.rs): remote file ops and transfer progress
+- [`src-tauri/src/font_support.rs`](src-tauri/src/font_support.rs): system font enumeration through `font-kit`
+- [`src-tauri/src/libssh_spike.rs`](src-tauri/src/libssh_spike.rs): embedded `libssh-rs` spike for helper/backend evaluation
+- [`src-tauri/src/x11_support.rs`](src-tauri/src/x11_support.rs): local X11 / XQuartz / X server detection helpers
+- [`src-tauri/src/native_drag.rs`](src-tauri/src/native_drag.rs): native drag bridge
+- [`src-tauri/src/native_drag_macos.m`](src-tauri/src/native_drag_macos.m): macOS AppKit drag implementation
+- [`src-tauri/src/native_menu.rs`](src-tauri/src/native_menu.rs): native menu integration and topbar action routing
+- [`src-tauri/src/system_auth.rs`](src-tauri/src/system_auth.rs): platform authentication for app lock
+- [`src-tauri/src/storage.rs`](src-tauri/src/storage.rs): persistence
+- [`src-tauri/src/models.rs`](src-tauri/src/models.rs): serde models mirrored from TS
 
 ### CI/CD
 
-- [`.github/workflows/ci-cd.yml`](/Volumes/EXT/Projects/OpenXTerm/.github/workflows/ci-cd.yml): GitHub Actions verification/build/release pipeline
-- [`docs/releasing.md`](/Volumes/EXT/Projects/OpenXTerm/docs/releasing.md): manual release checklist
+- [`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml): GitHub Actions verification/build/release pipeline
+- [`docs/releasing.md`](docs/releasing.md): manual release checklist
 
 ## Core Architecture
 
@@ -103,11 +105,11 @@ Most user actions route through Zustand:
 - backend emits terminal/status/transfer events
 - store listens once and fans those events back into UI state
 
-If you are changing behavior, start in [`useOpenXTermStore.ts`](/Volumes/EXT/Projects/OpenXTerm/src/state/useOpenXTermStore.ts).
+If you are changing behavior, start in [`useOpenXTermStore.ts`](src/state/useOpenXTermStore.ts).
 
 ### 2. Terminal tabs vs file tabs
 
-`createSessionTab()` in [`sessionUtils.ts`](/Volumes/EXT/Projects/OpenXTerm/src/lib/sessionUtils.ts) maps:
+`createSessionTab()` in [`sessionUtils.ts`](src/lib/sessionUtils.ts) maps:
 
 - `local`, `ssh`, `telnet`, `serial` -> terminal tab
 - `sftp`, `ftp` -> file browser tab
@@ -118,14 +120,14 @@ Linked SFTP tabs for live SSH sessions are synthetic sessions with ids like `lin
 
 If you add a new persisted field or command, you usually need to touch all of:
 
-1. [`src/types/domain.ts`](/Volumes/EXT/Projects/OpenXTerm/src/types/domain.ts)
-2. [`src-tauri/src/models.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/models.rs)
-3. [`src/lib/bridge.ts`](/Volumes/EXT/Projects/OpenXTerm/src/lib/bridge.ts)
-4. [`src-tauri/src/commands.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/commands.rs)
-5. [`src-tauri/src/lib.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/lib.rs)
+1. [`src/types/domain.ts`](src/types/domain.ts)
+2. [`src-tauri/src/models.rs`](src-tauri/src/models.rs)
+3. [`src/lib/bridge.ts`](src/lib/bridge.ts)
+4. [`src-tauri/src/commands.rs`](src-tauri/src/commands.rs)
+5. [`src-tauri/src/lib.rs`](src-tauri/src/lib.rs)
 6. Store/UI call sites
 
-[`bridge.ts`](/Volumes/EXT/Projects/OpenXTerm/src/lib/bridge.ts) also contains a browser/localStorage fallback for non-Tauri runs. It is useful for UI iteration, but desktop behavior should be validated in real Tauri because terminal transports, remote file ops, native drag, X11 checks, font enumeration, and window behavior only exist there.
+[`bridge.ts`](src/lib/bridge.ts) also contains a browser/localStorage fallback for non-Tauri runs. It is useful for UI iteration, but desktop behavior should be validated in real Tauri because terminal transports, remote file ops, native drag, X11 checks, font enumeration, and window behavior only exist there.
 
 ## Important Invariants
 
@@ -133,12 +135,12 @@ If you add a new persisted field or command, you usually need to touch all of:
 
 Do not infer “session stopped” from terminal text.
 
-The correct source is [`terminalStoppedByTabId`](/Volumes/EXT/Projects/OpenXTerm/src/state/useOpenXTermStore.ts) in the store, which is driven by terminal-exit events.
+The correct source is [`terminalStoppedByTabId`](src/state/useOpenXTermStore.ts) in the store, which is driven by terminal-exit events.
 
 Relevant files:
 
-- [`src/state/useOpenXTermStore.ts`](/Volumes/EXT/Projects/OpenXTerm/src/state/useOpenXTermStore.ts)
-- [`src/components/workspace/TerminalSurface.tsx`](/Volumes/EXT/Projects/OpenXTerm/src/components/workspace/TerminalSurface.tsx)
+- [`src/state/useOpenXTermStore.ts`](src/state/useOpenXTermStore.ts)
+- [`src/components/workspace/TerminalSurface.tsx`](src/components/workspace/TerminalSurface.tsx)
 
 `TerminalSurface` should swallow all normal input while stopped, except:
 
@@ -148,7 +150,7 @@ Relevant files:
 
 ### Session/folder drag in `Sessions` is pointer-based
 
-The sessions tree drag/drop is not native HTML5 DnD. It uses pointer tracking in [`Sidebar.tsx`](/Volumes/EXT/Projects/OpenXTerm/src/components/sidebar/Sidebar.tsx) because that proved more reliable inside Tauri/WebKit.
+The sessions tree drag/drop is not native HTML5 DnD. It uses pointer tracking in [`Sidebar.tsx`](src/components/sidebar/Sidebar.tsx) because that proved more reliable inside Tauri/WebKit.
 
 If drag in `Sessions` breaks, inspect `Sidebar.tsx` first and be careful about replacing it with browser DnD APIs.
 
@@ -163,9 +165,9 @@ Folders are not just a display-only path string.
 
 Relevant files:
 
-- [`src/components/forms/SessionFolderModal.tsx`](/Volumes/EXT/Projects/OpenXTerm/src/components/forms/SessionFolderModal.tsx)
-- [`src/components/forms/MoveSessionModal.tsx`](/Volumes/EXT/Projects/OpenXTerm/src/components/forms/MoveSessionModal.tsx)
-- [`src/state/useOpenXTermStore.ts`](/Volumes/EXT/Projects/OpenXTerm/src/state/useOpenXTermStore.ts)
+- [`src/components/forms/SessionFolderModal.tsx`](src/components/forms/SessionFolderModal.tsx)
+- [`src/components/forms/MoveSessionModal.tsx`](src/components/forms/MoveSessionModal.tsx)
+- [`src/state/useOpenXTermStore.ts`](src/state/useOpenXTermStore.ts)
 
 ### Multi-transfer progress is job-based
 
@@ -175,7 +177,7 @@ Implementation:
 
 - parent ids: `createBatchTransferId(...)`
 - child ids: `createBatchChildTransferId(...)`
-- aggregation: [`src/lib/transferBatch.ts`](/Volumes/EXT/Projects/OpenXTerm/src/lib/transferBatch.ts)
+- aggregation: [`src/lib/transferBatch.ts`](src/lib/transferBatch.ts)
 
 If you add a new multi-item transfer path, wire it into batch aggregation instead of emitting standalone child UI jobs.
 
@@ -193,15 +195,15 @@ Do not revert this to `CString` + `stringWithUTF8String`.
 
 Relevant files:
 
-- [`src-tauri/src/native_drag.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/native_drag.rs)
-- [`src-tauri/src/native_drag_macos.m`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/native_drag_macos.m)
-- [`src-tauri/build.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/build.rs)
+- [`src-tauri/src/native_drag.rs`](src-tauri/src/native_drag.rs)
+- [`src-tauri/src/native_drag_macos.m`](src-tauri/src/native_drag_macos.m)
+- [`src-tauri/build.rs`](src-tauri/build.rs)
 
 ### SSH sessions without username are special
 
 If `session.username` is empty, the embedded SSH runtime cannot connect yet because it still needs a resolved remote login before authentication starts.
 
-Current behavior in [`runtime.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/runtime.rs):
+Current behavior in [`runtime.rs`](src-tauri/src/runtime.rs):
 
 - the terminal prints `login as:` locally
 - entered value is cached in per-tab runtime metadata before the SSH connection is opened
@@ -233,8 +235,8 @@ Operational consequence:
 
 Relevant files:
 
-- [`src-tauri/src/runtime.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/runtime.rs)
-- [`src-tauri/src/file_ops.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/file_ops.rs)
+- [`src-tauri/src/runtime.rs`](src-tauri/src/runtime.rs)
+- [`src-tauri/src/file_ops.rs`](src-tauri/src/file_ops.rs)
 
 ### X11 forwarding uses the embedded SSH bridge
 
@@ -254,9 +256,9 @@ Current product guidance:
 
 Relevant files:
 
-- [`src/components/forms/SessionEditorModal.tsx`](/Volumes/EXT/Projects/OpenXTerm/src/components/forms/SessionEditorModal.tsx)
-- [`src-tauri/src/x11_support.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/x11_support.rs)
-- [`src-tauri/src/runtime.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/runtime.rs)
+- [`src/components/forms/SessionEditorModal.tsx`](src/components/forms/SessionEditorModal.tsx)
+- [`src-tauri/src/x11_support.rs`](src-tauri/src/x11_support.rs)
+- [`src-tauri/src/runtime.rs`](src-tauri/src/runtime.rs)
 
 ### X11 diagnostics are runtime-driven and session-scoped
 
@@ -285,16 +287,16 @@ Sessions can persist their own terminal appearance overrides:
 - `terminalForeground`
 - `terminalBackground`
 
-The editor can enumerate real system fonts through the Rust `font-kit` bridge. Terminal rendering applies these values in [`TerminalSurface.tsx`](/Volumes/EXT/Projects/OpenXTerm/src/components/workspace/TerminalSurface.tsx).
+The editor can enumerate real system fonts through the Rust `font-kit` bridge. Terminal rendering applies these values in [`TerminalSurface.tsx`](src/components/workspace/TerminalSurface.tsx).
 
 If you add a new appearance field, update:
 
-- [`src/types/domain.ts`](/Volumes/EXT/Projects/OpenXTerm/src/types/domain.ts)
-- [`src-tauri/src/models.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/models.rs)
-- [`src/state/useOpenXTermStore.ts`](/Volumes/EXT/Projects/OpenXTerm/src/state/useOpenXTermStore.ts)
-- [`src/components/forms/SessionEditorModal.tsx`](/Volumes/EXT/Projects/OpenXTerm/src/components/forms/SessionEditorModal.tsx)
-- [`src/components/workspace/Workspace.tsx`](/Volumes/EXT/Projects/OpenXTerm/src/components/workspace/Workspace.tsx)
-- [`src/components/workspace/TerminalSurface.tsx`](/Volumes/EXT/Projects/OpenXTerm/src/components/workspace/TerminalSurface.tsx)
+- [`src/types/domain.ts`](src/types/domain.ts)
+- [`src-tauri/src/models.rs`](src-tauri/src/models.rs)
+- [`src/state/useOpenXTermStore.ts`](src/state/useOpenXTermStore.ts)
+- [`src/components/forms/SessionEditorModal.tsx`](src/components/forms/SessionEditorModal.tsx)
+- [`src/components/workspace/Workspace.tsx`](src/components/workspace/Workspace.tsx)
+- [`src/components/workspace/TerminalSurface.tsx`](src/components/workspace/TerminalSurface.tsx)
 
 ### Status bar data is live only
 
@@ -312,9 +314,9 @@ Current Windows nuance:
 
 Relevant files:
 
-- [`src/components/status/StatusBar.tsx`](/Volumes/EXT/Projects/OpenXTerm/src/components/status/StatusBar.tsx)
-- [`src/state/useOpenXTermStore.ts`](/Volumes/EXT/Projects/OpenXTerm/src/state/useOpenXTermStore.ts)
-- [`src-tauri/src/runtime.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/runtime.rs)
+- [`src/components/status/StatusBar.tsx`](src/components/status/StatusBar.tsx)
+- [`src/state/useOpenXTermStore.ts`](src/state/useOpenXTermStore.ts)
+- [`src-tauri/src/runtime.rs`](src-tauri/src/runtime.rs)
 
 ### Console logging is error-only and intentional
 
@@ -322,17 +324,17 @@ Frontend console logging is now deliberately scoped to errors.
 
 Current rule:
 
-- use [`src/lib/errorLog.ts`](/Volumes/EXT/Projects/OpenXTerm/src/lib/errorLog.ts) for UI/runtime error reporting
+- use [`src/lib/errorLog.ts`](src/lib/errorLog.ts) for UI/runtime error reporting
 - log only through `console.error`
 - do not add ambient info/debug noise to the console just to trace normal flow
 - repeated status/transfer poller failures should be deduplicated so the console is still usable during retries
 
 Relevant files:
 
-- [`src/lib/errorLog.ts`](/Volumes/EXT/Projects/OpenXTerm/src/lib/errorLog.ts)
-- [`src/state/useOpenXTermStore.ts`](/Volumes/EXT/Projects/OpenXTerm/src/state/useOpenXTermStore.ts)
-- [`src/components/sidebar/Sidebar.tsx`](/Volumes/EXT/Projects/OpenXTerm/src/components/sidebar/Sidebar.tsx)
-- [`src/components/workspace/FileBrowserView.tsx`](/Volumes/EXT/Projects/OpenXTerm/src/components/workspace/FileBrowserView.tsx)
+- [`src/lib/errorLog.ts`](src/lib/errorLog.ts)
+- [`src/state/useOpenXTermStore.ts`](src/state/useOpenXTermStore.ts)
+- [`src/components/sidebar/Sidebar.tsx`](src/components/sidebar/Sidebar.tsx)
+- [`src/components/workspace/FileBrowserView.tsx`](src/components/workspace/FileBrowserView.tsx)
 
 ### Non-macOS topbar menus are app-owned UI, not native shell menus
 
@@ -346,14 +348,14 @@ Current rule:
 
 Relevant files:
 
-- [`src/components/layout/TopBar.tsx`](/Volumes/EXT/Projects/OpenXTerm/src/components/layout/TopBar.tsx)
-- [`src/App.tsx`](/Volumes/EXT/Projects/OpenXTerm/src/App.tsx)
-- [`src-tauri/src/native_menu.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/native_menu.rs)
-- [`src/index.css`](/Volumes/EXT/Projects/OpenXTerm/src/index.css)
+- [`src/components/layout/TopBar.tsx`](src/components/layout/TopBar.tsx)
+- [`src/App.tsx`](src/App.tsx)
+- [`src-tauri/src/native_menu.rs`](src-tauri/src/native_menu.rs)
+- [`src/index.css`](src/index.css)
 
 ### MobaXterm import support
 
-Parser lives in [`src/lib/mobaxtermImport.ts`](/Volumes/EXT/Projects/OpenXTerm/src/lib/mobaxtermImport.ts).
+Parser lives in [`src/lib/mobaxtermImport.ts`](src/lib/mobaxtermImport.ts).
 
 Currently supported:
 
@@ -372,12 +374,15 @@ Current unsupported examples seen in real data:
 
 ## Current Feature Snapshot
 
-This is the practical feature state as of April 16, 2026:
+This is the practical feature state as of April 25, 2026:
 
 - local shell transport exists
 - live SSH / Telnet / Serial transports exist
-- remote file listing / create folder / delete / upload / download exist
+- remote file listing / create folder / rename / delete / upload / download exist
+- drag-in upload from desktop into the SFTP file browser exists
 - native desktop drag-out exists
+- cancel transfer exists through the transfer window
+- macros with create, edit, run, and delete exist
 - session folders/tree exist
 - session and folder drag/drop in sidebar exist
 - MobaXterm import exists
@@ -406,7 +411,7 @@ Important caveats:
 - on Windows, drag-out starts immediately and only stages the remote file into the local temp cache lazily if the shell requests file contents on drop
 - GitHub Actions currently publishes unsigned / unnotarized bundles unless release signing secrets are added in the future
 
-Some startup transcript copy still exists in helpers like [`sessionUtils.ts`](/Volumes/EXT/Projects/OpenXTerm/src/lib/sessionUtils.ts). Do not assume every “preview” string means the feature is fake.
+Some startup transcript copy still exists in helpers like [`sessionUtils.ts`](src/lib/sessionUtils.ts). Do not assume every “preview” string means the feature is fake.
 
 ## Where To Edit For Common Tasks
 
@@ -414,54 +419,54 @@ Some startup transcript copy still exists in helpers like [`sessionUtils.ts`](/V
 
 Start with:
 
-- [`src/types/domain.ts`](/Volumes/EXT/Projects/OpenXTerm/src/types/domain.ts)
-- [`src-tauri/src/models.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/models.rs)
-- [`src/components/forms/SessionEditorModal.tsx`](/Volumes/EXT/Projects/OpenXTerm/src/components/forms/SessionEditorModal.tsx)
+- [`src/types/domain.ts`](src/types/domain.ts)
+- [`src-tauri/src/models.rs`](src-tauri/src/models.rs)
+- [`src/components/forms/SessionEditorModal.tsx`](src/components/forms/SessionEditorModal.tsx)
 - storage and bridge files
 
 ### Change session tree behavior
 
 Start with:
 
-- [`src/components/sidebar/Sidebar.tsx`](/Volumes/EXT/Projects/OpenXTerm/src/components/sidebar/Sidebar.tsx)
-- [`src/state/useOpenXTermStore.ts`](/Volumes/EXT/Projects/OpenXTerm/src/state/useOpenXTermStore.ts)
+- [`src/components/sidebar/Sidebar.tsx`](src/components/sidebar/Sidebar.tsx)
+- [`src/state/useOpenXTermStore.ts`](src/state/useOpenXTermStore.ts)
 
 ### Change terminal UX
 
 Start with:
 
-- [`src/components/workspace/TerminalSurface.tsx`](/Volumes/EXT/Projects/OpenXTerm/src/components/workspace/TerminalSurface.tsx)
-- [`src/components/workspace/Workspace.tsx`](/Volumes/EXT/Projects/OpenXTerm/src/components/workspace/Workspace.tsx)
-- [`src/components/status/StatusBar.tsx`](/Volumes/EXT/Projects/OpenXTerm/src/components/status/StatusBar.tsx)
-- [`src/state/useOpenXTermStore.ts`](/Volumes/EXT/Projects/OpenXTerm/src/state/useOpenXTermStore.ts)
-- [`src-tauri/src/runtime.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/runtime.rs)
+- [`src/components/workspace/TerminalSurface.tsx`](src/components/workspace/TerminalSurface.tsx)
+- [`src/components/workspace/Workspace.tsx`](src/components/workspace/Workspace.tsx)
+- [`src/components/status/StatusBar.tsx`](src/components/status/StatusBar.tsx)
+- [`src/state/useOpenXTermStore.ts`](src/state/useOpenXTermStore.ts)
+- [`src-tauri/src/runtime.rs`](src-tauri/src/runtime.rs)
 
 ### Change session editor or appearance controls
 
 Start with:
 
-- [`src/components/forms/SessionEditorModal.tsx`](/Volumes/EXT/Projects/OpenXTerm/src/components/forms/SessionEditorModal.tsx)
-- [`src/index.css`](/Volumes/EXT/Projects/OpenXTerm/src/index.css)
-- [`src/lib/bridge.ts`](/Volumes/EXT/Projects/OpenXTerm/src/lib/bridge.ts)
-- [`src-tauri/src/font_support.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/font_support.rs)
+- [`src/components/forms/SessionEditorModal.tsx`](src/components/forms/SessionEditorModal.tsx)
+- [`src/index.css`](src/index.css)
+- [`src/lib/bridge.ts`](src/lib/bridge.ts)
+- [`src-tauri/src/font_support.rs`](src-tauri/src/font_support.rs)
 
 ### Change X11 / GUI forwarding behavior
 
 Start with:
 
-- [`src/components/forms/SessionEditorModal.tsx`](/Volumes/EXT/Projects/OpenXTerm/src/components/forms/SessionEditorModal.tsx)
-- [`src-tauri/src/x11_support.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/x11_support.rs)
-- [`src-tauri/src/runtime.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/runtime.rs)
+- [`src/components/forms/SessionEditorModal.tsx`](src/components/forms/SessionEditorModal.tsx)
+- [`src-tauri/src/x11_support.rs`](src-tauri/src/x11_support.rs)
+- [`src-tauri/src/runtime.rs`](src-tauri/src/runtime.rs)
 
 ### Change file transfer behavior
 
 Start with:
 
-- [`src/components/workspace/FileBrowserView.tsx`](/Volumes/EXT/Projects/OpenXTerm/src/components/workspace/FileBrowserView.tsx)
-- [`src/components/sidebar/Sidebar.tsx`](/Volumes/EXT/Projects/OpenXTerm/src/components/sidebar/Sidebar.tsx)
-- [`src/lib/transferBatch.ts`](/Volumes/EXT/Projects/OpenXTerm/src/lib/transferBatch.ts)
-- [`src-tauri/src/file_ops.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/file_ops.rs)
-- [`src-tauri/src/native_drag.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/native_drag.rs)
+- [`src/components/workspace/FileBrowserView.tsx`](src/components/workspace/FileBrowserView.tsx)
+- [`src/components/sidebar/Sidebar.tsx`](src/components/sidebar/Sidebar.tsx)
+- [`src/lib/transferBatch.ts`](src/lib/transferBatch.ts)
+- [`src-tauri/src/file_ops.rs`](src-tauri/src/file_ops.rs)
+- [`src-tauri/src/native_drag.rs`](src-tauri/src/native_drag.rs)
 
 ## Verification Checklist
 
@@ -493,7 +498,7 @@ npm run check
 cargo check --manifest-path src-tauri/Cargo.toml
 ```
 
-Then inspect [`.github/workflows/ci-cd.yml`](/Volumes/EXT/Projects/OpenXTerm/.github/workflows/ci-cd.yml) carefully for:
+Then inspect [`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml) carefully for:
 
 - runner label correctness
 - target triple correctness
