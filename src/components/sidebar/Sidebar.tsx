@@ -96,7 +96,22 @@ const tools = [
   { name: 'Network Tools', note: 'DNS, traceroute and capture helpers.' },
 ]
 
-const SFTP_TABLE_COLUMN_LABELS = ['Name', 'Size (KB)', 'Last modified', 'Owner', 'Group', 'Access']
+type SftpSortKey = 'name' | 'size' | 'modified' | 'owner' | 'group' | 'access'
+type SortDirection = 'asc' | 'desc'
+
+interface SftpTableColumn {
+  key: SftpSortKey
+  label: string
+}
+
+const SFTP_TABLE_COLUMNS: SftpTableColumn[] = [
+  { key: 'name', label: 'Name' },
+  { key: 'size', label: 'Size (KB)' },
+  { key: 'modified', label: 'Last modified' },
+  { key: 'owner', label: 'Owner' },
+  { key: 'group', label: 'Group' },
+  { key: 'access', label: 'Access' },
+]
 const SFTP_TABLE_DEFAULT_COLUMN_WIDTHS = [220, 82, 132, 82, 82, 104]
 const SFTP_TABLE_MIN_COLUMN_WIDTHS = [140, 58, 96, 58, 58, 78]
 
@@ -110,6 +125,56 @@ function remoteSizeKbLabel(entry: RemoteFileEntry) {
   }
 
   return entry.sizeLabel === '--' ? '' : entry.sizeLabel
+}
+
+function normalizeRemotePath(path: string) {
+  const trimmed = path.trim()
+  if (!trimmed || trimmed === '/') {
+    return '/'
+  }
+
+  return `/${trimmed.replace(/^\/+/, '').replace(/\/{2,}/g, '/')}`.replace(/\/+$/, '') || '/'
+}
+
+function compareText(left: string | undefined, right: string | undefined) {
+  return (left ?? '').localeCompare(right ?? '', undefined, { numeric: true, sensitivity: 'base' })
+}
+
+function compareSftpEntries(left: RemoteFileEntry, right: RemoteFileEntry, key: SftpSortKey, direction: SortDirection) {
+  if (left.kind !== right.kind) {
+    return left.kind === 'folder' ? -1 : 1
+  }
+
+  const multiplier = direction === 'asc' ? 1 : -1
+  let result = 0
+
+  switch (key) {
+    case 'size':
+      result = (left.sizeBytes ?? -1) - (right.sizeBytes ?? -1)
+      break
+    case 'modified':
+      result = compareText(left.modifiedLabel, right.modifiedLabel)
+      break
+    case 'owner':
+      result = compareText(left.ownerLabel, right.ownerLabel)
+      break
+    case 'group':
+      result = compareText(left.groupLabel, right.groupLabel)
+      break
+    case 'access':
+      result = compareText(left.accessLabel, right.accessLabel)
+      break
+    case 'name':
+    default:
+      result = compareText(left.name, right.name)
+      break
+  }
+
+  if (result === 0) {
+    result = compareText(left.name, right.name)
+  }
+
+  return result * multiplier
 }
 
 function sidebarSftpErrorContext(session: SessionDefinition, action: string, path: string) {
@@ -321,6 +386,11 @@ export function Sidebar({
   const [renameSftpName, setRenameSftpName] = useState('')
   const [sftpContextMenu, setSftpContextMenu] = useState<SftpContextMenuState | null>(null)
   const [sftpColumnWidths, setSftpColumnWidths] = useState(SFTP_TABLE_DEFAULT_COLUMN_WIDTHS)
+  const [sftpSortState, setSftpSortState] = useState<{ key: SftpSortKey; direction: SortDirection }>({
+    key: 'name',
+    direction: 'asc',
+  })
+  const [sftpPathDraft, setSftpPathDraft] = useState('/')
   const [sessionMessage, setSessionMessage] = useState('')
   const [expandedSessionFolders, setExpandedSessionFolders] = useState<Record<string, boolean>>({})
   const [sessionTreeDragState, setSessionTreeDragState] = useState<SessionSidebarDragState | null>(null)
@@ -368,17 +438,27 @@ export function Sidebar({
     window.addEventListener('pointerup', handlePointerUp)
   }
 
+  function handleSftpSortColumn(key: SftpSortKey) {
+    setSftpSortState((current) => (
+      current.key === key
+        ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
+        : { key, direction: 'asc' }
+    ))
+  }
+
   const loadSftpDirectory = useCallback(async (session: SessionDefinition, path: string) => {
+    const normalizedPath = normalizeRemotePath(path)
     setSftpLoading(true)
     try {
-      const snapshot = await listRemoteDirectory(session, path)
+      const snapshot = await listRemoteDirectory(session, normalizedPath)
       setSnapshotsBySessionId((current) => ({
         ...current,
         [session.id]: snapshot,
       }))
+      setSftpPathDraft(snapshot.path)
       setSftpMessage(`Loaded ${snapshot.path}`)
     } catch (error) {
-      logOpenXTermError('sidebar.sftp.load-directory', error, sidebarSftpErrorContext(session, 'load', path))
+      logOpenXTermError('sidebar.sftp.load-directory', error, sidebarSftpErrorContext(session, 'load', normalizedPath))
       setSftpMessage(error instanceof Error ? error.message : 'Unable to load remote directory.')
     } finally {
       setSftpLoading(false)
@@ -448,15 +528,15 @@ export function Sidebar({
       return []
     }
 
-    return [...selectedSftpSnapshot.entries].sort((left, right) => {
-      if (left.kind !== right.kind) {
-        return left.kind === 'folder' ? -1 : 1
-      }
-
-      return left.name.localeCompare(right.name)
-    })
-  }, [selectedSftpSnapshot])
+    return [...selectedSftpSnapshot.entries].sort((left, right) => (
+      compareSftpEntries(left, right, sftpSortState.key, sftpSortState.direction)
+    ))
+  }, [selectedSftpSnapshot, sftpSortState.direction, sftpSortState.key])
   const sessionTree = useMemo(() => buildSessionTree(sessions, sessionFolders), [sessionFolders, sessions])
+
+  useEffect(() => {
+    setSftpPathDraft(currentSftpPath)
+  }, [currentSftpPath])
 
   function selectSftpEntry(entry: RemoteFileEntry, event?: ReactMouseEvent) {
     setSelectedSftpEntryPaths((current) => {
@@ -508,6 +588,11 @@ export function Sidebar({
     await loadSftpDirectory(selectedSftpSession, path)
     setSelectedSftpEntryPaths([])
   }, [loadSftpDirectory, selectedSftpSession])
+
+  async function handleSftpPathSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    await loadSelectedSftpDirectory(sftpPathDraft)
+  }
 
   function isSessionFolderExpanded(path: string) {
     return expandedSessionFolders[path] ?? false
@@ -1733,12 +1818,21 @@ export function Sidebar({
                 </button>
               </form>
             )}
-            <div className="sidebar-sftp-path">
-              <span>{currentSftpPath}</span>
+            <form className="sidebar-sftp-path" onSubmit={(event) => void handleSftpPathSubmit(event)}>
+              <input
+                value={sftpPathDraft}
+                disabled={sftpLoading || !selectedSftpSession}
+                aria-label="Remote SFTP path"
+                spellCheck={false}
+                onChange={(event) => setSftpPathDraft(event.target.value)}
+              />
+              <button type="submit" disabled={sftpLoading || !selectedSftpSession || !sftpPathDraft.trim()}>
+                Go
+              </button>
               {selectedSftpEntries.length > 0 && (
                 <strong>{selectedSftpEntries.length} selected</strong>
               )}
-            </div>
+            </form>
             <div
               ref={sftpListRef}
               className={`sidebar-list ${dropActive ? 'sidebar-drop-active' : ''}`}
@@ -1755,13 +1849,23 @@ export function Sidebar({
                   style={sftpTableStyle}
                 >
                   <div className="sidebar-sftp-table-header" role="row">
-                    {SFTP_TABLE_COLUMN_LABELS.map((label, index) => (
-                      <span key={label} className="file-table-header-cell">
-                        {label}
+                    {SFTP_TABLE_COLUMNS.map((column, index) => (
+                      <span key={column.key} className="file-table-header-cell">
+                        <button
+                          className="file-table-sort-button"
+                          type="button"
+                          aria-label={`Sort by ${column.label}`}
+                          onClick={() => handleSftpSortColumn(column.key)}
+                        >
+                          <span>{column.label}</span>
+                          {sftpSortState.key === column.key && (
+                            <span aria-hidden="true">{sftpSortState.direction === 'asc' ? '^' : 'v'}</span>
+                          )}
+                        </button>
                         <button
                           className="file-table-column-resizer"
                           type="button"
-                          aria-label={`Resize ${label} column`}
+                          aria-label={`Resize ${column.label} column`}
                           onPointerDown={(event) => handleSftpColumnResizeStart(index, event)}
                         />
                       </span>

@@ -413,6 +413,39 @@ button {
   font-family: 'SF Mono', 'JetBrains Mono', Menlo, monospace;
 }
 
+.sidebar-sftp-path input {
+  min-width: 0;
+  flex: 1 1 auto;
+  height: 24px;
+  border: 1px solid #2d383d;
+  border-radius: 6px;
+  background: #101416;
+  color: #dfe4e6;
+  padding: 0 7px;
+  font: inherit;
+  font-size: 11px;
+}
+
+.sidebar-sftp-path button,
+.file-path-form button {
+  flex: 0 0 auto;
+  height: 24px;
+  border: 1px solid #2d6a56;
+  border-radius: 6px;
+  background: #18302a;
+  color: #8ff0c1;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.sidebar-sftp-path button:disabled,
+.sidebar-sftp-path input:disabled,
+.file-path-form button:disabled,
+.file-path-form input:disabled {
+  opacity: 0.55;
+}
+
 .sidebar-sftp-path span {
   min-width: 0;
   white-space: nowrap;
@@ -527,6 +560,31 @@ button {
 .file-table-header-cell {
   position: relative;
   padding-right: 8px;
+}
+
+.file-table-sort-button {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  text-align: left;
+}
+
+.file-table-sort-button span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .file-table-column-resizer {
@@ -1191,6 +1249,27 @@ button {
   overflow: auto;
 }
 
+.file-path-form {
+  flex: 1 1 240px;
+  min-width: 220px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.file-path-form input {
+  min-width: 0;
+  flex: 1 1 auto;
+  height: 26px;
+  border: 1px solid #2d383d;
+  border-radius: 6px;
+  background: #101416;
+  color: #dfe4e6;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 12px;
+}
+
 .file-row {
   display: grid;
   grid-template-columns: var(--file-table-columns, 240px 82px 142px 86px 86px 108px);
@@ -1203,7 +1282,6 @@ button {
   border-bottom: 1px solid #1b2124;
   font-size: 12px;
   color: #d6dde0;
-  width: 100%;
   border-top: 0;
   border-left: 0;
   border-right: 0;

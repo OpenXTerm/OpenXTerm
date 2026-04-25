@@ -7,6 +7,7 @@ import {
   type ChangeEvent,
   type CSSProperties,
   type DragEvent,
+  type FormEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react'
 import { ArrowDownToLine, ArrowUp, Copy, Eye, FileText, Folder, FolderPlus, LoaderCircle, RefreshCw, Trash2, Upload } from 'lucide-react'
@@ -30,7 +31,22 @@ interface FileBrowserViewProps {
   session: SessionDefinition
 }
 
-const FILE_TABLE_COLUMN_LABELS = ['Name', 'Size (KB)', 'Last modified', 'Owner', 'Group', 'Access']
+type FileSortKey = 'name' | 'size' | 'modified' | 'owner' | 'group' | 'access'
+type SortDirection = 'asc' | 'desc'
+
+interface FileTableColumn {
+  key: FileSortKey
+  label: string
+}
+
+const FILE_TABLE_COLUMNS: FileTableColumn[] = [
+  { key: 'name', label: 'Name' },
+  { key: 'size', label: 'Size (KB)' },
+  { key: 'modified', label: 'Last modified' },
+  { key: 'owner', label: 'Owner' },
+  { key: 'group', label: 'Group' },
+  { key: 'access', label: 'Access' },
+]
 const FILE_TABLE_DEFAULT_COLUMN_WIDTHS = [240, 82, 142, 86, 86, 108]
 const FILE_TABLE_MIN_COLUMN_WIDTHS = [150, 58, 96, 58, 58, 78]
 
@@ -45,15 +61,6 @@ function parentPathOf(path: string) {
   }
 
   return `/${parts.slice(0, -1).join('/')}`
-}
-
-function sortEntries(entries: RemoteFileEntry[]) {
-  return [...entries].sort((left, right) => {
-    if (left.kind !== right.kind) {
-      return left.kind === 'folder' ? -1 : 1
-    }
-    return left.name.localeCompare(right.name)
-  })
 }
 
 function movedEnough(startX: number, startY: number, currentX: number, currentY: number) {
@@ -78,6 +85,56 @@ function remoteSizeKbLabel(entry: RemoteFileEntry) {
 
 function isHiddenEntry(entry: RemoteFileEntry) {
   return entry.name.startsWith('.')
+}
+
+function normalizeRemotePath(path: string) {
+  const trimmed = path.trim()
+  if (!trimmed || trimmed === '/') {
+    return '/'
+  }
+
+  return `/${trimmed.replace(/^\/+/, '').replace(/\/{2,}/g, '/')}`.replace(/\/+$/, '') || '/'
+}
+
+function compareText(left: string | undefined, right: string | undefined) {
+  return (left ?? '').localeCompare(right ?? '', undefined, { numeric: true, sensitivity: 'base' })
+}
+
+function compareFileEntries(left: RemoteFileEntry, right: RemoteFileEntry, key: FileSortKey, direction: SortDirection) {
+  if (left.kind !== right.kind) {
+    return left.kind === 'folder' ? -1 : 1
+  }
+
+  const multiplier = direction === 'asc' ? 1 : -1
+  let result = 0
+
+  switch (key) {
+    case 'size':
+      result = (left.sizeBytes ?? -1) - (right.sizeBytes ?? -1)
+      break
+    case 'modified':
+      result = compareText(left.modifiedLabel, right.modifiedLabel)
+      break
+    case 'owner':
+      result = compareText(left.ownerLabel, right.ownerLabel)
+      break
+    case 'group':
+      result = compareText(left.groupLabel, right.groupLabel)
+      break
+    case 'access':
+      result = compareText(left.accessLabel, right.accessLabel)
+      break
+    case 'name':
+    default:
+      result = compareText(left.name, right.name)
+      break
+  }
+
+  if (result === 0) {
+    result = compareText(left.name, right.name)
+  }
+
+  return result * multiplier
 }
 
 function fileBrowserErrorContext(session: SessionDefinition, action: string, path: string) {
@@ -130,14 +187,19 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
   const [dropActive, setDropActive] = useState(false)
   const [showHidden, setShowHidden] = useState(false)
   const [columnWidths, setColumnWidths] = useState(FILE_TABLE_DEFAULT_COLUMN_WIDTHS)
+  const [sortState, setSortState] = useState<{ key: FileSortKey; direction: SortDirection }>({
+    key: 'name',
+    direction: 'asc',
+  })
+  const [pathDraft, setPathDraft] = useState('/')
 
   const visibleEntries = useMemo(() => {
     const entries = snapshot?.entries ?? []
-    if (showHidden) {
-      return entries
-    }
-    return entries.filter((entry) => !isHiddenEntry(entry))
-  }, [showHidden, snapshot])
+    const filteredEntries = showHidden ? entries : entries.filter((entry) => !isHiddenEntry(entry))
+    return [...filteredEntries].sort((left, right) => (
+      compareFileEntries(left, right, sortState.key, sortState.direction)
+    ))
+  }, [showHidden, snapshot, sortState.direction, sortState.key])
 
   const selectedEntry = useMemo(
     () => visibleEntries.find((entry) => entry.path === selectedPath) ?? null,
@@ -180,19 +242,29 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
     window.addEventListener('pointerup', handlePointerUp)
   }
 
+  function handleSortColumn(key: FileSortKey) {
+    setSortState((current) => (
+      current.key === key
+        ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
+        : { key, direction: 'asc' }
+    ))
+  }
+
   const loadDirectory = useCallback(async (targetPath: string) => {
+    const normalizedPath = normalizeRemotePath(targetPath)
     setBusy(true)
     try {
-      const nextSnapshot = await listRemoteDirectory(session, targetPath)
+      const nextSnapshot = await listRemoteDirectory(session, normalizedPath)
       setSnapshot({
         path: nextSnapshot.path,
-        entries: sortEntries(nextSnapshot.entries),
+        entries: nextSnapshot.entries,
       })
       setCurrentPath(nextSnapshot.path)
+      setPathDraft(nextSnapshot.path)
       setSelectedPath(null)
       setMessage(`Loaded ${nextSnapshot.path}`)
     } catch (error) {
-      logOpenXTermError('file-browser.load-directory', error, fileBrowserErrorContext(session, 'load', targetPath))
+      logOpenXTermError('file-browser.load-directory', error, fileBrowserErrorContext(session, 'load', normalizedPath))
       setMessage(error instanceof Error ? error.message : 'Unable to load remote directory.')
     } finally {
       setBusy(false)
@@ -202,6 +274,7 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
   useEffect(() => {
     setSnapshot(null)
     setCurrentPath('/')
+    setPathDraft('/')
     setSelectedPath(null)
     void loadDirectory('/')
   }, [loadDirectory, session.id])
@@ -216,6 +289,10 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
       setSelectedPath(null)
     }
   }, [selectedPath, visibleEntries])
+
+  useEffect(() => {
+    setPathDraft(currentPath)
+  }, [currentPath])
 
   useEffect(() => {
     if (!('__TAURI_INTERNALS__' in window)) {
@@ -411,6 +488,11 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
     }
   }
 
+  async function handlePathSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    await loadDirectory(pathDraft)
+  }
+
   async function uploadFiles(files: File[]) {
     if (files.length === 0) {
       return
@@ -589,6 +671,18 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
           <FolderPlus size={14} />
           <span>Create folder</span>
         </button>
+        <form className="file-path-form" onSubmit={(event) => void handlePathSubmit(event)}>
+          <input
+            value={pathDraft}
+            disabled={busy}
+            aria-label="Remote path"
+            spellCheck={false}
+            onChange={(event) => setPathDraft(event.target.value)}
+          />
+          <button type="submit" disabled={busy || !pathDraft.trim()}>
+            Go
+          </button>
+        </form>
         <input ref={uploadInputRef} className="sr-only-input" type="file" multiple onChange={(event) => void handleUploadChange(event)} />
       </div>
 
@@ -624,13 +718,23 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
             {visibleEntries.length ? (
               <>
                 <div className="file-row file-row-header" role="row">
-                  {FILE_TABLE_COLUMN_LABELS.map((label, index) => (
-                    <span key={label} className="file-table-header-cell">
-                      {label}
+                  {FILE_TABLE_COLUMNS.map((column, index) => (
+                    <span key={column.key} className="file-table-header-cell">
+                      <button
+                        className="file-table-sort-button"
+                        type="button"
+                        aria-label={`Sort by ${column.label}`}
+                        onClick={() => handleSortColumn(column.key)}
+                      >
+                        <span>{column.label}</span>
+                        {sortState.key === column.key && (
+                          <span aria-hidden="true">{sortState.direction === 'asc' ? '^' : 'v'}</span>
+                        )}
+                      </button>
                       <button
                         className="file-table-column-resizer"
                         type="button"
-                        aria-label={`Resize ${label} column`}
+                        aria-label={`Resize ${column.label} column`}
                         onPointerDown={(event) => handleColumnResizeStart(index, event)}
                       />
                     </span>

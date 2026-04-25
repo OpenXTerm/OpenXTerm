@@ -177,6 +177,8 @@ Goal: SFTP should cover common daily file-management tasks.
 - Drag-in upload from desktop into the file browser.
 - Rename remote files and folders.
 - Cancel transfer.
+- Sortable remote file table columns.
+- Manual remote path input.
 
 ### In Progress
 
@@ -186,8 +188,7 @@ Goal: SFTP should cover common daily file-management tasks.
 ### TODO
 
 - Chmod support.
-- Sort by name, size, date, and type.
-- Breadcrumb with manual path input.
+- Clickable breadcrumb navigation.
 - Remote folder download hardening.
 - Overwrite/skip/rename conflict handling.
 - Retry failed transfer.
