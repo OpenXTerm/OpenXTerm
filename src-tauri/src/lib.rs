@@ -48,6 +48,7 @@ pub fn run() {
             commands::create_remote_directory,
             commands::delete_remote_entry,
             commands::rename_remote_entry,
+            commands::update_remote_entry_permissions,
             commands::cancel_transfer,
             commands::upload_remote_file,
             commands::upload_local_file,

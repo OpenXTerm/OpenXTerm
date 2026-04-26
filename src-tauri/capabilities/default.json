@@ -5,7 +5,8 @@
   "windows": [
     "main",
     "transfer-manager",
-    "transfer-*"
+    "transfer-*",
+    "properties-*"
   ],
   "permissions": [
     "core:default",

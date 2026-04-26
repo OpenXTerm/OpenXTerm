@@ -178,9 +178,11 @@ fn list_sftp_entries(ssh: &mut Session, remote_path: &str) -> Result<Vec<RemoteF
             size_bytes: size,
             size_label: format_size(size.unwrap_or(0)),
             modified_label: entry.long_name().unwrap_or("--").to_string(),
+            created_label: None,
             owner_label: entry.uid().map(|uid| uid.to_string()),
             group_label: entry.gid().map(|gid| gid.to_string()),
             access_label: format_access_label(entry.file_type(), entry.permissions()),
+            permissions: entry.permissions().map(|permissions| permissions & 0o777),
         });
     }
     entries.sort_by(|left, right| left.name.to_lowercase().cmp(&right.name.to_lowercase()));

@@ -288,9 +288,11 @@ export async function listRemoteDirectory(session: SessionDefinition, path?: str
       kind: entry.kind,
       sizeLabel: entry.size,
       modifiedLabel: entry.modified,
+      createdLabel: '',
       ownerLabel: '',
       groupLabel: '',
       accessLabel: entry.kind === 'folder' ? 'drwxr-xr-x' : '-rw-r--r--',
+      permissions: entry.kind === 'folder' ? 0o755 : 0o644,
     })),
   } satisfies RemoteDirectorySnapshot
 }
@@ -321,6 +323,18 @@ export async function renameRemoteEntry(session: SessionDefinition, path: string
   }
 
   await invoke('rename_remote_entry', { session, path, newName })
+}
+
+export async function updateRemoteEntryPermissions(
+  session: SessionDefinition,
+  path: string,
+  permissions: number,
+) {
+  if (!isTauriRuntime()) {
+    return
+  }
+
+  await invoke('update_remote_entry_permissions', { session, path, permissions })
 }
 
 export async function cancelTransfer(transferId: string) {

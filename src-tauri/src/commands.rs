@@ -267,6 +267,19 @@ pub async fn rename_remote_entry(
 }
 
 #[tauri::command]
+pub async fn update_remote_entry_permissions(
+    session: SessionDefinition,
+    path: String,
+    permissions: u32,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        transfer::update_remote_entry_permissions(&session, &path, permissions)
+    })
+    .await
+    .map_err(|error| format!("failed to join remote chmod task: {error}"))?
+}
+
+#[tauri::command]
 pub fn cancel_transfer(transfer_id: String) -> Result<(), String> {
     transfer::cancel_transfer(&transfer_id)
 }

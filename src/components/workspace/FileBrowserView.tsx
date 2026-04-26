@@ -10,7 +10,7 @@ import {
   type FormEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react'
-import { ArrowDownToLine, ArrowUp, Copy, Eye, FileText, Folder, FolderPlus, LoaderCircle, RefreshCw, Trash2, Upload } from 'lucide-react'
+import { ArrowDownToLine, ArrowUp, Copy, Eye, FileText, Folder, FolderPlus, Info, LoaderCircle, RefreshCw, Trash2, Upload } from 'lucide-react'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
 
 import {
@@ -23,9 +23,15 @@ import {
   uploadRemoteFile,
 } from '../../lib/bridge'
 import { logOpenXTermError } from '../../lib/errorLog'
+import {
+  remotePropertiesResultKey,
+  requestRemoteEntryPropertiesWindow,
+  type RemotePropertiesWindowResult,
+} from '../../lib/remotePropertiesWindow'
 import { createBatchChildTransferId, createBatchTransferId } from '../../lib/transferBatch'
 import type { RemoteDirectorySnapshot, RemoteFileEntry, SessionDefinition } from '../../types/domain'
 import { useOpenXTermStore } from '../../state/useOpenXTermStore'
+import { RemoteEntryPropertiesModal } from './RemoteEntryPropertiesModal'
 
 interface FileBrowserViewProps {
   session: SessionDefinition
@@ -37,6 +43,12 @@ type SortDirection = 'asc' | 'desc'
 interface FileTableColumn {
   key: FileSortKey
   label: string
+}
+
+interface FileContextMenuState {
+  entry: RemoteFileEntry
+  x: number
+  y: number
 }
 
 const FILE_TABLE_COLUMNS: FileTableColumn[] = [
@@ -192,6 +204,8 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
     direction: 'asc',
   })
   const [pathDraft, setPathDraft] = useState('/')
+  const [contextMenu, setContextMenu] = useState<FileContextMenuState | null>(null)
+  const [propertiesEntry, setPropertiesEntry] = useState<RemoteFileEntry | null>(null)
 
   const visibleEntries = useMemo(() => {
     const entries = snapshot?.entries ?? []
@@ -293,6 +307,52 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
   useEffect(() => {
     setPathDraft(currentPath)
   }, [currentPath])
+
+  useEffect(() => {
+    if (!contextMenu) {
+      return
+    }
+
+    const closeContextMenu = () => setContextMenu(null)
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setContextMenu(null)
+      }
+    }
+
+    window.addEventListener('click', closeContextMenu)
+    window.addEventListener('contextmenu', closeContextMenu)
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.removeEventListener('click', closeContextMenu)
+      window.removeEventListener('contextmenu', closeContextMenu)
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [contextMenu])
+
+  useEffect(() => {
+    function handleStorage(event: StorageEvent) {
+      if (event.key !== remotePropertiesResultKey() || !event.newValue) {
+        return
+      }
+
+      try {
+        const result = JSON.parse(event.newValue) as RemotePropertiesWindowResult
+        if (result.sessionId !== session.id) {
+          return
+        }
+
+        void loadDirectory(result.currentPath).then(() => {
+          setMessage(result.message)
+        })
+      } catch (error) {
+        logOpenXTermError('file-browser.properties-result', error, fileBrowserErrorContext(session, 'properties-result', currentPath))
+      }
+    }
+
+    window.addEventListener('storage', handleStorage)
+    return () => window.removeEventListener('storage', handleStorage)
+  }, [currentPath, loadDirectory, session])
 
   useEffect(() => {
     if (!('__TAURI_INTERNALS__' in window)) {
@@ -488,6 +548,21 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
     }
   }
 
+  async function handleOpenProperties(entry: RemoteFileEntry) {
+    setSelectedPath(entry.path)
+    setContextMenu(null)
+    const opened = await requestRemoteEntryPropertiesWindow(session, entry, currentPath)
+    if (!opened) {
+      setPropertiesEntry(entry)
+    }
+  }
+
+  async function handlePropertiesApplied(nextMessage: string) {
+    setPropertiesEntry(null)
+    await loadDirectory(currentPath)
+    setMessage(nextMessage)
+  }
+
   async function handlePathSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     await loadDirectory(pathDraft)
@@ -650,6 +725,10 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
           <Copy size={14} />
           <span>Copy path</span>
         </button>
+        <button type="button" onClick={() => selectedEntry && void handleOpenProperties(selectedEntry)} disabled={busy || !selectedEntry}>
+          <Info size={14} />
+          <span>Properties</span>
+        </button>
         <button
           type="button"
           className={showHidden ? 'active' : undefined}
@@ -747,6 +826,12 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
                     className={`file-row ${selectedPath === entry.path ? 'selected' : ''} ${entry.kind === 'file' ? 'draggable' : ''}`}
                     onPointerDown={(event) => handleNativeDragPointerDown(event, entry)}
                     onClick={() => setSelectedPath(entry.path)}
+                    onContextMenu={(event) => {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      setSelectedPath(entry.path)
+                      setContextMenu({ entry, x: event.clientX, y: event.clientY })
+                    }}
                     onDoubleClick={() => {
                       if (entry.kind === 'folder') {
                         void loadDirectory(entry.path)
@@ -802,6 +887,32 @@ path: ${snapshot?.path ?? currentPath}
 ${message || 'Drop local files here to upload or select a file to drag it back to the system.'}`}</pre>
         </div>
       </div>
+
+      {contextMenu && (
+        <div
+          className="file-context-menu"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          role="menu"
+          onClick={(event) => event.stopPropagation()}
+          onContextMenu={(event) => event.preventDefault()}
+        >
+          <button type="button" role="menuitem" onClick={() => void handleOpenProperties(contextMenu.entry)}>
+            <Info size={14} />
+            <span>Properties</span>
+          </button>
+        </div>
+      )}
+
+      {propertiesEntry && (
+        <RemoteEntryPropertiesModal
+          session={session}
+          entry={propertiesEntry}
+          currentPath={currentPath}
+          busy={busy}
+          onClose={() => setPropertiesEntry(null)}
+          onApplied={handlePropertiesApplied}
+        />
+      )}
     </div>
   )
 }

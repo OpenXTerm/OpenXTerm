@@ -51,9 +51,15 @@ import {
 import { logOpenXTermError } from '../../lib/errorLog'
 import type { SessionImportSummary } from '../../state/useOpenXTermStore'
 import { splitSessionFolderPath } from '../../lib/sessionUtils'
+import {
+  remotePropertiesResultKey,
+  requestRemoteEntryPropertiesWindow,
+  type RemotePropertiesWindowResult,
+} from '../../lib/remotePropertiesWindow'
 import { createBatchChildTransferId, createBatchTransferId, rememberBatchTransfer } from '../../lib/transferBatch'
 import { parseMobaXtermSessionsFile } from '../../lib/mobaxtermImport'
 import { useOpenXTermStore } from '../../state/useOpenXTermStore'
+import { RemoteEntryPropertiesModal } from '../workspace/RemoteEntryPropertiesModal'
 import type {
   MacroDefinition,
   RemoteDirectorySnapshot,
@@ -385,6 +391,7 @@ export function Sidebar({
   const [renamingSftpEntry, setRenamingSftpEntry] = useState<RemoteFileEntry | null>(null)
   const [renameSftpName, setRenameSftpName] = useState('')
   const [sftpContextMenu, setSftpContextMenu] = useState<SftpContextMenuState | null>(null)
+  const [sftpPropertiesEntry, setSftpPropertiesEntry] = useState<RemoteFileEntry | null>(null)
   const [sftpColumnWidths, setSftpColumnWidths] = useState(SFTP_TABLE_DEFAULT_COLUMN_WIDTHS)
   const [sftpSortState, setSftpSortState] = useState<{ key: SftpSortKey; direction: SortDirection }>({
     key: 'name',
@@ -580,6 +587,19 @@ export function Sidebar({
     setRenameSftpName(entry.name)
   }
 
+  async function openSftpProperties(entry: RemoteFileEntry) {
+    setSftpContextMenu(null)
+    setSelectedSftpEntryPaths([entry.path])
+    if (!selectedSftpSession) {
+      return
+    }
+
+    const opened = await requestRemoteEntryPropertiesWindow(selectedSftpSession, entry, currentSftpPath)
+    if (!opened) {
+      setSftpPropertiesEntry(entry)
+    }
+  }
+
   const loadSelectedSftpDirectory = useCallback(async (path: string) => {
     if (!selectedSftpSession) {
       return
@@ -588,6 +608,46 @@ export function Sidebar({
     await loadSftpDirectory(selectedSftpSession, path)
     setSelectedSftpEntryPaths([])
   }, [loadSftpDirectory, selectedSftpSession])
+
+  async function handleSftpPropertiesApplied(nextMessage: string) {
+    if (!selectedSftpSession) {
+      return
+    }
+
+    setSftpPropertiesEntry(null)
+    await loadSftpDirectory(selectedSftpSession, currentSftpPath)
+    setSftpMessage(nextMessage)
+  }
+
+  useEffect(() => {
+    function handleStorage(event: StorageEvent) {
+      if (event.key !== remotePropertiesResultKey() || !event.newValue) {
+        return
+      }
+
+      try {
+        const result = JSON.parse(event.newValue) as RemotePropertiesWindowResult
+        const session = sshSftpLinks.find((item) => item.id === result.sessionId)
+        if (!session) {
+          return
+        }
+
+        void loadSftpDirectory(session, result.currentPath).then(() => {
+          if (selectedSftpSession?.id === result.sessionId) {
+            setSelectedSftpEntryPaths([])
+            setSftpMessage(result.message)
+          }
+        })
+      } catch (error) {
+        if (selectedSftpSession) {
+          logOpenXTermError('sidebar.sftp.properties-result', error, sidebarSftpErrorContext(selectedSftpSession, 'properties-result', currentSftpPath))
+        }
+      }
+    }
+
+    window.addEventListener('storage', handleStorage)
+    return () => window.removeEventListener('storage', handleStorage)
+  }, [currentSftpPath, loadSftpDirectory, selectedSftpSession, sshSftpLinks])
 
   async function handleSftpPathSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -1941,6 +2001,9 @@ export function Sidebar({
                 <button type="button" role="menuitem" onClick={() => startRenameSftpEntry(sftpContextMenu.entry)}>
                   Rename
                 </button>
+                <button type="button" role="menuitem" onClick={() => void openSftpProperties(sftpContextMenu.entry)}>
+                  Properties
+                </button>
                 <button
                   type="button"
                   role="menuitem"
@@ -1964,6 +2027,16 @@ export function Sidebar({
                   Download
                 </button>
               </div>
+            )}
+            {sftpPropertiesEntry && selectedSftpSession && (
+              <RemoteEntryPropertiesModal
+                session={selectedSftpSession}
+                entry={sftpPropertiesEntry}
+                currentPath={currentSftpPath}
+                busy={sftpLoading}
+                onClose={() => setSftpPropertiesEntry(null)}
+                onApplied={handleSftpPropertiesApplied}
+              />
             )}
           </>
         )}

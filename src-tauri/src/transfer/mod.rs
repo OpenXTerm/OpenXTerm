@@ -157,6 +157,29 @@ pub fn rename_remote_entry(
     }
 }
 
+pub fn update_remote_entry_permissions(
+    session: &SessionDefinition,
+    path: &str,
+    permissions: u32,
+) -> Result<(), String> {
+    if permissions > 0o777 {
+        return Err("remote permissions must be between 000 and 777".into());
+    }
+
+    match session.kind.as_str() {
+        "sftp" => {
+            let sftp = open_sftp(session)?;
+            sftp.chmod(path, permissions)
+                .map_err(|error| format!("failed to update remote permissions: {error}"))
+        }
+        "ftp" => Err("FTP permissions editing is not supported yet".into()),
+        _ => Err(format!(
+            "{} does not support remote permissions",
+            session.kind
+        )),
+    }
+}
+
 fn delete_sftp_directory_recursive(sftp: &Sftp, path: &str) -> Result<(), String> {
     let entries = sftp.read_dir(path).map_err(|error| {
         format!("failed to list remote directory {path} before delete: {error}")
@@ -1074,9 +1097,11 @@ fn list_sftp_directory(
                 size_bytes: entry.len(),
                 size_label: format_size(entry.len()),
                 modified_label: format_system_time(entry.modified()),
+                created_label: None,
                 owner_label: entry.uid().map(|uid| uid.to_string()),
                 group_label: entry.gid().map(|gid| gid.to_string()),
                 access_label: format_access_label(entry.file_type(), entry.permissions()),
+                permissions: entry.permissions().map(|permissions| permissions & 0o777),
             })
         })
         .collect();
@@ -1222,9 +1247,11 @@ fn parse_ftp_list_line(line: &str, current_path: &str) -> Option<RemoteFileEntry
         size_bytes,
         size_label: format_size(size_bytes),
         modified_label: parts[5..8].join(" "),
+        created_label: None,
         owner_label: Some(parts[2].to_string()),
         group_label: Some(parts[3].to_string()),
         access_label: Some(parts[0].to_string()),
+        permissions: parse_access_permissions(parts[0]),
     })
 }
 
@@ -1374,6 +1401,28 @@ fn format_permission_triplet(bits: u32) -> String {
     let write = if bits & 0o2 != 0 { 'w' } else { '-' };
     let execute = if bits & 0o1 != 0 { 'x' } else { '-' };
     format!("{read}{write}{execute}")
+}
+
+fn parse_access_permissions(access: &str) -> Option<u32> {
+    let chars = access.chars().collect::<Vec<_>>();
+    if chars.len() < 10 {
+        return None;
+    }
+
+    let mut permissions = 0_u32;
+    for (offset, ch) in chars[1..10].iter().enumerate() {
+        let bit = match offset % 3 {
+            0 => 0o4,
+            1 => 0o2,
+            _ => 0o1,
+        };
+        if *ch != '-' {
+            let shift = 6 - ((offset / 3) as u32 * 3);
+            permissions |= bit << shift;
+        }
+    }
+
+    Some(permissions)
 }
 
 fn sanitize_file_name(file_name: &str) -> String {
