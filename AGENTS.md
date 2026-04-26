@@ -87,14 +87,15 @@ CI/CD workflow:
 - [`src-tauri/src/runtime/status_scripts.rs`](src-tauri/src/runtime/status_scripts.rs): embedded local/remote status probe scripts
 - [`src-tauri/src/runtime/telnet.rs`](src-tauri/src/runtime/telnet.rs): Telnet connector, reader, protocol negotiation, and writer
 - [`src-tauri/src/runtime/x11.rs`](src-tauri/src/runtime/x11.rs): X11 forwarding proxy, local auth lookup, and runtime diagnostics
-- [`src-tauri/src/file_ops.rs`](src-tauri/src/file_ops.rs): remote file ops and transfer progress
-- [`src-tauri/src/font_support.rs`](src-tauri/src/font_support.rs): system font enumeration through `font-kit`
-- [`src-tauri/src/libssh_spike.rs`](src-tauri/src/libssh_spike.rs): embedded `libssh-rs` spike for helper/backend evaluation
-- [`src-tauri/src/x11_support.rs`](src-tauri/src/x11_support.rs): local X11 / XQuartz / X server detection helpers
-- [`src-tauri/src/native_drag.rs`](src-tauri/src/native_drag.rs): native drag bridge
-- [`src-tauri/src/native_drag_macos.m`](src-tauri/src/native_drag_macos.m): macOS AppKit drag implementation
-- [`src-tauri/src/native_menu.rs`](src-tauri/src/native_menu.rs): native menu integration and topbar action routing
-- [`src-tauri/src/system_auth.rs`](src-tauri/src/system_auth.rs): platform authentication for app lock
+- [`src-tauri/src/transfer/mod.rs`](src-tauri/src/transfer/mod.rs): remote file ops, SFTP/FTP transfer progress, and cancel
+- [`src-tauri/src/drag/mod.rs`](src-tauri/src/drag/mod.rs): native drag bridge (macOS file-promise drag, Windows IDataObject drag)
+- [`src-tauri/src/drag/macos.m`](src-tauri/src/drag/macos.m): macOS AppKit drag implementation
+- [`src-tauri/src/platform/auth.rs`](src-tauri/src/platform/auth.rs): platform authentication for app lock
+- [`src-tauri/src/platform/auth_macos.m`](src-tauri/src/platform/auth_macos.m): macOS LocalAuthentication implementation
+- [`src-tauri/src/platform/fonts.rs`](src-tauri/src/platform/fonts.rs): system font enumeration through `font-kit`
+- [`src-tauri/src/platform/menu.rs`](src-tauri/src/platform/menu.rs): native menu integration and topbar action routing
+- [`src-tauri/src/platform/x11.rs`](src-tauri/src/platform/x11.rs): local X11 / XQuartz / X server detection helpers
+- [`src-tauri/src/probe.rs`](src-tauri/src/probe.rs): embedded `libssh-rs` probe for backend evaluation
 - [`src-tauri/src/storage.rs`](src-tauri/src/storage.rs): persistence
 - [`src-tauri/src/models.rs`](src-tauri/src/models.rs): serde models mirrored from TS
 

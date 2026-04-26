@@ -160,16 +160,24 @@ OpenXTerm/
   src-tauri/
     src/
       commands.rs
-      file_ops.rs
-      font_support.rs
-      libssh_spike.rs
       models.rs
-      native_drag.rs
-      native_menu.rs
-      runtime.rs
+      probe.rs
       storage.rs
-      system_auth.rs
-      x11_support.rs
+      runtime.rs
+      runtime/
+        local_shell.rs
+        serial.rs
+        ssh/
+        status/
+        telnet.rs
+        x11.rs
+      transfer/
+      drag/
+      platform/
+        auth.rs
+        fonts.rs
+        menu.rs
+        x11.rs
   docs/
     architecture/
     qa/

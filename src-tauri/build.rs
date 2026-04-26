@@ -3,16 +3,16 @@ fn main() {
 
     #[cfg(target_os = "macos")]
     {
-        println!("cargo:rerun-if-changed=src/native_drag_macos.m");
-        println!("cargo:rerun-if-changed=src/system_auth_macos.m");
+        println!("cargo:rerun-if-changed=src/drag/macos.m");
+        println!("cargo:rerun-if-changed=src/platform/auth_macos.m");
 
         cc::Build::new()
-            .file("src/native_drag_macos.m")
+            .file("src/drag/macos.m")
             .flag("-fobjc-arc")
             .compile("openxterm_native_drag_macos");
 
         cc::Build::new()
-            .file("src/system_auth_macos.m")
+            .file("src/platform/auth_macos.m")
             .flag("-fobjc-arc")
             .compile("openxterm_system_auth_macos");
         println!("cargo:rustc-link-lib=framework=AppKit");
