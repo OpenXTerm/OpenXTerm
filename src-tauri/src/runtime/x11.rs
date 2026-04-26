@@ -14,7 +14,7 @@ use std::{
 use libssh_rs::{Channel as LibsshChannel, Error as LibsshError};
 use tauri::AppHandle;
 
-use crate::{models::SessionDefinition, x11_support::resolve_local_x11_display};
+use crate::{models::SessionDefinition, platform::x11::resolve_local_x11_display};
 
 use super::{emit_output, lock_embedded_ssh_channel, run_remote_ssh_script_with_label};
 

@@ -1,21 +1,18 @@
 mod commands;
-mod file_ops;
-mod font_support;
-mod libssh_spike;
+mod drag;
 mod models;
-mod native_drag;
-mod native_menu;
+mod platform;
+mod probe;
 mod runtime;
 mod storage;
-mod system_auth;
-mod x11_support;
+mod transfer;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .manage(runtime::AppRuntime::default())
         .setup(|app| {
-            native_menu::install_macos_menu(&app.handle())?;
+            platform::menu::install_macos_menu(&app.handle())?;
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
@@ -61,7 +58,7 @@ pub fn run() {
             commands::start_native_entries_drag
         ])
         .on_menu_event(|app, event| {
-            native_menu::handle_menu_event(app, event.id().as_ref());
+            platform::menu::handle_menu_event(app, event.id().as_ref());
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

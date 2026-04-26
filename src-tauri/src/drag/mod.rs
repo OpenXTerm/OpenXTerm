@@ -49,7 +49,7 @@ use windows_core::{implement, Error as WindowsError, BOOL, HRESULT};
 #[cfg(target_os = "windows")]
 use crate::runtime::open_embedded_sftp;
 use crate::{
-    file_ops,
+    transfer as file_ops,
     models::{RemoteDragEntry, SessionDefinition},
 };
 

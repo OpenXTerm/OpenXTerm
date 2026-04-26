@@ -1,19 +1,21 @@
 use tauri::{AppHandle, State};
 
 use crate::{
-    file_ops,
+    drag,
     models::{
         LibsshProbePayload, LocalX11SupportPayload, MacroDefinition, RemoteDragEntry,
         SessionDefinition, SessionFolderDefinition, StorageModel, UiPreferences,
     },
-    native_drag,
+    platform::{
+        auth::{
+            get_system_auth_support as get_platform_auth_support,
+            request_system_unlock as request_platform_unlock, SystemAuthSupport,
+        },
+        x11 as x11_support,
+    },
     runtime::AppRuntime,
     storage::{load_storage, save_storage},
-    system_auth::{
-        get_system_auth_support as get_platform_auth_support,
-        request_system_unlock as request_platform_unlock, SystemAuthSupport,
-    },
-    x11_support,
+    transfer,
 };
 
 #[tauri::command]
@@ -135,7 +137,7 @@ pub fn open_external_target(target: String) -> Result<(), String> {
 
 #[tauri::command]
 pub fn list_system_font_families() -> Result<Vec<String>, String> {
-    crate::font_support::list_system_font_families()
+    crate::platform::fonts::list_system_font_families()
 }
 
 #[tauri::command]
@@ -145,7 +147,7 @@ pub async fn run_libssh_probe(
     remote_path: Option<String>,
 ) -> Result<LibsshProbePayload, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        crate::libssh_spike::run_probe(&session, remote_command.as_deref(), remote_path.as_deref())
+        crate::probe::run_probe(&session, remote_command.as_deref(), remote_path.as_deref())
     })
     .await
     .map_err(|error| format!("failed to join libssh probe task: {error}"))?
@@ -220,7 +222,7 @@ pub async fn list_remote_directory(
     session: SessionDefinition,
     path: Option<String>,
 ) -> Result<crate::models::RemoteDirectorySnapshot, String> {
-    tauri::async_runtime::spawn_blocking(move || file_ops::list_remote_directory(&session, path))
+    tauri::async_runtime::spawn_blocking(move || transfer::list_remote_directory(&session, path))
         .await
         .map_err(|error| format!("failed to join remote list task: {error}"))?
 }
@@ -232,7 +234,7 @@ pub async fn create_remote_directory(
     name: String,
 ) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
-        file_ops::create_remote_directory(&session, &parent_path, &name)
+        transfer::create_remote_directory(&session, &parent_path, &name)
     })
     .await
     .map_err(|error| format!("failed to join remote mkdir task: {error}"))?
@@ -245,7 +247,7 @@ pub async fn delete_remote_entry(
     kind: String,
 ) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
-        file_ops::delete_remote_entry(&session, &path, &kind)
+        transfer::delete_remote_entry(&session, &path, &kind)
     })
     .await
     .map_err(|error| format!("failed to join remote delete task: {error}"))?
@@ -258,7 +260,7 @@ pub async fn rename_remote_entry(
     new_name: String,
 ) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
-        file_ops::rename_remote_entry(&session, &path, &new_name)
+        transfer::rename_remote_entry(&session, &path, &new_name)
     })
     .await
     .map_err(|error| format!("failed to join remote rename task: {error}"))?
@@ -266,7 +268,7 @@ pub async fn rename_remote_entry(
 
 #[tauri::command]
 pub fn cancel_transfer(transfer_id: String) -> Result<(), String> {
-    file_ops::cancel_transfer(&transfer_id)
+    transfer::cancel_transfer(&transfer_id)
 }
 
 #[tauri::command]
@@ -279,7 +281,7 @@ pub async fn upload_remote_file(
     transfer_id: Option<String>,
 ) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
-        file_ops::upload_remote_file(&app, &session, &remote_dir, &file_name, bytes, transfer_id)
+        transfer::upload_remote_file(&app, &session, &remote_dir, &file_name, bytes, transfer_id)
     })
     .await
     .map_err(|error| format!("failed to join upload task: {error}"))?
@@ -294,7 +296,7 @@ pub async fn upload_local_file(
     transfer_id: Option<String>,
 ) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
-        file_ops::upload_local_file(&app, &session, &remote_dir, &local_path, transfer_id)
+        transfer::upload_local_file(&app, &session, &remote_dir, &local_path, transfer_id)
     })
     .await
     .map_err(|error| format!("failed to join local upload task: {error}"))?
@@ -308,7 +310,7 @@ pub async fn download_remote_file(
     transfer_id: Option<String>,
 ) -> Result<crate::models::FileDownloadResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        file_ops::download_remote_file(&app, &session, &remote_path, transfer_id)
+        transfer::download_remote_file(&app, &session, &remote_path, transfer_id)
     })
     .await
     .map_err(|error| format!("failed to join download task: {error}"))?
@@ -323,7 +325,7 @@ pub async fn download_remote_entry(
     transfer_id: Option<String>,
 ) -> Result<crate::models::FileDownloadResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        file_ops::download_remote_entry(&app, &session, &remote_path, &kind, transfer_id)
+        transfer::download_remote_entry(&app, &session, &remote_path, &kind, transfer_id)
     })
     .await
     .map_err(|error| format!("failed to join download task: {error}"))?
@@ -337,7 +339,7 @@ pub async fn prepare_remote_drag_file(
     transfer_id: String,
 ) -> Result<crate::models::FileDownloadResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        file_ops::prepare_remote_drag_file(&app, &session, &remote_path, transfer_id)
+        transfer::prepare_remote_drag_file(&app, &session, &remote_path, transfer_id)
     })
     .await
     .map_err(|error| format!("failed to join drag-export task: {error}"))?
@@ -354,7 +356,7 @@ pub fn start_native_file_drag(
     client_x: f64,
     client_y: f64,
 ) -> Result<bool, String> {
-    native_drag::start_native_file_drag(
+    drag::start_native_file_drag(
         &app,
         &window,
         &session,
@@ -375,5 +377,5 @@ pub fn start_native_entries_drag(
     client_x: f64,
     client_y: f64,
 ) -> Result<bool, String> {
-    native_drag::start_native_entries_drag(&app, &window, &session, &entries, client_x, client_y)
+    drag::start_native_entries_drag(&app, &window, &session, &entries, client_x, client_y)
 }
