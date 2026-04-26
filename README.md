@@ -143,47 +143,6 @@ On Unix-like systems, the helper script can start or verify the app:
 
 Fresh contributors and coding agents should read [`AGENTS.md`](AGENTS.md). It documents current architecture, invariants, known fragile areas, and recommended edit points.
 
-## Project Structure
-
-```text
-OpenXTerm/
-  src/
-    components/
-      forms/
-      layout/
-      sidebar/
-      status/
-      workspace/
-    lib/
-    state/
-    types/
-  src-tauri/
-    src/
-      commands.rs
-      models.rs
-      probe.rs
-      storage.rs
-      runtime.rs
-      runtime/
-        local_shell.rs
-        serial.rs
-        ssh/
-        status/
-        telnet.rs
-        x11.rs
-      transfer/
-      drag/
-      platform/
-        auth.rs
-        fonts.rs
-        menu.rs
-        x11.rs
-  docs/
-    architecture/
-    qa/
-  script/
-```
-
 ## CI/CD
 
 The GitHub Actions workflow lives at [`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml).
