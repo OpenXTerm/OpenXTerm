@@ -76,7 +76,17 @@ CI/CD workflow:
 
 - [`src-tauri/src/lib.rs`](src-tauri/src/lib.rs): Tauri app bootstrap and command registration
 - [`src-tauri/src/commands.rs`](src-tauri/src/commands.rs): invoke handlers
-- [`src-tauri/src/runtime.rs`](src-tauri/src/runtime.rs): live Local / SSH / Telnet / Serial runtime and X11 diagnostics
+- [`src-tauri/src/runtime.rs`](src-tauri/src/runtime.rs): main runtime registry, session startup dispatch, PTY glue, terminal lifecycle, and shared runtime events
+- [`src-tauri/src/runtime/local_shell.rs`](src-tauri/src/runtime/local_shell.rs): local shell command and working-directory resolution
+- [`src-tauri/src/runtime/serial.rs`](src-tauri/src/runtime/serial.rs): serial reader and serial option mapping
+- [`src-tauri/src/runtime/ssh/auth.rs`](src-tauri/src/runtime/ssh/auth.rs): transient SSH username/password memory plus per-tab runtime metadata files
+- [`src-tauri/src/runtime/ssh/guidance.rs`](src-tauri/src/runtime/ssh/guidance.rs): SSH password prompt handling, error text normalization, and terminal guidance messages
+- [`src-tauri/src/runtime/ssh/interactive.rs`](src-tauri/src/runtime/ssh/interactive.rs): embedded interactive SSH tab controller, writer, reader loop, resize, and X11/status startup
+- [`src-tauri/src/runtime/ssh/session.rs`](src-tauri/src/runtime/ssh/session.rs): embedded SSH helper/session creation, remote command execution, and SFTP helper opening
+- [`src-tauri/src/runtime/status/mod.rs`](src-tauri/src/runtime/status/mod.rs): status poller, local/SSH status probes, parser, latency, and status event emission
+- [`src-tauri/src/runtime/status_scripts.rs`](src-tauri/src/runtime/status_scripts.rs): embedded local/remote status probe scripts
+- [`src-tauri/src/runtime/telnet.rs`](src-tauri/src/runtime/telnet.rs): Telnet connector, reader, protocol negotiation, and writer
+- [`src-tauri/src/runtime/x11.rs`](src-tauri/src/runtime/x11.rs): X11 forwarding proxy, local auth lookup, and runtime diagnostics
 - [`src-tauri/src/file_ops.rs`](src-tauri/src/file_ops.rs): remote file ops and transfer progress
 - [`src-tauri/src/font_support.rs`](src-tauri/src/font_support.rs): system font enumeration through `font-kit`
 - [`src-tauri/src/libssh_spike.rs`](src-tauri/src/libssh_spike.rs): embedded `libssh-rs` spike for helper/backend evaluation
