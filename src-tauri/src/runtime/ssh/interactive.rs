@@ -14,10 +14,10 @@ use tauri::AppHandle;
 use crate::models::SessionDefinition;
 
 use super::super::{
-    emit_output, finalize_terminal, maybe_report_x11_forwarding_failure, prepare_x11_forwarding,
-    report_x11_forwarding_failure, spawn_status_poller, spawn_x11_accept_loop,
-    ssh_status_poller_supported, ActiveTerminal, AppRuntime, SharedWriter, DEFAULT_COLS,
-    DEFAULT_ROWS, SSH_LOOP_IDLE_SLEEP,
+    emit_cwd, emit_output, finalize_terminal, maybe_report_x11_forwarding_failure,
+    prepare_x11_forwarding, report_x11_forwarding_failure, spawn_status_poller,
+    spawn_x11_accept_loop, ssh_status_poller_supported, ActiveTerminal, AppRuntime, SharedWriter,
+    DEFAULT_COLS, DEFAULT_ROWS, SSH_LOOP_IDLE_SLEEP,
 };
 use super::{
     auth::{clear_ssh_runtime_auth, prepare_ssh_runtime_metadata, set_ssh_runtime_auth},
@@ -49,6 +49,13 @@ struct EmbeddedSshController {
 struct EmbeddedSshWriter {
     controller: Arc<EmbeddedSshController>,
 }
+
+struct CwdOutputFilter {
+    pending: String,
+}
+
+const CWD_OSC_PREFIX: &str = "\x1b]697;Dir=";
+const CWD_OSC_TERMINATOR: char = '\x07';
 
 impl AppRuntime {
     pub(in crate::runtime) fn start_embedded_ssh_session(
@@ -437,6 +444,7 @@ fn spawn_embedded_ssh_reader(
         let x11_failure_diagnosed = Arc::new(AtomicBool::new(false));
         let mut stdout_previous_was_cr = false;
         let mut stderr_previous_was_cr = false;
+        let mut cwd_filter = CwdOutputFilter::new();
 
         loop {
             if stop_flag.load(Ordering::Relaxed) {
@@ -457,22 +465,28 @@ fn spawn_embedded_ssh_reader(
                             &stdout_buffer[..size],
                             &mut stdout_previous_was_cr,
                         );
-                        emit_output(&app, &tab_id, &chunk);
-                        push_recent_terminal_output(&mut recent_output, &chunk);
-                        maybe_report_ssh_runtime_guidance(
-                            &app,
-                            &tab_id,
-                            &session,
-                            &recent_output,
-                            &mut ssh_guidance_state,
-                        );
-                        maybe_report_x11_forwarding_failure(
-                            &app,
-                            &tab_id,
-                            &session,
-                            &chunk,
-                            &x11_failure_diagnosed,
-                        );
+                        let (chunk, cwd_updates) = cwd_filter.push(&chunk);
+                        for path in cwd_updates {
+                            emit_cwd(&app, &tab_id, &path);
+                        }
+                        if !chunk.is_empty() {
+                            emit_output(&app, &tab_id, &chunk);
+                            push_recent_terminal_output(&mut recent_output, &chunk);
+                            maybe_report_ssh_runtime_guidance(
+                                &app,
+                                &tab_id,
+                                &session,
+                                &recent_output,
+                                &mut ssh_guidance_state,
+                            );
+                            maybe_report_x11_forwarding_failure(
+                                &app,
+                                &tab_id,
+                                &session,
+                                &chunk,
+                                &x11_failure_diagnosed,
+                            );
+                        }
                         made_progress = true;
                     }
                     Ok(_) => {}
@@ -570,4 +584,56 @@ fn normalize_embedded_terminal_newlines(bytes: &[u8], previous_was_cr: &mut bool
     }
 
     String::from_utf8_lossy(&normalized).to_string()
+}
+
+impl CwdOutputFilter {
+    fn new() -> Self {
+        Self {
+            pending: String::new(),
+        }
+    }
+
+    fn push(&mut self, chunk: &str) -> (String, Vec<String>) {
+        self.pending.push_str(chunk);
+        let mut visible = String::new();
+        let mut paths = Vec::new();
+
+        loop {
+            let Some(start) = self.pending.find(CWD_OSC_PREFIX) else {
+                let keep = cwd_marker_partial_suffix_len(&self.pending);
+                let emit_len = self.pending.len().saturating_sub(keep);
+                visible.push_str(&self.pending[..emit_len]);
+                self.pending = self.pending[emit_len..].to_string();
+                break;
+            };
+
+            visible.push_str(&self.pending[..start]);
+            let path_start = start + CWD_OSC_PREFIX.len();
+            let Some(relative_end) = self.pending[path_start..].find(CWD_OSC_TERMINATOR) else {
+                self.pending = self.pending[start..].to_string();
+                break;
+            };
+
+            let end = path_start + relative_end;
+            let path = self.pending[path_start..end].trim();
+            if path.starts_with('/') {
+                paths.push(path.to_string());
+            }
+            self.pending = self.pending[end + CWD_OSC_TERMINATOR.len_utf8()..].to_string();
+        }
+
+        (visible, paths)
+    }
+}
+
+fn cwd_marker_partial_suffix_len(value: &str) -> usize {
+    let bytes = value.as_bytes();
+    let prefix = CWD_OSC_PREFIX.as_bytes();
+    let max = bytes.len().min(prefix.len().saturating_sub(1));
+    for len in (1..=max).rev() {
+        if &bytes[bytes.len() - len..] == &prefix[..len] {
+            return len;
+        }
+    }
+    0
 }

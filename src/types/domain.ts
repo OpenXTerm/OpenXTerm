@@ -115,6 +115,11 @@ export interface TerminalOutputPayload {
   chunk: string
 }
 
+export interface TerminalCwdPayload {
+  tabId: string
+  path: string
+}
+
 export interface TerminalExitPayload {
   tabId: string
   code?: number | null

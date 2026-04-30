@@ -92,6 +92,13 @@ pub struct TerminalOutputPayload {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct TerminalCwdPayload {
+    pub tab_id: String,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TerminalExitPayload {
     pub tab_id: String,
     pub code: Option<i32>,

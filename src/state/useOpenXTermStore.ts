@@ -13,6 +13,7 @@ import {
   deleteSessionFolder,
   listenTransferProgress,
   listenSessionStatus,
+  listenTerminalCwd,
   listenTerminalExit,
   listenTerminalOutput,
   resizeTerminalSession,
@@ -60,6 +61,7 @@ interface OpenXTermState {
   tabs: WorkspaceTab[]
   activeTabId: string
   terminalFeeds: Record<string, string[]>
+  terminalCwdByTabId: Record<string, string>
   terminalStoppedByTabId: Record<string, boolean>
   sessionStatusByTabId: Record<string, SessionStatusSnapshot>
   sessionCpuHistoryByTabId: Record<string, number[]>
@@ -240,17 +242,20 @@ function seedTerminalTabState(
   state: OpenXTermState,
   tabId: string,
   session: SessionDefinition,
-): Pick<OpenXTermState, 'terminalFeeds' | 'terminalStoppedByTabId' | 'sessionStatusByTabId' | 'sessionCpuHistoryByTabId'> {
+): Pick<OpenXTermState, 'terminalFeeds' | 'terminalCwdByTabId' | 'terminalStoppedByTabId' | 'sessionStatusByTabId' | 'sessionCpuHistoryByTabId'> {
   const nextStatuses = { ...state.sessionStatusByTabId }
   const nextCpuHistory = { ...state.sessionCpuHistoryByTabId }
+  const nextCwd = { ...state.terminalCwdByTabId }
   delete nextStatuses[tabId]
   delete nextCpuHistory[tabId]
+  delete nextCwd[tabId]
 
   return {
     terminalFeeds: {
       ...state.terminalFeeds,
       [tabId]: toTerminalChunks(buildSessionTranscript(session)),
     },
+    terminalCwdByTabId: nextCwd,
     terminalStoppedByTabId: {
       ...state.terminalStoppedByTabId,
       [tabId]: false,
@@ -404,6 +409,15 @@ function ensureTransportListeners(set: StoreSetter) {
       }))
     })
 
+    await listenTerminalCwd((payload) => {
+      set((state) => ({
+        terminalCwdByTabId: {
+          ...state.terminalCwdByTabId,
+          [payload.tabId]: payload.path,
+        },
+      }))
+    })
+
     await listenTerminalExit((payload) => {
       set((state) => ({
         terminalFeeds: {
@@ -493,6 +507,7 @@ export const useOpenXTermStore = create<OpenXTermState>((set, get) => ({
   tabs: [createWelcomeTab()],
   activeTabId: 'welcome',
   terminalFeeds: {},
+  terminalCwdByTabId: {},
   terminalStoppedByTabId: {},
   sessionStatusByTabId: {},
   sessionCpuHistoryByTabId: {},
@@ -517,6 +532,7 @@ export const useOpenXTermStore = create<OpenXTermState>((set, get) => ({
       tabs: [createWelcomeTab()],
       activeTabId: 'welcome',
       terminalFeeds: {},
+      terminalCwdByTabId: {},
       terminalStoppedByTabId: {},
       sessionStatusByTabId: {},
       sessionCpuHistoryByTabId: {},
@@ -588,10 +604,12 @@ export const useOpenXTermStore = create<OpenXTermState>((set, get) => ({
 
     set((state) => {
       const nextTerminalFeeds = { ...state.terminalFeeds }
+      const nextCwd = { ...state.terminalCwdByTabId }
       const nextStopped = { ...state.terminalStoppedByTabId }
       const nextStatuses = { ...state.sessionStatusByTabId }
       const nextCpuHistory = { ...state.sessionCpuHistoryByTabId }
       delete nextTerminalFeeds[tabId]
+      delete nextCwd[tabId]
       delete nextStopped[tabId]
       delete nextStatuses[tabId]
       delete nextCpuHistory[tabId]
@@ -600,6 +618,7 @@ export const useOpenXTermStore = create<OpenXTermState>((set, get) => ({
         tabs: nextTabs,
         activeTabId: nextActive,
         terminalFeeds: nextTerminalFeeds,
+        terminalCwdByTabId: nextCwd,
         terminalStoppedByTabId: nextStopped,
         sessionStatusByTabId: nextStatuses,
         sessionCpuHistoryByTabId: nextCpuHistory,
@@ -888,6 +907,9 @@ export const useOpenXTermStore = create<OpenXTermState>((set, get) => ({
       const terminalFeeds = Object.fromEntries(
         Object.entries(state.terminalFeeds).filter(([tabId]) => !removedTabIds.has(tabId)),
       )
+      const terminalCwdByTabId = Object.fromEntries(
+        Object.entries(state.terminalCwdByTabId).filter(([tabId]) => !removedTabIds.has(tabId)),
+      )
       const terminalStoppedByTabId = Object.fromEntries(
         Object.entries(state.terminalStoppedByTabId).filter(([tabId]) => !removedTabIds.has(tabId)),
       )
@@ -903,6 +925,7 @@ export const useOpenXTermStore = create<OpenXTermState>((set, get) => ({
         tabs: nextTabs,
         activeTabId,
         terminalFeeds,
+        terminalCwdByTabId,
         terminalStoppedByTabId,
         sessionStatusByTabId,
         sessionCpuHistoryByTabId,

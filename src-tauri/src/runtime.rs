@@ -22,7 +22,9 @@ use std::{
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 use tauri::{AppHandle, Emitter};
 
-use crate::models::{SessionDefinition, TerminalExitPayload, TerminalOutputPayload};
+use crate::models::{
+    SessionDefinition, TerminalCwdPayload, TerminalExitPayload, TerminalOutputPayload,
+};
 use local_shell::{build_local_shell_command, local_home_dir};
 use serial::{map_data_bits, map_parity, map_stop_bits, spawn_serial_reader};
 pub(in crate::runtime) use ssh::guidance::{
@@ -42,6 +44,7 @@ use x11::{
 };
 
 const TERMINAL_OUTPUT_EVENT: &str = "openxterm://terminal-output";
+const TERMINAL_CWD_EVENT: &str = "openxterm://terminal-cwd";
 const TERMINAL_EXIT_EVENT: &str = "openxterm://terminal-exit";
 const DEFAULT_COLS: u16 = 140;
 const DEFAULT_ROWS: u16 = 40;
@@ -570,6 +573,16 @@ fn emit_output(app: &AppHandle, tab_id: &str, chunk: &str) {
         TerminalOutputPayload {
             tab_id: tab_id.to_string(),
             chunk: chunk.to_string(),
+        },
+    );
+}
+
+fn emit_cwd(app: &AppHandle, tab_id: &str, path: &str) {
+    let _ = app.emit(
+        TERMINAL_CWD_EVENT,
+        TerminalCwdPayload {
+            tab_id: tab_id.to_string(),
+            path: path.to_string(),
         },
     );
 }

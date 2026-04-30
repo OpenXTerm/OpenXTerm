@@ -27,6 +27,7 @@ Last broad manual pass: April 24, 2026.
 | SFTP drag-in from Finder | PASS | Works for non-empty and empty remote folders after drop-zone layout fix. |
 | SFTP transfer window | NEEDS RETEST | Recent changes restored separate transfer window, added cancel, and auto-close after 2 seconds. |
 | SFTP rename/context menu | NEEDS RETEST | Added after the last confirmed SFTP pass. |
+| SFTP follow remote terminal | NEEDS RETEST | Enable `follow remote terminal`, run `pwd`/`cd` in the linked SSH tab, and confirm the SFTP sidebar follows the shell directory. |
 | Upload conflict handling | NEEDS RETEST | Current behavior skips existing names instead of overwriting silently. |
 | Transfer cancel | NEEDS RETEST | Backend cancellation exists, but must be tested with large files/folders. |
 | X11 basic forwarding | PASS | `$DISPLAY` can appear and basic X11 forwarding can work with a local X server. |
@@ -136,4 +137,3 @@ On macOS/XQuartz, treat `GLXBadContext` as a local XQuartz/GLX capability issue 
 | SSH auth failure | Auth guidance appears only for real auth failures, not for `apt permission denied`. | PASS |
 | X11 forwarding failure | Diagnostic explains local display/remote sshd/xauth state. | PASS |
 | Network interruption during transfer | Transfer should fail clearly and not leave UI stuck. | NEEDS RETEST |
-

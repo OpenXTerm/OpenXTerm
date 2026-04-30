@@ -76,6 +76,7 @@ interface SidebarProps {
   sessions: SessionDefinition[]
   sessionFolders: SessionFolderDefinition[]
   sshSftpLinks: SessionDefinition[]
+  terminalCwdByTabId: Record<string, string>
   macros: MacroDefinition[]
   preferredSftpSessionId?: string
   onSelectSection: (section: SidebarSection) => void
@@ -350,6 +351,7 @@ export function Sidebar({
   sessions,
   sessionFolders,
   sshSftpLinks,
+  terminalCwdByTabId,
   macros,
   preferredSftpSessionId,
   onDeleteSessionFolder,
@@ -376,6 +378,7 @@ export function Sidebar({
   const sessionListRef = useRef<HTMLDivElement | null>(null)
   const sessionDropTargetPathRef = useRef<string | null>(null)
   const lastNativeSftpDropAtRef = useRef(0)
+  const failedFollowedSftpPathRef = useRef<string | null>(null)
   const suppressSessionTreeClickRef = useRef(false)
   const enqueueTransfer = useOpenXTermStore((state) => state.enqueueTransfer)
   const importMobaXtermSessions = useOpenXTermStore((state) => state.importMobaXtermSessions)
@@ -398,6 +401,7 @@ export function Sidebar({
     direction: 'asc',
   })
   const [sftpPathDraft, setSftpPathDraft] = useState('/')
+  const [followRemoteTerminal, setFollowRemoteTerminal] = useState(false)
   const [sessionMessage, setSessionMessage] = useState('')
   const [expandedSessionFolders, setExpandedSessionFolders] = useState<Record<string, boolean>>({})
   const [sessionTreeDragState, setSessionTreeDragState] = useState<SessionSidebarDragState | null>(null)
@@ -464,9 +468,11 @@ export function Sidebar({
       }))
       setSftpPathDraft(snapshot.path)
       setSftpMessage(`Loaded ${snapshot.path}`)
+      return true
     } catch (error) {
       logOpenXTermError('sidebar.sftp.load-directory', error, sidebarSftpErrorContext(session, 'load', normalizedPath))
       setSftpMessage(error instanceof Error ? error.message : 'Unable to load remote directory.')
+      return false
     } finally {
       setSftpLoading(false)
     }
@@ -525,6 +531,10 @@ export function Sidebar({
   }, [sftpContextMenu])
 
   const currentSftpPath = selectedSftpSnapshot?.path ?? '/'
+  const followedSftpPath = selectedSftpSession?.linkedSshTabId
+    ? terminalCwdByTabId[selectedSftpSession.linkedSshTabId]
+    : undefined
+  const canFollowRemoteTerminal = Boolean(selectedSftpSession?.linkedSshTabId)
   const selectedSftpEntries = selectedSftpSnapshot
     ? selectedSftpEntryPaths
       .map((path) => selectedSftpSnapshot.entries.find((entry) => entry.path === path))
@@ -602,11 +612,12 @@ export function Sidebar({
 
   const loadSelectedSftpDirectory = useCallback(async (path: string) => {
     if (!selectedSftpSession) {
-      return
+      return false
     }
 
-    await loadSftpDirectory(selectedSftpSession, path)
+    const loaded = await loadSftpDirectory(selectedSftpSession, path)
     setSelectedSftpEntryPaths([])
+    return loaded
   }, [loadSftpDirectory, selectedSftpSession])
 
   async function handleSftpPropertiesApplied(nextMessage: string) {
@@ -653,6 +664,45 @@ export function Sidebar({
     event.preventDefault()
     await loadSelectedSftpDirectory(sftpPathDraft)
   }
+
+  useEffect(() => {
+    if (!canFollowRemoteTerminal && followRemoteTerminal) {
+      setFollowRemoteTerminal(false)
+    }
+  }, [canFollowRemoteTerminal, followRemoteTerminal])
+
+  useEffect(() => {
+    if (!followRemoteTerminal) {
+      failedFollowedSftpPathRef.current = null
+    }
+  }, [followRemoteTerminal])
+
+  useEffect(() => {
+    if (!followRemoteTerminal || !followedSftpPath || !selectedSftpSession || sftpLoading) {
+      return
+    }
+
+    const nextPath = normalizeRemotePath(followedSftpPath)
+    if (failedFollowedSftpPathRef.current === nextPath) {
+      return
+    }
+
+    if (nextPath === normalizeRemotePath(currentSftpPath)) {
+      failedFollowedSftpPathRef.current = null
+      return
+    }
+
+    void loadSelectedSftpDirectory(nextPath).then((loaded) => {
+      failedFollowedSftpPathRef.current = loaded ? null : nextPath
+    })
+  }, [
+    currentSftpPath,
+    followedSftpPath,
+    followRemoteTerminal,
+    loadSelectedSftpDirectory,
+    selectedSftpSession,
+    sftpLoading,
+  ])
 
   function isSessionFolderExpanded(path: string) {
     return expandedSessionFolders[path] ?? false
@@ -2102,8 +2152,18 @@ export function Sidebar({
 
         <div className="sidebar-footer">
           <label className="sidebar-follow-toggle">
-            <input type="checkbox" disabled />
+            <input
+              type="checkbox"
+              checked={followRemoteTerminal}
+              disabled={!canFollowRemoteTerminal}
+              onChange={(event) => setFollowRemoteTerminal(event.target.checked)}
+            />
             <span>follow remote terminal</span>
+            {followRemoteTerminal && followedSftpPath ? (
+              <span className="sidebar-follow-path" title={followedSftpPath}>
+                {followedSftpPath}
+              </span>
+            ) : null}
           </label>
         </div>
       </div>

@@ -108,10 +108,38 @@ pub(in crate::runtime) fn open_embedded_ssh_channel(
         None
     };
     channel
-        .request_shell()
+        .request_exec(&embedded_ssh_shell_command())
+        .or_else(|_| channel.request_shell())
         .map_err(|error| format!("failed to start embedded SSH shell: {error}"))?;
 
     Ok((channel, x11_warning))
+}
+
+fn embedded_ssh_shell_command() -> String {
+    let script = r#"
+shell_base=$(basename "${SHELL:-sh}")
+case "$shell_base" in
+  bash)
+    __oxt_cwd_probe='printf "\033]697;Dir=%s\a" "$PWD"'
+    if [ -n "${PROMPT_COMMAND:-}" ]; then
+      PROMPT_COMMAND="$__oxt_cwd_probe; $PROMPT_COMMAND"
+    else
+      PROMPT_COMMAND="$__oxt_cwd_probe"
+    fi
+    export PROMPT_COMMAND
+    exec "${SHELL:-/bin/bash}" -i
+    ;;
+  sh|dash|ash|ksh)
+    PS1='$(printf "\033]697;Dir=%s\a" "$PWD")'"${PS1:-$ }"
+    export PS1
+    exec "${SHELL:-/bin/sh}" -i
+    ;;
+  *)
+    exec "${SHELL:-/bin/sh}" -i
+    ;;
+esac
+"#;
+    format!("sh -lc {}", shell_quote(script))
 }
 
 pub(in crate::runtime) fn should_retry_interactive_password(

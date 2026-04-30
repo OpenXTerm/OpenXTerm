@@ -16,6 +16,7 @@ import type {
   SessionFolderDefinition,
   SessionStatusPayload,
   SystemAuthSupport,
+  TerminalCwdPayload,
   TerminalExitPayload,
   TerminalOutputPayload,
   TransferProgressPayload,
@@ -461,6 +462,16 @@ export async function listenTerminalOutput(handler: (payload: TerminalOutputPayl
   }
 
   return listen<TerminalOutputPayload>('openxterm://terminal-output', (event) => {
+    handler(event.payload)
+  })
+}
+
+export async function listenTerminalCwd(handler: (payload: TerminalCwdPayload) => void) {
+  if (!isTauriRuntime()) {
+    return () => {}
+  }
+
+  return listen<TerminalCwdPayload>('openxterm://terminal-cwd', (event) => {
     handler(event.payload)
   })
 }

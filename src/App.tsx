@@ -43,6 +43,7 @@ export function App() {
     sessions,
     setSidebar,
     tabs,
+    terminalCwdByTabId,
     terminalFeeds,
     terminalStoppedByTabId,
     upsertMacro,
@@ -321,6 +322,7 @@ export function App() {
           sessions={sessions}
           preferredSftpSessionId={preferredSftpSessionId}
           sshSftpLinks={liveLinkedSftpSessions}
+          terminalCwdByTabId={terminalCwdByTabId}
           onDeleteMacro={(macroId) => void removeMacro(macroId)}
           onDeleteSession={(sessionId) => void removeSession(sessionId)}
           onDeleteSessionFolder={(folderId) => void removeSessionFolder(folderId)}

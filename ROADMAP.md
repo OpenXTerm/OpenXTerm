@@ -179,6 +179,7 @@ Goal: SFTP should cover common daily file-management tasks.
 - Cancel transfer.
 - Sortable remote file table columns.
 - Manual remote path input.
+- Linked SFTP can follow the active remote terminal directory.
 
 ### In Progress
 

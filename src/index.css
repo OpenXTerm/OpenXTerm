@@ -775,6 +775,7 @@ button {
 .sidebar-follow-toggle {
   display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 7px;
   min-width: 0;
   color: #7b8b90;
@@ -791,6 +792,18 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.sidebar-follow-toggle input:disabled + span {
+  opacity: 0.6;
+}
+
+.sidebar-follow-path {
+  flex: 1 0 100%;
+  padding-left: 20px;
+  color: #a0c6b8;
+  font-family: var(--font-mono);
+  font-size: 10px;
 }
 
 .sidebar-context-menu {
