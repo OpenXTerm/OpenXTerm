@@ -63,7 +63,12 @@ import {
   requestRemoteEntryPropertiesWindow,
   type RemotePropertiesWindowResult,
 } from '../../lib/remotePropertiesWindow'
-import { createBatchChildTransferId, createBatchTransferId, rememberBatchTransfer } from '../../lib/transferBatch'
+import {
+  createBatchChildTransferId,
+  createBatchTransferId,
+  queueBatchTransfers,
+  rememberBatchTransfer,
+} from '../../lib/transferBatch'
 import { parseMobaXtermSessionsFile } from '../../lib/mobaxtermImport'
 import { useOpenXTermStore } from '../../state/useOpenXTermStore'
 import { RemoteEntryPropertiesModal } from '../workspace/RemoteEntryPropertiesModal'
@@ -1241,42 +1246,36 @@ export function Sidebar({
         setSftpLoading(true)
         const transferIds: string[] = []
         try {
-          const batchTransferId = uploadItems.length > 1 ? createBatchTransferId('upload') : null
-          if (batchTransferId) {
-            enqueueTransfer({
-              transferId: batchTransferId,
-              fileName: itemCountLabel(uploadItems.length),
+          const transferItems = queueBatchTransfers({
+            items: uploadItems,
+            prefix: 'upload',
+            enqueueTransfer,
+            parent: (items) => ({
+              fileName: itemCountLabel(items.length),
               remotePath: currentSftpPath,
               direction: 'upload',
               purpose: 'upload',
               state: 'queued',
               transferredBytes: 0,
               totalBytes: undefined,
-              localPath: batchLocalPathLabel(uploadItems.map((item) => item.localPath)),
-              itemCount: uploadItems.length,
-              message: `Queued ${uploadItems.length} items for upload`,
-            })
-          }
+              localPath: batchLocalPathLabel(items.map((item) => item.localPath)),
+              message: `Queued ${items.length} items for upload`,
+            }),
+            child: (item) => ({
+              fileName: item.targetName,
+              remotePath: joinRemotePath(currentSftpPath, item.targetName),
+              direction: 'upload',
+              purpose: 'upload',
+              state: 'queued',
+              transferredBytes: 0,
+              totalBytes: undefined,
+              localPath: item.localPath,
+              message: 'Queued for upload',
+            }),
+          })
 
-          for (const [index, item] of uploadItems.entries()) {
-            const transferId = batchTransferId
-              ? createBatchChildTransferId(batchTransferId, index, uploadItems.length)
-              : `upload-${crypto.randomUUID()}`
+          for (const { item, transferId } of transferItems) {
             transferIds.push(transferId)
-            if (!batchTransferId) {
-              enqueueTransfer({
-                transferId,
-                fileName: item.targetName,
-                remotePath: joinRemotePath(currentSftpPath, item.targetName),
-                direction: 'upload',
-                purpose: 'upload',
-                state: 'queued',
-                transferredBytes: 0,
-                totalBytes: undefined,
-                localPath: item.localPath,
-                message: 'Queued for upload',
-              })
-            }
             await uploadLocalPath(selectedSftpSession, currentSftpPath, item.localPath, transferId, item.targetName, item.conflictAction)
           }
           setSftpMessage(`Uploaded ${uploadItems.length} item${uploadItems.length > 1 ? 's' : ''} to ${currentSftpPath}`)
@@ -1321,39 +1320,33 @@ export function Sidebar({
 
     setSftpLoading(true)
     try {
-      const batchTransferId = uploadItems.length > 1 ? createBatchTransferId('upload') : null
-      if (batchTransferId) {
-        enqueueTransfer({
-          transferId: batchTransferId,
-          fileName: itemCountLabel(uploadItems.length),
+      const transferItems = queueBatchTransfers({
+        items: uploadItems,
+        prefix: 'upload',
+        enqueueTransfer,
+        parent: (items) => ({
+          fileName: itemCountLabel(items.length),
           remotePath: currentSftpPath,
           direction: 'upload',
           purpose: 'upload',
           state: 'queued',
           transferredBytes: 0,
-          totalBytes: uploadItems.reduce((sum, item) => sum + item.file.size, 0),
-          itemCount: uploadItems.length,
-          message: `Queued ${uploadItems.length} files for upload`,
-        })
-      }
+          totalBytes: items.reduce((sum, item) => sum + item.file.size, 0),
+          message: `Queued ${items.length} files for upload`,
+        }),
+        child: (item) => ({
+          fileName: item.targetName,
+          remotePath: joinRemotePath(currentSftpPath, item.targetName),
+          direction: 'upload',
+          purpose: 'upload',
+          state: 'queued',
+          transferredBytes: 0,
+          totalBytes: item.file.size,
+          message: 'Queued for upload',
+        }),
+      })
 
-      for (const [index, item] of uploadItems.entries()) {
-        const transferId = batchTransferId
-          ? createBatchChildTransferId(batchTransferId, index, uploadItems.length)
-          : `upload-${crypto.randomUUID()}`
-        if (!batchTransferId) {
-          enqueueTransfer({
-            transferId,
-            fileName: item.targetName,
-            remotePath: joinRemotePath(currentSftpPath, item.targetName),
-            direction: 'upload',
-            purpose: 'upload',
-            state: 'queued',
-            transferredBytes: 0,
-            totalBytes: item.file.size,
-            message: 'Queued for upload',
-          })
-        }
+      for (const { item, transferId } of transferItems) {
         const bytes = Array.from(new Uint8Array(await item.file.arrayBuffer()))
         await uploadRemoteFile(selectedSftpSession, currentSftpPath, item.targetName, bytes, transferId, item.conflictAction)
       }
@@ -1458,23 +1451,7 @@ export function Sidebar({
       }
       const rootTargetName = rootResolution[0].targetName
       const rootConflictAction = rootResolution[0].conflictAction
-      const batchTransferId = files.length > 1 ? createBatchTransferId('upload') : null
-      if (batchTransferId) {
-        enqueueTransfer({
-          transferId: batchTransferId,
-          fileName: rootTargetName,
-          remotePath: joinRemotePath(currentSftpPath, rootTargetName),
-          direction: 'upload',
-          purpose: 'upload',
-          state: 'queued',
-          transferredBytes: 0,
-          totalBytes: files.reduce((sum, file) => sum + file.size, 0),
-          itemCount: files.length,
-          message: `Queued ${files.length} folder items for upload`,
-        })
-      }
-
-      for (const [index, file] of files.entries()) {
+      const folderUploadItems = files.map((file) => {
         const relativePath = file.webkitRelativePath || file.name
         const parts = relativePath.split('/').filter(Boolean)
         if (parts.length > 0) {
@@ -1485,26 +1462,39 @@ export function Sidebar({
           ? parts.slice(0, -1).reduce((path, segment) => joinRemotePath(path, segment), currentSftpPath)
           : currentSftpPath
 
-        await ensureRemoteDirectoryPath(remoteDir)
+        return { file, fileName, remoteDir }
+      })
+      const transferItems = queueBatchTransfers({
+        items: folderUploadItems,
+        prefix: 'upload',
+        enqueueTransfer,
+        parent: (items) => ({
+          fileName: rootTargetName,
+          remotePath: joinRemotePath(currentSftpPath, rootTargetName),
+          direction: 'upload',
+          purpose: 'upload',
+          state: 'queued',
+          transferredBytes: 0,
+          totalBytes: items.reduce((sum, item) => sum + item.file.size, 0),
+          message: `Queued ${items.length} folder items for upload`,
+        }),
+        child: (item) => ({
+          fileName: item.fileName,
+          remotePath: joinRemotePath(item.remoteDir, item.fileName),
+          direction: 'upload',
+          purpose: 'upload',
+          state: 'queued',
+          transferredBytes: 0,
+          totalBytes: item.file.size,
+          message: 'Queued for upload',
+        }),
+      })
 
-        const transferId = batchTransferId
-          ? createBatchChildTransferId(batchTransferId, index, files.length)
-          : `upload-${crypto.randomUUID()}`
-        if (!batchTransferId) {
-          enqueueTransfer({
-            transferId,
-            fileName,
-            remotePath: joinRemotePath(remoteDir, fileName),
-            direction: 'upload',
-            purpose: 'upload',
-            state: 'queued',
-            transferredBytes: 0,
-            totalBytes: file.size,
-            message: 'Queued for upload',
-          })
-        }
-        const bytes = Array.from(new Uint8Array(await file.arrayBuffer()))
-        await uploadRemoteFile(selectedSftpSession, remoteDir, fileName, bytes, transferId, rootConflictAction)
+      for (const { item, transferId } of transferItems) {
+        await ensureRemoteDirectoryPath(item.remoteDir)
+
+        const bytes = Array.from(new Uint8Array(await item.file.arrayBuffer()))
+        await uploadRemoteFile(selectedSftpSession, item.remoteDir, item.fileName, bytes, transferId, rootConflictAction)
       }
       setSftpMessage(`Uploaded folder contents to ${currentSftpPath}`)
       await loadSelectedSftpDirectory(currentSftpPath)
@@ -1648,43 +1638,37 @@ export function Sidebar({
         return
       }
 
-      const batchTransferId = downloadItems.length > 1 ? createBatchTransferId('download') : null
       const knownTotalBytes = downloadItems.every((item) => item.entry.kind === 'file' && typeof item.entry.sizeBytes === 'number')
         ? downloadItems.reduce((sum, item) => sum + (item.entry.sizeBytes ?? 0), 0)
         : undefined
-      if (batchTransferId) {
-        enqueueTransfer({
-          transferId: batchTransferId,
-          fileName: itemCountLabel(downloadItems.length),
+      const transferItems = queueBatchTransfers({
+        items: downloadItems,
+        prefix: 'download',
+        enqueueTransfer,
+        parent: (items) => ({
+          fileName: itemCountLabel(items.length),
           remotePath: currentSftpPath,
           direction: 'download',
           purpose: 'download',
           state: 'queued',
           transferredBytes: 0,
           totalBytes: knownTotalBytes,
-          itemCount: downloadItems.length,
-          message: `Queued ${downloadItems.length} items for download`,
-        })
-      }
+          message: `Queued ${items.length} items for download`,
+        }),
+        child: (item) => ({
+          fileName: item.targetName,
+          remotePath: item.entry.path,
+          direction: 'download',
+          purpose: 'download',
+          state: 'queued',
+          transferredBytes: 0,
+          totalBytes: item.entry.kind === 'file' ? item.entry.sizeBytes : undefined,
+          message: item.entry.kind === 'folder' ? 'Queued folder download' : 'Queued for download',
+        }),
+      })
 
-      for (const [index, item] of downloadItems.entries()) {
+      for (const { item, transferId } of transferItems) {
         const { entry } = item
-        const transferId = batchTransferId
-          ? createBatchChildTransferId(batchTransferId, index, downloadItems.length)
-          : `download-${crypto.randomUUID()}`
-        if (!batchTransferId) {
-          enqueueTransfer({
-            transferId,
-            fileName: item.targetName,
-            remotePath: entry.path,
-            direction: 'download',
-            purpose: 'download',
-            state: 'queued',
-            transferredBytes: 0,
-            totalBytes: entry.kind === 'file' ? entry.sizeBytes : undefined,
-            message: entry.kind === 'folder' ? 'Queued folder download' : 'Queued for download',
-          })
-        }
         const result = await downloadRemoteEntry(selectedSftpSession, entry.path, entry.kind, transferId, item.targetName, item.conflictAction)
         lastResult = `${result.fileName} -> ${result.savedTo}`
       }

@@ -23,11 +23,11 @@ The spike started on the helper side first:
 
 ### New dependency
 
-- [`src-tauri/Cargo.toml`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/Cargo.toml) now includes `libssh-rs` with vendored libssh/OpenSSL features so the repo can build the spike without assuming a preinstalled system libssh.
+- [`src-tauri/Cargo.toml`](../../src-tauri/Cargo.toml) now includes `libssh-rs` with vendored libssh/OpenSSL features so the repo can build the spike without assuming a preinstalled system libssh.
 
 ### New backend module
 
-- [`src-tauri/src/libssh_spike.rs`](/Volumes/EXT/Projects/OpenXTerm/src-tauri/src/libssh_spike.rs)
+- [`src-tauri/src/probe.rs`](../../src-tauri/src/probe.rs)
 
 It currently proves that we can:
 
@@ -46,7 +46,7 @@ It currently proves that we can:
 ### Debug command
 
 - backend command: `run_libssh_probe`
-- frontend bridge helper: [`runLibsshProbe()`](/Volumes/EXT/Projects/OpenXTerm/src/lib/bridge.ts)
+- frontend bridge helper: [`runLibsshProbe()`](../../src/lib/bridge.ts)
 
 The command intentionally is not wired into the main UI yet. It remains a probe path for manual/dev validation and backend comparison while helper flows are cleaned up.
 

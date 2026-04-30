@@ -5,6 +5,17 @@ const BATCH_CHILD_MARKER = '::item::'
 const batchParents = new Map<string, TransferProgressPayload>()
 const batchChildren = new Map<string, Map<string, TransferProgressPayload>>()
 
+type BatchTransferPrefix = TransferProgressPayload['direction'] | 'drag-export'
+type TransferPayloadDraft = Omit<TransferProgressPayload, 'transferId'>
+
+interface QueueBatchTransfersOptions<T> {
+  items: readonly T[]
+  prefix: BatchTransferPrefix
+  enqueueTransfer: (item: TransferProgressPayload) => void
+  parent: (items: readonly T[]) => TransferPayloadDraft
+  child: (item: T, index: number) => TransferPayloadDraft
+}
+
 export function createBatchTransferId(prefix: TransferProgressPayload['direction'] | 'drag-export') {
   return `${prefix}-batch-${crypto.randomUUID()}`
 }
@@ -41,6 +52,43 @@ export function rememberBatchTransfer(item: TransferProgressPayload) {
   if (typeof item.itemCount === 'number' && item.itemCount > 1) {
     batchParents.set(item.transferId, item)
   }
+}
+
+export function queueBatchTransfers<T>({
+  items,
+  prefix,
+  enqueueTransfer,
+  parent,
+  child,
+}: QueueBatchTransfersOptions<T>) {
+  const batchTransferId = items.length > 1 ? createBatchTransferId(prefix) : null
+
+  if (batchTransferId) {
+    enqueueTransfer({
+      ...parent(items),
+      transferId: batchTransferId,
+      itemCount: items.length,
+    })
+  }
+
+  return items.map((item, index) => {
+    const transferId = batchTransferId
+      ? createBatchChildTransferId(batchTransferId, index, items.length)
+      : `${prefix}-${crypto.randomUUID()}`
+
+    if (!batchTransferId) {
+      enqueueTransfer({
+        ...child(item, index),
+        transferId,
+      })
+    }
+
+    return {
+      item,
+      transferId,
+      batchTransferId,
+    }
+  })
 }
 
 export function hydrateBatchTransfers(items: Record<string, TransferProgressPayload>) {

@@ -14,6 +14,13 @@ OpenXTerm is independent software. It is not affiliated with, endorsed by, or co
 
 ## Current Status
 
+### Highest Priority Next
+
+- Refactor the largest reliability-sensitive modules in small reviewed steps:
+  - split `src/components/sidebar/Sidebar.tsx` into focused sidebar sections and hooks without changing SFTP/session behavior;
+  - split `src/state/useOpenXTermStore.ts` into UI/domain/transfer slices while preserving existing selectors and persistence behavior;
+  - extract shared transfer lifecycle helpers from `src-tauri/src/transfer/mod.rs` with manual SFTP upload/download/retry/cancel smoke tests after each step.
+
 ### Done
 
 - Tauri 2 desktop app shell.
@@ -182,6 +189,7 @@ Goal: SFTP should cover common daily file-management tasks.
 - Linked SFTP can follow the active remote terminal directory.
 - Overwrite/skip/rename conflict handling.
 - Retry failed transfer from the transfer window.
+- Chmod support.
 
 ### In Progress
 
@@ -190,7 +198,6 @@ Goal: SFTP should cover common daily file-management tasks.
 
 ### TODO
 
-- Chmod support.
 - Clickable breadcrumb navigation.
 - Remote folder download hardening.
 - Better permission/no-space/disconnect errors.

@@ -79,7 +79,7 @@ CI/CD workflow:
 - [`src-tauri/src/runtime.rs`](src-tauri/src/runtime.rs): main runtime registry, session startup dispatch, PTY glue, terminal lifecycle, and shared runtime events
 - [`src-tauri/src/runtime/local_shell.rs`](src-tauri/src/runtime/local_shell.rs): local shell command and working-directory resolution
 - [`src-tauri/src/runtime/serial.rs`](src-tauri/src/runtime/serial.rs): serial reader and serial option mapping
-- [`src-tauri/src/runtime/ssh/auth.rs`](src-tauri/src/runtime/ssh/auth.rs): transient SSH username/password memory plus per-tab runtime metadata files
+- [`src-tauri/src/runtime/ssh/auth.rs`](src-tauri/src/runtime/ssh/auth.rs): transient SSH auth state; username helper metadata is written to a temp file, password stays process-memory only
 - [`src-tauri/src/runtime/ssh/guidance.rs`](src-tauri/src/runtime/ssh/guidance.rs): SSH password prompt handling, error text normalization, and terminal guidance messages
 - [`src-tauri/src/runtime/ssh/interactive.rs`](src-tauri/src/runtime/ssh/interactive.rs): embedded interactive SSH tab controller, writer, reader loop, resize, and X11/status startup
 - [`src-tauri/src/runtime/ssh/session.rs`](src-tauri/src/runtime/ssh/session.rs): embedded SSH helper/session creation, remote command execution, and SFTP helper opening
@@ -206,8 +206,8 @@ Do not revert this to `CString` + `stringWithUTF8String`.
 
 Relevant files:
 
-- [`src-tauri/src/native_drag.rs`](src-tauri/src/native_drag.rs)
-- [`src-tauri/src/native_drag_macos.m`](src-tauri/src/native_drag_macos.m)
+- [`src-tauri/src/drag/mod.rs`](src-tauri/src/drag/mod.rs)
+- [`src-tauri/src/drag/macos.m`](src-tauri/src/drag/macos.m)
 - [`src-tauri/build.rs`](src-tauri/build.rs)
 
 ### SSH sessions without username are special
@@ -217,7 +217,7 @@ If `session.username` is empty, the embedded SSH runtime cannot connect yet beca
 Current behavior in [`runtime.rs`](src-tauri/src/runtime.rs):
 
 - the terminal prints `login as:` locally
-- entered value is cached in per-tab runtime metadata before the SSH connection is opened
+- entered username is cached in per-tab runtime state and a temp username metadata file before the SSH connection is opened
 - if password auth is selected and the profile has no saved password, the terminal then prompts locally for `<user>@<host>'s password:`
 - the entered password is kept in runtime memory for the life of that tab so linked SFTP/status helpers can reuse it without persisting it to storage
 
@@ -232,12 +232,12 @@ Current behavior:
 - terminal SSH tabs use the embedded `libssh-rs` runtime
 - live status uses a separate embedded helper SSH session
 - linked SFTP uses a separate embedded helper SSH/SFTP session
-- helper connections can resolve username from per-tab runtime metadata when the saved profile leaves `username` empty
-- helper connections can reuse a live interactively entered password from per-tab runtime metadata while the SSH tab is still connected
+- helper connections can resolve username from per-tab runtime state or the temp username metadata file when the saved profile leaves `username` empty
+- helper connections can reuse a live interactively entered password from process memory while the SSH tab is still connected
 
 Operational consequence:
 
-- if the user closes the live SSH tab, transient username/password metadata is cleared with it
+- if the user closes the live SSH tab, transient username metadata and process-memory password state are cleared with it
 - after that point, helper reconnects still require one of:
   - saved password in the profile
   - private key auth
@@ -247,7 +247,7 @@ Operational consequence:
 Relevant files:
 
 - [`src-tauri/src/runtime.rs`](src-tauri/src/runtime.rs)
-- [`src-tauri/src/file_ops.rs`](src-tauri/src/file_ops.rs)
+- [`src-tauri/src/transfer/mod.rs`](src-tauri/src/transfer/mod.rs)
 
 ### X11 forwarding uses the embedded SSH bridge
 
@@ -268,7 +268,8 @@ Current product guidance:
 Relevant files:
 
 - [`src/components/forms/SessionEditorModal.tsx`](src/components/forms/SessionEditorModal.tsx)
-- [`src-tauri/src/x11_support.rs`](src-tauri/src/x11_support.rs)
+- [`src-tauri/src/platform/x11.rs`](src-tauri/src/platform/x11.rs)
+- [`src-tauri/src/runtime/x11.rs`](src-tauri/src/runtime/x11.rs)
 - [`src-tauri/src/runtime.rs`](src-tauri/src/runtime.rs)
 
 ### X11 diagnostics are runtime-driven and session-scoped
@@ -361,7 +362,7 @@ Relevant files:
 
 - [`src/components/layout/TopBar.tsx`](src/components/layout/TopBar.tsx)
 - [`src/App.tsx`](src/App.tsx)
-- [`src-tauri/src/native_menu.rs`](src-tauri/src/native_menu.rs)
+- [`src-tauri/src/platform/menu.rs`](src-tauri/src/platform/menu.rs)
 - [`src/index.css`](src/index.css)
 
 ### MobaXterm import support
@@ -459,14 +460,15 @@ Start with:
 - [`src/components/forms/SessionEditorModal.tsx`](src/components/forms/SessionEditorModal.tsx)
 - [`src/index.css`](src/index.css)
 - [`src/lib/bridge.ts`](src/lib/bridge.ts)
-- [`src-tauri/src/font_support.rs`](src-tauri/src/font_support.rs)
+- [`src-tauri/src/platform/fonts.rs`](src-tauri/src/platform/fonts.rs)
 
 ### Change X11 / GUI forwarding behavior
 
 Start with:
 
 - [`src/components/forms/SessionEditorModal.tsx`](src/components/forms/SessionEditorModal.tsx)
-- [`src-tauri/src/x11_support.rs`](src-tauri/src/x11_support.rs)
+- [`src-tauri/src/platform/x11.rs`](src-tauri/src/platform/x11.rs)
+- [`src-tauri/src/runtime/x11.rs`](src-tauri/src/runtime/x11.rs)
 - [`src-tauri/src/runtime.rs`](src-tauri/src/runtime.rs)
 
 ### Change file transfer behavior
@@ -476,8 +478,8 @@ Start with:
 - [`src/components/workspace/FileBrowserView.tsx`](src/components/workspace/FileBrowserView.tsx)
 - [`src/components/sidebar/Sidebar.tsx`](src/components/sidebar/Sidebar.tsx)
 - [`src/lib/transferBatch.ts`](src/lib/transferBatch.ts)
-- [`src-tauri/src/file_ops.rs`](src-tauri/src/file_ops.rs)
-- [`src-tauri/src/native_drag.rs`](src-tauri/src/native_drag.rs)
+- [`src-tauri/src/transfer/mod.rs`](src-tauri/src/transfer/mod.rs)
+- [`src-tauri/src/drag/mod.rs`](src-tauri/src/drag/mod.rs)
 
 ## Verification Checklist
 

@@ -11,6 +11,34 @@ const transferStateRank: Record<TransferProgressPayload['state'], number> = {
 
 export const TRANSFER_RETRY_MESSAGE = 'Retrying transfer'
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isTransferProgressPayload(value: unknown): value is TransferProgressPayload {
+  if (!isRecord(value)) {
+    return false
+  }
+
+  return typeof value.transferId === 'string'
+    && typeof value.fileName === 'string'
+    && typeof value.remotePath === 'string'
+    && (value.direction === 'download' || value.direction === 'upload')
+    && (value.purpose === 'drag-export' || value.purpose === 'download' || value.purpose === 'upload')
+    && (value.state === 'queued' || value.state === 'running' || value.state === 'completed' || value.state === 'error')
+    && typeof value.transferredBytes === 'number'
+    && (value.totalBytes === undefined || typeof value.totalBytes === 'number')
+    && typeof value.message === 'string'
+    && (value.localPath === undefined || typeof value.localPath === 'string')
+    && (value.itemCount === undefined || typeof value.itemCount === 'number')
+    && (value.retryable === undefined || typeof value.retryable === 'boolean')
+}
+
+function isTransferProgressRecord(value: unknown): value is Record<string, TransferProgressPayload> {
+  return isRecord(value)
+    && Object.entries(value).every(([key, item]) => isTransferProgressPayload(item) && key === item.transferId)
+}
+
 export function readTransferQueueSnapshot() {
   try {
     const raw = localStorage.getItem(TRANSFER_QUEUE_STORAGE_KEY)
@@ -18,7 +46,8 @@ export function readTransferQueueSnapshot() {
       return {} as Record<string, TransferProgressPayload>
     }
 
-    return JSON.parse(raw) as Record<string, TransferProgressPayload>
+    const parsed: unknown = JSON.parse(raw)
+    return isTransferProgressRecord(parsed) ? parsed : {}
   } catch {
     return {} as Record<string, TransferProgressPayload>
   }

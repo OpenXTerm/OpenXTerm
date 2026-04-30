@@ -30,22 +30,81 @@ function isTauriRuntime() {
   return '__TAURI_INTERNALS__' in window
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === 'string'
+}
+
+function hasStringId(value: unknown): value is Record<string, unknown> & { id: string } {
+  return isRecord(value) && isString(value.id)
+}
+
+function isSessionList(value: unknown): value is SessionDefinition[] {
+  return Array.isArray(value)
+    && value.every((item) => (
+      hasStringId(item)
+      && isString(item.name)
+      && isString(item.kind)
+      && typeof item.port === 'number'
+    ))
+}
+
+function isSessionFolderList(value: unknown): value is SessionFolderDefinition[] {
+  return Array.isArray(value)
+    && value.every((item) => hasStringId(item) && isString(item.path))
+}
+
+function isMacroList(value: unknown): value is MacroDefinition[] {
+  return Array.isArray(value)
+    && value.every((item) => (
+      hasStringId(item)
+      && isString(item.name)
+      && isString(item.command)
+    ))
+}
+
+function isUiPreferences(value: unknown): value is UiPreferences {
+  if (!isRecord(value)) {
+    return false
+  }
+
+  return value.theme === 'dark'
+    && ['sessions', 'sftp', 'tools', 'macros'].includes(String(value.activeSidebar))
+    && (
+      value.sidebarWidth === undefined
+      || typeof value.sidebarWidth === 'number'
+    )
+}
+
 function readBrowserState(): AppBootstrap {
+  const seed = createDefaultBootstrap()
   const raw = localStorage.getItem(BROWSER_STORAGE_KEY)
   if (!raw) {
-    const seed = createDefaultBootstrap()
     localStorage.setItem(BROWSER_STORAGE_KEY, JSON.stringify(seed))
     return seed
   }
 
-  const parsed = JSON.parse(raw) as Partial<AppBootstrap>
-  const seed = createDefaultBootstrap()
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    localStorage.setItem(BROWSER_STORAGE_KEY, JSON.stringify(seed))
+    return seed
+  }
+
+  if (!isRecord(parsed)) {
+    localStorage.setItem(BROWSER_STORAGE_KEY, JSON.stringify(seed))
+    return seed
+  }
 
   return {
-    sessions: parsed.sessions ?? seed.sessions,
-    sessionFolders: parsed.sessionFolders ?? seed.sessionFolders,
-    macros: parsed.macros ?? seed.macros,
-    preferences: parsed.preferences ?? seed.preferences,
+    sessions: isSessionList(parsed.sessions) ? parsed.sessions : seed.sessions,
+    sessionFolders: isSessionFolderList(parsed.sessionFolders) ? parsed.sessionFolders : seed.sessionFolders,
+    macros: isMacroList(parsed.macros) ? parsed.macros : seed.macros,
+    preferences: isUiPreferences(parsed.preferences) ? parsed.preferences : seed.preferences,
   }
 }
 

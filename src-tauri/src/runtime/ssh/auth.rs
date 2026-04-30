@@ -1,7 +1,8 @@
 use std::{
     collections::HashMap,
-    fs,
+    fs::{self, OpenOptions},
     hash::{DefaultHasher, Hash, Hasher},
+    io::Write,
     path::PathBuf,
     sync::{Mutex, OnceLock},
 };
@@ -29,10 +30,7 @@ pub(in crate::runtime) fn set_ssh_runtime_auth(
         let entry = store.entry(tab_id.to_string()).or_default();
         if let Some(username) = username {
             entry.username = Some(username.clone());
-            let _ = fs::write(
-                ssh_runtime_username_path_for_tab(tab_id),
-                format!("{username}\n"),
-            );
+            let _ = write_ssh_runtime_username(tab_id, &username);
         }
         if let Some(password) = password {
             entry.password = Some(password);
@@ -60,31 +58,21 @@ pub(in crate::runtime) fn clear_ssh_runtime_auth(tab_id: &str) {
     }
 }
 
-#[cfg(not(windows))]
-fn ssh_runtime_metadata_base_path_for_tab(tab_id: &str) -> PathBuf {
-    let mut hasher = DefaultHasher::new();
-    tab_id.hash(&mut hasher);
-    PathBuf::from("/tmp")
-        .join(SSH_RUNTIME_METADATA_DIR)
-        .join(format!("{:016x}.runtime", hasher.finish()))
-}
-
-#[cfg(windows)]
-fn ssh_runtime_metadata_base_path_for_tab(tab_id: &str) -> PathBuf {
+fn ssh_runtime_metadata_stem_for_tab(tab_id: &str) -> PathBuf {
     let mut hasher = DefaultHasher::new();
     tab_id.hash(&mut hasher);
     std::env::temp_dir()
         .join(SSH_RUNTIME_METADATA_DIR)
-        .join(format!("{:016x}.runtime", hasher.finish()))
+        .join(format!("{:016x}", hasher.finish()))
 }
 
 pub(in crate::runtime) fn ssh_runtime_username_path_for_tab(tab_id: &str) -> PathBuf {
-    ssh_runtime_metadata_base_path_for_tab(tab_id).with_extension("user")
+    ssh_runtime_metadata_stem_for_tab(tab_id).with_extension("user")
 }
 
-pub(in crate::runtime) fn prepare_ssh_runtime_metadata(tab_id: &str) -> Result<(), String> {
-    let metadata_path = ssh_runtime_metadata_base_path_for_tab(tab_id);
-    if let Some(parent) = metadata_path.parent() {
+fn write_ssh_runtime_username(tab_id: &str, username: &str) -> Result<(), String> {
+    let username_path = ssh_runtime_username_path_for_tab(tab_id);
+    if let Some(parent) = username_path.parent() {
         fs::create_dir_all(parent).map_err(|error| {
             format!(
                 "failed to prepare SSH runtime metadata directory {}: {error}",
@@ -93,15 +81,39 @@ pub(in crate::runtime) fn prepare_ssh_runtime_metadata(tab_id: &str) -> Result<(
         })?;
     }
 
-    if metadata_path.exists() {
-        fs::remove_file(&metadata_path).map_err(|error| {
+    let mut options = OpenOptions::new();
+    options.create(true).write(true).truncate(true);
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+
+    let mut file = options
+        .open(&username_path)
+        .map_err(|error| format!("failed to write SSH login metadata: {error}"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        file.set_permissions(fs::Permissions::from_mode(0o600))
+            .map_err(|error| format!("failed to protect SSH login metadata: {error}"))?;
+    }
+    file.write_all(format!("{username}\n").as_bytes())
+        .map_err(|error| format!("failed to write SSH login metadata: {error}"))
+}
+
+pub(in crate::runtime) fn prepare_ssh_runtime_metadata(tab_id: &str) -> Result<(), String> {
+    let username_path = ssh_runtime_username_path_for_tab(tab_id);
+    if let Some(parent) = username_path.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
             format!(
-                "failed to remove stale SSH runtime metadata {}: {error}",
-                metadata_path.display()
+                "failed to prepare SSH runtime metadata directory {}: {error}",
+                parent.display()
             )
         })?;
     }
-    let username_path = ssh_runtime_username_path_for_tab(tab_id);
+
     if username_path.exists() {
         fs::remove_file(&username_path).map_err(|error| {
             format!(
@@ -115,7 +127,5 @@ pub(in crate::runtime) fn prepare_ssh_runtime_metadata(tab_id: &str) -> Result<(
 }
 
 pub(in crate::runtime) fn cleanup_ssh_runtime_metadata(tab_id: &str) {
-    let metadata_path = ssh_runtime_metadata_base_path_for_tab(tab_id);
-    let _ = fs::remove_file(metadata_path);
     let _ = fs::remove_file(ssh_runtime_username_path_for_tab(tab_id));
 }

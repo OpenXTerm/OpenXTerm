@@ -28,6 +28,21 @@ const X11_PROXY_IDLE_SLEEP: Duration = Duration::from_millis(5);
 const X11_COMMAND_TIMEOUT: Duration = Duration::from_millis(700);
 const X11_PROXY_PENDING_LIMIT: usize = 4 * 1024 * 1024;
 const SSH_LOOP_IDLE_SLEEP: Duration = Duration::from_millis(20);
+const X11_GLX_FAILURE_PATTERNS: &[&str] = &[
+    "no matching fbconfigs",
+    "glxcreatecontext failed",
+    "glxbadcontext",
+    "could not create gl context",
+    "failed to load driver: swrast",
+    "glx without the glx_arb_create_context extension",
+    "apple-dri",
+];
+const X11_DISPLAY_FAILURE_PATTERNS: &[&str] = &[
+    "missing x server or $display",
+    "cannot open display",
+    "can't open display",
+    "unable to open display",
+];
 
 #[derive(Clone)]
 pub(super) struct X11ForwardConfig {
@@ -112,13 +127,9 @@ pub(super) fn maybe_report_x11_forwarding_failure(
     }
 
     let normalized = chunk.to_ascii_lowercase();
-    if normalized.contains("no matching fbconfigs")
-        || normalized.contains("glxcreatecontext failed")
-        || normalized.contains("glxbadcontext")
-        || normalized.contains("could not create gl context")
-        || normalized.contains("failed to load driver: swrast")
-        || normalized.contains("glx without the glx_arb_create_context extension")
-        || normalized.contains("apple-dri")
+    if X11_GLX_FAILURE_PATTERNS
+        .iter()
+        .any(|pattern| normalized.contains(pattern))
     {
         if x11_failure_diagnosed
             .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
@@ -135,10 +146,9 @@ pub(super) fn maybe_report_x11_forwarding_failure(
 
     let reason = if normalized.contains("x11 forwarding request failed on channel") {
         "The SSH server rejected the X11 forwarding request for this interactive session."
-    } else if normalized.contains("missing x server or $display")
-        || normalized.contains("cannot open display")
-        || normalized.contains("can't open display")
-        || normalized.contains("unable to open display")
+    } else if X11_DISPLAY_FAILURE_PATTERNS
+        .iter()
+        .any(|pattern| normalized.contains(pattern))
     {
         "A remote GUI command could not find a usable DISPLAY. X11 forwarding is not active in this shell."
     } else {

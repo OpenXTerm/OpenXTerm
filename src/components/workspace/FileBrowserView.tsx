@@ -35,7 +35,7 @@ import {
   requestRemoteEntryPropertiesWindow,
   type RemotePropertiesWindowResult,
 } from '../../lib/remotePropertiesWindow'
-import { createBatchChildTransferId, createBatchTransferId } from '../../lib/transferBatch'
+import { queueBatchTransfers } from '../../lib/transferBatch'
 import type { RemoteDirectorySnapshot, RemoteFileEntry, SessionDefinition } from '../../types/domain'
 import { useOpenXTermStore } from '../../state/useOpenXTermStore'
 import { RemoteEntryPropertiesModal } from './RemoteEntryPropertiesModal'
@@ -534,41 +534,35 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
             return
           }
 
-          const batchTransferId = uploadItems.length > 1 ? createBatchTransferId('upload') : null
-          if (batchTransferId) {
-            enqueueTransfer({
-              transferId: batchTransferId,
-              fileName: itemCountLabel(uploadItems.length),
+          const transferItems = queueBatchTransfers({
+            items: uploadItems,
+            prefix: 'upload',
+            enqueueTransfer,
+            parent: (items) => ({
+              fileName: itemCountLabel(items.length),
               remotePath: currentPath,
               direction: 'upload',
               purpose: 'upload',
               state: 'queued',
               transferredBytes: 0,
               totalBytes: undefined,
-              localPath: `${uploadItems.length} local items`,
-              itemCount: uploadItems.length,
-              message: `Queued ${uploadItems.length} items for upload`,
-            })
-          }
+              localPath: `${items.length} local items`,
+              message: `Queued ${items.length} items for upload`,
+            }),
+            child: (item) => ({
+              fileName: item.targetName,
+              remotePath: currentPath === '/' ? `/${item.targetName}` : `${currentPath}/${item.targetName}`,
+              direction: 'upload',
+              purpose: 'upload',
+              state: 'queued',
+              transferredBytes: 0,
+              totalBytes: undefined,
+              localPath: item.localPath,
+              message: 'Queued for upload',
+            }),
+          })
 
-          for (const [index, item] of uploadItems.entries()) {
-            const transferId = batchTransferId
-              ? createBatchChildTransferId(batchTransferId, index, uploadItems.length)
-              : `upload-${crypto.randomUUID()}`
-            if (!batchTransferId) {
-              enqueueTransfer({
-                transferId,
-                fileName: item.targetName,
-                remotePath: currentPath === '/' ? `/${item.targetName}` : `${currentPath}/${item.targetName}`,
-                direction: 'upload',
-                purpose: 'upload',
-                state: 'queued',
-                transferredBytes: 0,
-                totalBytes: undefined,
-                localPath: item.localPath,
-                message: 'Queued for upload',
-              })
-            }
+          for (const { item, transferId } of transferItems) {
             await uploadLocalFile(session, currentPath, item.localPath, transferId, item.targetName, item.conflictAction)
           }
           setMessage(`Uploaded ${uploadItems.length} item${uploadItems.length > 1 ? 's' : ''} to ${currentPath}`)
@@ -722,39 +716,33 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
         return
       }
 
-      const batchTransferId = uploadItems.length > 1 ? createBatchTransferId('upload') : null
-      if (batchTransferId) {
-        enqueueTransfer({
-          transferId: batchTransferId,
-          fileName: itemCountLabel(uploadItems.length),
+      const transferItems = queueBatchTransfers({
+        items: uploadItems,
+        prefix: 'upload',
+        enqueueTransfer,
+        parent: (items) => ({
+          fileName: itemCountLabel(items.length),
           remotePath: currentPath,
           direction: 'upload',
           purpose: 'upload',
           state: 'queued',
           transferredBytes: 0,
-          totalBytes: uploadItems.reduce((sum, item) => sum + item.file.size, 0),
-          itemCount: uploadItems.length,
-          message: `Queued ${uploadItems.length} files for upload`,
-        })
-      }
+          totalBytes: items.reduce((sum, item) => sum + item.file.size, 0),
+          message: `Queued ${items.length} files for upload`,
+        }),
+        child: (item) => ({
+          fileName: item.targetName,
+          remotePath: currentPath === '/' ? `/${item.targetName}` : `${currentPath}/${item.targetName}`,
+          direction: 'upload',
+          purpose: 'upload',
+          state: 'queued',
+          transferredBytes: 0,
+          totalBytes: item.file.size,
+          message: 'Queued for upload',
+        }),
+      })
 
-      for (const [index, item] of uploadItems.entries()) {
-        const transferId = batchTransferId
-          ? createBatchChildTransferId(batchTransferId, index, uploadItems.length)
-          : `upload-${crypto.randomUUID()}`
-        if (!batchTransferId) {
-          enqueueTransfer({
-            transferId,
-            fileName: item.targetName,
-            remotePath: currentPath === '/' ? `/${item.targetName}` : `${currentPath}/${item.targetName}`,
-            direction: 'upload',
-            purpose: 'upload',
-            state: 'queued',
-            transferredBytes: 0,
-            totalBytes: item.file.size,
-            message: 'Queued for upload',
-          })
-        }
+      for (const { item, transferId } of transferItems) {
         const bytes = Array.from(new Uint8Array(await item.file.arrayBuffer()))
         await uploadRemoteFile(session, currentPath, item.targetName, bytes, transferId, item.conflictAction)
       }
