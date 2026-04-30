@@ -1624,6 +1624,77 @@ button {
   color: #ff9b9b;
 }
 
+.compact-modal-backdrop {
+  z-index: 180;
+}
+
+.file-conflict-modal {
+  width: min(430px, 100%);
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.file-conflict-modal .modal-header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.file-conflict-modal .modal-header p {
+  margin: 5px 0 0;
+  color: #a7b4b9;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.file-conflict-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.file-conflict-actions button {
+  height: 30px;
+  border: 1px solid #334046;
+  border-radius: 6px;
+  background: #181d20;
+  color: #d9e0e3;
+}
+
+.file-conflict-actions button.active {
+  border-color: #2d6a56;
+  background: #18302a;
+  color: #8ff0c1;
+}
+
+.file-conflict-rename,
+.file-conflict-apply-all {
+  display: grid;
+  gap: 5px;
+  color: #a7b4b9;
+  font-size: 12px;
+}
+
+.file-conflict-rename input {
+  height: 30px;
+  border: 1px solid #334046;
+  border-radius: 6px;
+  background: #101416;
+  color: #edf3f4;
+  padding: 0 8px;
+}
+
+.file-conflict-apply-all {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+}
+
+.file-conflict-modal .modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .remote-properties-modal .modal-actions {
   flex: 0 0 auto;
   padding: 10px 14px 12px;
@@ -1928,6 +1999,10 @@ button {
 }
 
 .transfer-row-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
   height: 22px;
   border: 1px solid #c89090;
   border-radius: 4px;
@@ -1940,6 +2015,16 @@ button {
 
 .transfer-row-actions button:hover {
   background: #ffdede;
+}
+
+.transfer-row-actions button.retry {
+  border-color: #8caed3;
+  background: #eef6ff;
+  color: #2f6ca3;
+}
+
+.transfer-row-actions button.retry:hover {
+  background: #dbeeff;
 }
 
 .transfer-empty-row {

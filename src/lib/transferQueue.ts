@@ -9,6 +9,8 @@ const transferStateRank: Record<TransferProgressPayload['state'], number> = {
   error: 2,
 }
 
+export const TRANSFER_RETRY_MESSAGE = 'Retrying transfer'
+
 export function readTransferQueueSnapshot() {
   try {
     const raw = localStorage.getItem(TRANSFER_QUEUE_STORAGE_KEY)
@@ -38,6 +40,7 @@ function sameTransferProgress(left: TransferProgressPayload, right: TransferProg
     && left.message === right.message
     && left.localPath === right.localPath
     && left.itemCount === right.itemCount
+    && left.retryable === right.retryable
 }
 
 export function mergeTransferProgress(
@@ -49,9 +52,12 @@ export function mergeTransferProgress(
   }
 
   const incomingIsOlderState = transferStateRank[incoming.state] < transferStateRank[existing.state]
-  const shouldKeepExistingState = incomingIsOlderState
+  const incomingStartsRetry = incoming.state === 'queued' && incoming.message === TRANSFER_RETRY_MESSAGE
+  const shouldKeepExistingState = !incomingStartsRetry && (
+    incomingIsOlderState
     || (incoming.state === 'queued' && existing.state !== 'queued')
     || (existing.state === 'error' && incoming.state !== 'error')
+  )
   const totalBytes = typeof existing.totalBytes === 'number' && typeof incoming.totalBytes === 'number'
     ? Math.max(existing.totalBytes, incoming.totalBytes)
     : existing.totalBytes ?? incoming.totalBytes
@@ -65,6 +71,7 @@ export function mergeTransferProgress(
     message: shouldKeepExistingState ? existing.message : incoming.message,
     localPath: incoming.localPath ?? existing.localPath,
     itemCount: incoming.itemCount ?? existing.itemCount,
+    retryable: incoming.retryable ?? existing.retryable,
   } satisfies TransferProgressPayload
 
   return sameTransferProgress(existing, merged) ? existing : merged

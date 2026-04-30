@@ -5,6 +5,7 @@ import { createDefaultBootstrap } from './mockData'
 import { buildFileEntries } from './sessionUtils'
 import type {
   AppBootstrap,
+  DownloadTargetInspection,
   FileDownloadResult,
   LibsshProbePayload,
   LocalX11Support,
@@ -346,18 +347,41 @@ export async function cancelTransfer(transferId: string) {
   await invoke('cancel_transfer', { transferId })
 }
 
+export async function retryTransfer(transferId: string) {
+  if (!isTauriRuntime()) {
+    return
+  }
+
+  await invoke('retry_transfer', { transferId })
+}
+
+export async function inspectDownloadTarget(fileName: string) {
+  if (isTauriRuntime()) {
+    return invoke<DownloadTargetInspection>('inspect_download_target', { fileName })
+  }
+
+  return {
+    fileName,
+    path: fileName,
+    exists: false,
+    suggestedFileName: fileName,
+    suggestedPath: fileName,
+  } satisfies DownloadTargetInspection
+}
+
 export async function uploadRemoteFile(
   session: SessionDefinition,
   remoteDir: string,
   fileName: string,
   bytes: number[],
   transferId?: string,
+  conflictAction = 'error',
 ) {
   if (!isTauriRuntime()) {
     return
   }
 
-  await invoke('upload_remote_file', { session, remoteDir, fileName, bytes, transferId })
+  await invoke('upload_remote_file', { session, remoteDir, fileName, bytes, transferId, conflictAction })
 }
 
 export async function uploadLocalFile(
@@ -365,12 +389,14 @@ export async function uploadLocalFile(
   remoteDir: string,
   localPath: string,
   transferId?: string,
+  remoteName?: string,
+  conflictAction = 'error',
 ) {
   if (!isTauriRuntime()) {
     return
   }
 
-  await invoke('upload_local_file', { session, remoteDir, localPath, transferId })
+  await invoke('upload_local_file', { session, remoteDir, localPath, transferId, remoteName, conflictAction })
 }
 
 export async function uploadLocalPath(
@@ -378,17 +404,21 @@ export async function uploadLocalPath(
   remoteDir: string,
   localPath: string,
   transferId?: string,
+  remoteName?: string,
+  conflictAction = 'error',
 ) {
-  return uploadLocalFile(session, remoteDir, localPath, transferId)
+  return uploadLocalFile(session, remoteDir, localPath, transferId, remoteName, conflictAction)
 }
 
 export async function downloadRemoteFile(
   session: SessionDefinition,
   remotePath: string,
   transferId?: string,
+  fileName?: string,
+  conflictAction = 'error',
 ) {
   if (isTauriRuntime()) {
-    return invoke<FileDownloadResult>('download_remote_file', { session, remotePath, transferId })
+    return invoke<FileDownloadResult>('download_remote_file', { session, remotePath, transferId, fileName, conflictAction })
   }
 
   return {
@@ -402,9 +432,18 @@ export async function downloadRemoteEntry(
   remotePath: string,
   kind: 'folder' | 'file',
   transferId?: string,
+  fileName?: string,
+  conflictAction = 'error',
 ) {
   if (isTauriRuntime()) {
-    return invoke<FileDownloadResult>('download_remote_entry', { session, remotePath, kind, transferId })
+    return invoke<FileDownloadResult>('download_remote_entry', {
+      session,
+      remotePath,
+      kind,
+      transferId,
+      fileName,
+      conflictAction,
+    })
   }
 
   return {

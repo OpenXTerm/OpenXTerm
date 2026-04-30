@@ -1,4 +1,4 @@
-import { ArrowDownToLine, ArrowUpToLine, CheckCircle2, LoaderCircle, XCircle } from 'lucide-react'
+import { ArrowDownToLine, ArrowUpToLine, CheckCircle2, LoaderCircle, RotateCcw, XCircle } from 'lucide-react'
 
 import type { TransferProgressPayload } from '../../types/domain'
 
@@ -7,6 +7,7 @@ interface TransferProgressModalProps {
   open: boolean
   embedded?: boolean
   onCancel?: (item: TransferProgressPayload) => void
+  onRetry?: (item: TransferProgressPayload) => void
   onClose: () => void
 }
 
@@ -38,7 +39,7 @@ function progressPercent(item: TransferProgressPayload) {
   return item.state === 'completed' ? 100 : null
 }
 
-export function TransferProgressModal({ items, open, embedded = false, onCancel, onClose }: TransferProgressModalProps) {
+export function TransferProgressModal({ items, open, embedded = false, onCancel, onRetry, onClose }: TransferProgressModalProps) {
   if (!open) {
     return null
   }
@@ -65,6 +66,7 @@ export function TransferProgressModal({ items, open, embedded = false, onCancel,
           {items.map((item) => {
             const percent = progressPercent(item)
             const cancellable = item.state === 'queued' || item.state === 'running'
+            const retryable = item.state === 'error' && item.retryable === true
             return (
             <div key={item.transferId} className={`transfer-row ${item.state}`}>
               <div className="transfer-row-icon">
@@ -103,6 +105,12 @@ export function TransferProgressModal({ items, open, embedded = false, onCancel,
                 {cancellable && onCancel && (
                   <button type="button" onClick={() => onCancel(item)}>
                     Cancel
+                  </button>
+                )}
+                {retryable && onRetry && (
+                  <button className="retry" type="button" onClick={() => onRetry(item)}>
+                    <RotateCcw size={12} />
+                    Retry
                   </button>
                 )}
               </div>

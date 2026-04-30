@@ -469,7 +469,8 @@ function ensureTransportListeners(set: StoreSetter) {
     })
 
     await listenTransferProgress((payload) => {
-      const transferPayload = aggregateBatchProgress(payload) ?? payload
+      const aggregatePayload = aggregateBatchProgress(payload)
+      const transferPayload = aggregatePayload ?? payload
       if (transferPayload.state === 'error') {
         const signature = `${transferPayload.message}|${transferPayload.remotePath}|${transferPayload.localPath ?? ''}`
         if (loggedTransferErrors.get(transferPayload.transferId) !== signature) {
@@ -485,6 +486,9 @@ function ensureTransportListeners(set: StoreSetter) {
         }
       } else if (transferPayload.state === 'completed') {
         loggedTransferErrors.delete(transferPayload.transferId)
+      }
+      if (aggregatePayload) {
+        scheduleTransferFlush(set, payload)
       }
       scheduleTransferFlush(set, transferPayload)
       requestTransferWindow(transferPayload)

@@ -28,8 +28,9 @@ Last broad manual pass: April 24, 2026.
 | SFTP transfer window | NEEDS RETEST | Recent changes restored separate transfer window, added cancel, and auto-close after 2 seconds. |
 | SFTP rename/context menu | NEEDS RETEST | Added after the last confirmed SFTP pass. |
 | SFTP follow remote terminal | NEEDS RETEST | Enable `follow remote terminal`, run `pwd`/`cd` in the linked SSH tab, and confirm the SFTP sidebar follows the shell directory. |
-| Upload conflict handling | NEEDS RETEST | Current behavior skips existing names instead of overwriting silently. |
+| SFTP upload/download conflict handling | NEEDS RETEST | Existing names should prompt for overwrite, skip, or rename; batch conflicts should honor apply-to-all. |
 | Transfer cancel | NEEDS RETEST | Backend cancellation exists, but must be tested with large files/folders. |
+| Transfer retry | NEEDS RETEST | Failed upload/download rows should expose `Retry` and restart from the same transfer window. |
 | X11 basic forwarding | PASS | `$DISPLAY` can appear and basic X11 forwarding can work with a local X server. |
 | X11 GLX/heavy apps | RISK | `glxgears`/Chromium depend heavily on XQuartz/local GLX support. |
 | Cross-platform Windows/Linux SFTP/status | RISK | Needs more real-machine passes. |
@@ -44,6 +45,7 @@ Run these first when validating the current branch:
 4. Upload a file whose name already exists and confirm it is skipped, not overwritten.
 5. Right-click an SFTP entry and test `Rename`, `Delete`, and `Download`.
 6. Confirm the transfer window closes automatically about 2 seconds after completion.
+7. Force a transfer failure, then click `Retry` and confirm it restarts and completes.
 
 ## Baseline Setup
 
@@ -97,6 +99,7 @@ Record each pass in a small note with:
 | Right-click context menu | Menu opens with Rename/Delete/Download. | NEEDS RETEST |
 | Rename file/folder | Entry is renamed remotely and list refreshes. | NEEDS RETEST |
 | Cancel large upload/download | Backend stops transfer and UI shows canceled/error state. | NEEDS RETEST |
+| Retry failed upload/download | Failed row offers `Retry`; retry returns to queued/running and can complete. | NEEDS RETEST |
 
 ## X11 2D Apps
 

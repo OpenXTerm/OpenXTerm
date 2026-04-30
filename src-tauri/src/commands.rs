@@ -280,8 +280,27 @@ pub async fn update_remote_entry_permissions(
 }
 
 #[tauri::command]
+pub async fn inspect_download_target(
+    app: AppHandle,
+    file_name: String,
+) -> Result<crate::models::DownloadTargetInspection, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        transfer::inspect_download_target(&app, &file_name)
+    })
+    .await
+    .map_err(|error| format!("failed to join download target inspection task: {error}"))?
+}
+
+#[tauri::command]
 pub fn cancel_transfer(transfer_id: String) -> Result<(), String> {
     transfer::cancel_transfer(&transfer_id)
+}
+
+#[tauri::command]
+pub async fn retry_transfer(app: AppHandle, transfer_id: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || transfer::retry_transfer(&app, &transfer_id))
+        .await
+        .map_err(|error| format!("failed to join transfer retry task: {error}"))?
 }
 
 #[tauri::command]
@@ -292,9 +311,18 @@ pub async fn upload_remote_file(
     file_name: String,
     bytes: Vec<u8>,
     transfer_id: Option<String>,
+    conflict_action: Option<String>,
 ) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
-        transfer::upload_remote_file(&app, &session, &remote_dir, &file_name, bytes, transfer_id)
+        transfer::upload_remote_file(
+            &app,
+            &session,
+            &remote_dir,
+            &file_name,
+            bytes,
+            transfer_id,
+            conflict_action,
+        )
     })
     .await
     .map_err(|error| format!("failed to join upload task: {error}"))?
@@ -307,9 +335,19 @@ pub async fn upload_local_file(
     remote_dir: String,
     local_path: String,
     transfer_id: Option<String>,
+    remote_name: Option<String>,
+    conflict_action: Option<String>,
 ) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
-        transfer::upload_local_file(&app, &session, &remote_dir, &local_path, transfer_id)
+        transfer::upload_local_file(
+            &app,
+            &session,
+            &remote_dir,
+            &local_path,
+            transfer_id,
+            remote_name,
+            conflict_action,
+        )
     })
     .await
     .map_err(|error| format!("failed to join local upload task: {error}"))?
@@ -321,9 +359,18 @@ pub async fn download_remote_file(
     session: SessionDefinition,
     remote_path: String,
     transfer_id: Option<String>,
+    file_name: Option<String>,
+    conflict_action: Option<String>,
 ) -> Result<crate::models::FileDownloadResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        transfer::download_remote_file(&app, &session, &remote_path, transfer_id)
+        transfer::download_remote_file(
+            &app,
+            &session,
+            &remote_path,
+            transfer_id,
+            file_name,
+            conflict_action,
+        )
     })
     .await
     .map_err(|error| format!("failed to join download task: {error}"))?
@@ -336,9 +383,19 @@ pub async fn download_remote_entry(
     remote_path: String,
     kind: String,
     transfer_id: Option<String>,
+    file_name: Option<String>,
+    conflict_action: Option<String>,
 ) -> Result<crate::models::FileDownloadResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        transfer::download_remote_entry(&app, &session, &remote_path, &kind, transfer_id)
+        transfer::download_remote_entry(
+            &app,
+            &session,
+            &remote_path,
+            &kind,
+            transfer_id,
+            file_name,
+            conflict_action,
+        )
     })
     .await
     .map_err(|error| format!("failed to join download task: {error}"))?

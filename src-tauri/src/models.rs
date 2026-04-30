@@ -165,6 +165,16 @@ pub struct FileDownloadResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct DownloadTargetInspection {
+    pub file_name: String,
+    pub path: String,
+    pub exists: bool,
+    pub suggested_file_name: String,
+    pub suggested_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RemoteDragEntry {
     pub remote_path: String,
     pub file_name: String,
@@ -187,6 +197,7 @@ pub struct TransferProgressPayload {
     pub total_bytes: Option<u64>,
     pub message: String,
     pub local_path: Option<String>,
+    pub retryable: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

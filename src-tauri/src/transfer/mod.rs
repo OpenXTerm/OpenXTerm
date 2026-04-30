@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fs,
     fs::File,
     io::{Read, Write},
@@ -14,14 +14,42 @@ use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use time::{format_description::parse, OffsetDateTime};
 
 use crate::models::{
-    FileDownloadResult, RemoteDirectorySnapshot, RemoteFileEntry, SessionDefinition,
-    TransferProgressPayload,
+    DownloadTargetInspection, FileDownloadResult, RemoteDirectorySnapshot, RemoteFileEntry,
+    SessionDefinition, TransferProgressPayload,
 };
 use crate::runtime::open_embedded_sftp;
 
 const TRANSFER_PROGRESS_EVENT: &str = "openxterm://transfer-progress";
 const TRANSFER_CHUNK_SIZE: usize = 256 * 1024;
+const TRANSFER_RETRY_MESSAGE: &str = "Retrying transfer";
 static CANCELLED_TRANSFERS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+static TRANSFER_RETRY_OPERATIONS: OnceLock<Mutex<HashMap<String, TransferRetryOperation>>> =
+    OnceLock::new();
+
+#[derive(Clone)]
+enum TransferRetryOperation {
+    UploadRemoteFile {
+        session: SessionDefinition,
+        remote_dir: String,
+        file_name: String,
+        bytes: Vec<u8>,
+        conflict_action: String,
+    },
+    UploadLocalFile {
+        session: SessionDefinition,
+        remote_dir: String,
+        local_path: String,
+        remote_name: Option<String>,
+        conflict_action: String,
+    },
+    DownloadRemoteEntry {
+        session: SessionDefinition,
+        remote_path: String,
+        kind: String,
+        file_name: String,
+        conflict_action: String,
+    },
+}
 
 fn open_sftp(session: &SessionDefinition) -> Result<Sftp, String> {
     open_embedded_sftp(session, None, "SFTP helper")
@@ -35,13 +63,179 @@ pub fn cancel_transfer(transfer_id: &str) -> Result<(), String> {
     Ok(())
 }
 
+pub fn retry_transfer(app: &AppHandle, transfer_id: &str) -> Result<(), String> {
+    let operation = {
+        let retry_operations = transfer_retry_operations()
+            .lock()
+            .map_err(|_| "transfer retry state is poisoned".to_string())?;
+        retry_operations
+            .get(transfer_id)
+            .cloned()
+            .ok_or_else(|| "No retry data is available for this transfer.".to_string())?
+    };
+
+    emit_retry_started(app, transfer_id, &operation);
+
+    match operation {
+        TransferRetryOperation::UploadRemoteFile {
+            session,
+            remote_dir,
+            file_name,
+            bytes,
+            conflict_action,
+        } => upload_remote_file(
+            app,
+            &session,
+            &remote_dir,
+            &file_name,
+            bytes,
+            Some(transfer_id.to_string()),
+            Some(conflict_action),
+        ),
+        TransferRetryOperation::UploadLocalFile {
+            session,
+            remote_dir,
+            local_path,
+            remote_name,
+            conflict_action,
+        } => upload_local_file(
+            app,
+            &session,
+            &remote_dir,
+            &local_path,
+            Some(transfer_id.to_string()),
+            remote_name,
+            Some(conflict_action),
+        ),
+        TransferRetryOperation::DownloadRemoteEntry {
+            session,
+            remote_path,
+            kind,
+            file_name,
+            conflict_action,
+        } => download_remote_entry(
+            app,
+            &session,
+            &remote_path,
+            &kind,
+            Some(transfer_id.to_string()),
+            Some(file_name),
+            Some(conflict_action),
+        )
+        .map(|_| ()),
+    }
+}
+
 fn cancelled_transfers() -> &'static Mutex<HashSet<String>> {
     CANCELLED_TRANSFERS.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+fn transfer_retry_operations() -> &'static Mutex<HashMap<String, TransferRetryOperation>> {
+    TRANSFER_RETRY_OPERATIONS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 fn clear_transfer_cancel(transfer_id: &str) {
     if let Ok(mut cancelled) = cancelled_transfers().lock() {
         cancelled.remove(transfer_id);
+    }
+}
+
+fn remember_transfer_retry(transfer_id: &str, operation: TransferRetryOperation) {
+    if let Ok(mut retry_operations) = transfer_retry_operations().lock() {
+        retry_operations.insert(transfer_id.to_string(), operation);
+    }
+}
+
+fn clear_transfer_retry(transfer_id: &str) {
+    if let Ok(mut retry_operations) = transfer_retry_operations().lock() {
+        retry_operations.remove(transfer_id);
+    }
+}
+
+fn transfer_retryable(transfer_id: &str) -> bool {
+    transfer_retry_operations()
+        .lock()
+        .is_ok_and(|retry_operations| retry_operations.contains_key(transfer_id))
+}
+
+fn generate_transfer_id(prefix: &str) -> String {
+    format!(
+        "{prefix}-{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_millis())
+            .unwrap_or(0)
+    )
+}
+
+fn emit_retry_started(app: &AppHandle, transfer_id: &str, operation: &TransferRetryOperation) {
+    match operation {
+        TransferRetryOperation::UploadRemoteFile {
+            file_name,
+            remote_dir,
+            ..
+        } => emit_transfer(
+            app,
+            transfer_id,
+            file_name,
+            &join_remote_path(remote_dir, file_name),
+            "upload",
+            "upload",
+            "queued",
+            0,
+            None,
+            TRANSFER_RETRY_MESSAGE,
+            None,
+        ),
+        TransferRetryOperation::UploadLocalFile {
+            remote_dir,
+            local_path,
+            remote_name,
+            ..
+        } => {
+            let local_path_buf = PathBuf::from(local_path);
+            let file_name = remote_name
+                .as_deref()
+                .filter(|value| !value.trim().is_empty())
+                .map(sanitize_transfer_name)
+                .or_else(|| {
+                    local_path_buf
+                        .file_name()
+                        .and_then(|value| value.to_str())
+                        .map(ToOwned::to_owned)
+                })
+                .unwrap_or_else(|| "upload.bin".to_string());
+            emit_transfer(
+                app,
+                transfer_id,
+                &file_name,
+                &join_remote_path(remote_dir, &file_name),
+                "upload",
+                "upload",
+                "queued",
+                0,
+                None,
+                TRANSFER_RETRY_MESSAGE,
+                Some(local_path.clone()),
+            );
+        }
+        TransferRetryOperation::DownloadRemoteEntry {
+            remote_path,
+            file_name,
+            ..
+        } => emit_transfer(
+            app,
+            transfer_id,
+            file_name,
+            remote_path,
+            "download",
+            "download",
+            "queued",
+            0,
+            None,
+            TRANSFER_RETRY_MESSAGE,
+            None,
+        ),
     }
 }
 
@@ -180,6 +374,24 @@ pub fn update_remote_entry_permissions(
     }
 }
 
+pub fn inspect_download_target(
+    app: &AppHandle,
+    file_name: &str,
+) -> Result<DownloadTargetInspection, String> {
+    let file_name = sanitize_transfer_name(file_name);
+    let path = download_target_path(app, &file_name)?;
+    let suggested_file_name = unique_local_file_name(path.parent(), &file_name);
+    let suggested_path = download_target_path(app, &suggested_file_name)?;
+
+    Ok(DownloadTargetInspection {
+        file_name,
+        path: path.display().to_string(),
+        exists: path.exists(),
+        suggested_file_name,
+        suggested_path: suggested_path.display().to_string(),
+    })
+}
+
 fn delete_sftp_directory_recursive(sftp: &Sftp, path: &str) -> Result<(), String> {
     let entries = sftp.read_dir(path).map_err(|error| {
         format!("failed to list remote directory {path} before delete: {error}")
@@ -207,6 +419,67 @@ fn delete_sftp_directory_recursive(sftp: &Sftp, path: &str) -> Result<(), String
         .map_err(|error| format!("failed to remove remote directory {path}: {error}"))
 }
 
+fn ensure_sftp_write_allowed(
+    sftp: &Sftp,
+    remote_path: &str,
+    conflict_action: &str,
+) -> Result<(), String> {
+    if sftp.metadata(remote_path).is_err() {
+        return Ok(());
+    }
+
+    if conflict_action == "overwrite" {
+        return Ok(());
+    }
+
+    Err(format!(
+        "{} already exists. Choose overwrite, skip, or rename.",
+        remote_file_name(remote_path)
+    ))
+}
+
+fn ensure_sftp_directory_allowed(
+    sftp: &Sftp,
+    remote_path: &str,
+    conflict_action: &str,
+) -> Result<(), String> {
+    match sftp.metadata(remote_path) {
+        Ok(metadata) if is_directory(metadata.file_type()) && conflict_action == "overwrite" => {
+            Ok(())
+        }
+        Ok(metadata) if is_directory(metadata.file_type()) => Err(format!(
+            "{} already exists. Choose overwrite, skip, or rename.",
+            remote_file_name(remote_path)
+        )),
+        Ok(_) if conflict_action == "overwrite" => Err(format!(
+            "{} already exists and is not a folder.",
+            remote_file_name(remote_path)
+        )),
+        Ok(_) => Err(format!(
+            "{} already exists. Choose overwrite, skip, or rename.",
+            remote_file_name(remote_path)
+        )),
+        Err(_) => Ok(()),
+    }
+}
+
+fn ensure_local_write_allowed(path: &Path, conflict_action: &str) -> Result<(), String> {
+    if !path.exists() {
+        return Ok(());
+    }
+
+    if conflict_action == "overwrite" {
+        return Ok(());
+    }
+
+    Err(format!(
+        "{} already exists. Choose overwrite, skip, or rename.",
+        path.file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("download")
+    ))
+}
+
 fn parent_remote_path(path: &str) -> String {
     let mut parts = path
         .split('/')
@@ -228,24 +501,19 @@ pub fn upload_remote_file(
     file_name: &str,
     bytes: Vec<u8>,
     transfer_id: Option<String>,
+    conflict_action: Option<String>,
 ) -> Result<(), String> {
-    let remote_path = join_remote_path(remote_dir, file_name);
+    let file_name = sanitize_transfer_name(file_name);
+    let remote_path = join_remote_path(remote_dir, &file_name);
     let total_bytes = bytes.len() as u64;
-    let transfer_id = transfer_id.unwrap_or_else(|| {
-        format!(
-            "upload-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map(|duration| duration.as_millis())
-                .unwrap_or(0)
-        )
-    });
+    let conflict_action = conflict_action.unwrap_or_else(|| "error".into());
+    let transfer_id = transfer_id.unwrap_or_else(|| generate_transfer_id("upload"));
     clear_transfer_cancel(&transfer_id);
 
     emit_transfer(
         app,
         &transfer_id,
-        file_name,
+        &file_name,
         &remote_path,
         "upload",
         "upload",
@@ -260,6 +528,7 @@ pub fn upload_remote_file(
         "sftp" => {
             stop_if_transfer_cancelled(&transfer_id)?;
             let sftp = open_sftp(session)?;
+            ensure_sftp_write_allowed(&sftp, &remote_path, &conflict_action)?;
             let mut file = sftp
                 .open(
                     &remote_path,
@@ -276,7 +545,7 @@ pub fn upload_remote_file(
                 emit_transfer(
                     app,
                     &transfer_id,
-                    file_name,
+                    &file_name,
                     &remote_path,
                     "upload",
                     "upload",
@@ -291,14 +560,14 @@ pub fn upload_remote_file(
         }
         "ftp" => {
             stop_if_transfer_cancelled(&transfer_id)?;
-            let temp_path = temp_upload_path(file_name);
-            fs::write(&temp_path, bytes).map_err(|error| {
+            let temp_path = temp_upload_path(&file_name);
+            fs::write(&temp_path, &bytes).map_err(|error| {
                 format!("failed to stage upload {}: {error}", temp_path.display())
             })?;
             emit_transfer(
                 app,
                 &transfer_id,
-                file_name,
+                &file_name,
                 &remote_path,
                 "upload",
                 "upload",
@@ -319,10 +588,11 @@ pub fn upload_remote_file(
 
     match result {
         Ok(()) => {
+            clear_transfer_retry(&transfer_id);
             emit_transfer(
                 app,
                 &transfer_id,
-                file_name,
+                &file_name,
                 &remote_path,
                 "upload",
                 "upload",
@@ -336,10 +606,20 @@ pub fn upload_remote_file(
             Ok(())
         }
         Err(error) => {
+            remember_transfer_retry(
+                &transfer_id,
+                TransferRetryOperation::UploadRemoteFile {
+                    session: session.clone(),
+                    remote_dir: remote_dir.to_string(),
+                    file_name: file_name.clone(),
+                    bytes,
+                    conflict_action: conflict_action.clone(),
+                },
+            );
             emit_transfer(
                 app,
                 &transfer_id,
-                file_name,
+                &file_name,
                 &remote_path,
                 "upload",
                 "upload",
@@ -361,13 +641,20 @@ pub fn upload_local_file(
     remote_dir: &str,
     local_path: &str,
     transfer_id: Option<String>,
+    remote_name: Option<String>,
+    conflict_action: Option<String>,
 ) -> Result<(), String> {
     let local_path = PathBuf::from(local_path);
-    let file_name = local_path
+    let local_file_name = local_path
         .file_name()
         .and_then(|value| value.to_str())
         .ok_or_else(|| format!("invalid local file path: {}", local_path.display()))?
         .to_string();
+    let file_name = remote_name
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .map(sanitize_transfer_name)
+        .unwrap_or(local_file_name);
     let metadata = fs::metadata(&local_path)
         .map_err(|error| format!("failed to read {}: {error}", local_path.display()))?;
     let total_bytes = if metadata.is_dir() {
@@ -376,16 +663,19 @@ pub fn upload_local_file(
         metadata.len()
     };
     let remote_path = join_remote_path(remote_dir, &file_name);
-    let transfer_id = transfer_id.unwrap_or_else(|| {
-        format!(
-            "upload-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map(|duration| duration.as_millis())
-                .unwrap_or(0)
-        )
-    });
+    let conflict_action = conflict_action.unwrap_or_else(|| "error".into());
+    let transfer_id = transfer_id.unwrap_or_else(|| generate_transfer_id("upload"));
     clear_transfer_cancel(&transfer_id);
+    remember_transfer_retry(
+        &transfer_id,
+        TransferRetryOperation::UploadLocalFile {
+            session: session.clone(),
+            remote_dir: remote_dir.to_string(),
+            local_path: local_path.display().to_string(),
+            remote_name: Some(file_name.clone()),
+            conflict_action: conflict_action.clone(),
+        },
+    );
 
     emit_transfer(
         app,
@@ -416,6 +706,7 @@ pub fn upload_local_file(
                     &file_name,
                     total_bytes,
                     &mut transferred,
+                    &conflict_action,
                 )?;
             } else {
                 upload_sftp_file_with_progress(
@@ -427,6 +718,7 @@ pub fn upload_local_file(
                     &file_name,
                     total_bytes,
                     &mut transferred,
+                    &conflict_action,
                 )?;
             }
             Ok(())
@@ -459,6 +751,7 @@ pub fn upload_local_file(
 
     match result {
         Ok(()) => {
+            clear_transfer_retry(&transfer_id);
             emit_transfer(
                 app,
                 &transfer_id,
@@ -504,8 +797,10 @@ fn upload_sftp_directory_recursive(
     display_name: &str,
     total_bytes: u64,
     transferred: &mut u64,
+    conflict_action: &str,
 ) -> Result<(), String> {
     stop_if_transfer_cancelled(transfer_id)?;
+    ensure_sftp_directory_allowed(sftp, remote_dir, conflict_action)?;
     let _ = sftp.create_dir(remote_dir, 0o755);
 
     let entries = fs::read_dir(local_dir)
@@ -530,6 +825,7 @@ fn upload_sftp_directory_recursive(
                 display_name,
                 total_bytes,
                 transferred,
+                conflict_action,
             )?;
         } else {
             upload_sftp_file_with_progress(
@@ -541,6 +837,7 @@ fn upload_sftp_directory_recursive(
                 display_name,
                 total_bytes,
                 transferred,
+                conflict_action,
             )?;
         }
     }
@@ -557,10 +854,12 @@ fn upload_sftp_file_with_progress(
     display_name: &str,
     total_bytes: u64,
     transferred: &mut u64,
+    conflict_action: &str,
 ) -> Result<(), String> {
     stop_if_transfer_cancelled(transfer_id)?;
     let mut source = File::open(local_path)
         .map_err(|error| format!("failed to open {}: {error}", local_path.display()))?;
+    ensure_sftp_write_allowed(sftp, remote_path, conflict_action)?;
     let mut target = sftp
         .open(
             remote_path,
@@ -607,9 +906,27 @@ pub fn download_remote_entry(
     remote_path: &str,
     kind: &str,
     transfer_id: Option<String>,
+    file_name_override: Option<String>,
+    conflict_action: Option<String>,
 ) -> Result<FileDownloadResult, String> {
-    let file_name = remote_file_name(remote_path);
+    let file_name = file_name_override
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .map(sanitize_transfer_name)
+        .unwrap_or_else(|| remote_file_name(remote_path));
     let save_path = download_target_path(app, &file_name)?;
+    let transfer_id = transfer_id.unwrap_or_else(|| generate_transfer_id("download"));
+    let conflict_action = conflict_action.unwrap_or_else(|| "error".into());
+    remember_transfer_retry(
+        &transfer_id,
+        TransferRetryOperation::DownloadRemoteEntry {
+            session: session.clone(),
+            remote_path: remote_path.to_string(),
+            kind: kind.to_string(),
+            file_name: file_name.clone(),
+            conflict_action: conflict_action.clone(),
+        },
+    );
     download_remote_entry_to_path(
         app,
         session,
@@ -618,7 +935,8 @@ pub fn download_remote_entry(
         &save_path,
         kind,
         "download",
-        transfer_id,
+        Some(transfer_id),
+        Some(conflict_action),
     )
 }
 
@@ -627,8 +945,18 @@ pub fn download_remote_file(
     session: &SessionDefinition,
     remote_path: &str,
     transfer_id: Option<String>,
+    file_name_override: Option<String>,
+    conflict_action: Option<String>,
 ) -> Result<FileDownloadResult, String> {
-    download_remote_entry(app, session, remote_path, "file", transfer_id)
+    download_remote_entry(
+        app,
+        session,
+        remote_path,
+        "file",
+        transfer_id,
+        file_name_override,
+        conflict_action,
+    )
 }
 
 pub fn prepare_remote_drag_file(
@@ -652,6 +980,7 @@ pub fn prepare_remote_drag_file(
         &save_path,
         "drag-export",
         Some(transfer_id),
+        Some("overwrite".into()),
     )
 }
 
@@ -664,6 +993,7 @@ pub fn download_remote_entry_to_path(
     kind: &str,
     purpose: &str,
     transfer_id: Option<String>,
+    conflict_action: Option<String>,
 ) -> Result<FileDownloadResult, String> {
     if kind != "folder" {
         return download_remote_file_to_path(
@@ -674,25 +1004,19 @@ pub fn download_remote_entry_to_path(
             save_path,
             purpose,
             transfer_id,
+            conflict_action,
         );
     }
 
-    let transfer_id = transfer_id.unwrap_or_else(|| {
-        format!(
-            "download-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map(|duration| duration.as_millis())
-                .unwrap_or(0)
-        )
-    });
+    let transfer_id = transfer_id.unwrap_or_else(|| generate_transfer_id("download"));
     clear_transfer_cancel(&transfer_id);
     let local_path = save_path.display().to_string();
+    let conflict_action = conflict_action.unwrap_or_else(|| "error".into());
 
     emit_transfer(
         app,
         &transfer_id,
-        file_name,
+        &file_name,
         remote_path,
         "download",
         purpose,
@@ -713,6 +1037,7 @@ pub fn download_remote_entry_to_path(
             let sftp = open_sftp(session)?;
             let total_bytes = sftp_directory_total_size(&sftp, remote_path)?;
             stop_if_transfer_cancelled(&transfer_id)?;
+            ensure_local_write_allowed(save_path, &conflict_action)?;
             fs::create_dir_all(save_path)
                 .map_err(|error| format!("failed to create {}: {error}", save_path.display()))?;
 
@@ -737,10 +1062,11 @@ pub fn download_remote_entry_to_path(
 
     match result {
         Ok(total_bytes) => {
+            clear_transfer_retry(&transfer_id);
             emit_transfer(
                 app,
                 &transfer_id,
-                file_name,
+                &file_name,
                 remote_path,
                 "download",
                 purpose,
@@ -765,7 +1091,7 @@ pub fn download_remote_entry_to_path(
             emit_transfer(
                 app,
                 &transfer_id,
-                file_name,
+                &file_name,
                 remote_path,
                 "download",
                 purpose,
@@ -789,23 +1115,17 @@ pub fn download_remote_file_to_path(
     save_path: &Path,
     purpose: &str,
     transfer_id: Option<String>,
+    conflict_action: Option<String>,
 ) -> Result<FileDownloadResult, String> {
-    let transfer_id = transfer_id.unwrap_or_else(|| {
-        format!(
-            "download-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map(|duration| duration.as_millis())
-                .unwrap_or(0)
-        )
-    });
+    let transfer_id = transfer_id.unwrap_or_else(|| generate_transfer_id("download"));
     clear_transfer_cancel(&transfer_id);
     let local_path = save_path.display().to_string();
+    let conflict_action = conflict_action.unwrap_or_else(|| "error".into());
 
     emit_transfer(
         app,
         &transfer_id,
-        file_name,
+        &file_name,
         remote_path,
         "download",
         purpose,
@@ -828,6 +1148,7 @@ pub fn download_remote_file_to_path(
                 .metadata(remote_path)
                 .ok()
                 .and_then(|metadata| metadata.len());
+            ensure_local_write_allowed(save_path, &conflict_action)?;
             let mut remote_file = sftp
                 .open(remote_path, OpenFlags::READ_ONLY, 0)
                 .map_err(|error| format!("failed to open remote file: {error}"))?;
@@ -852,7 +1173,7 @@ pub fn download_remote_file_to_path(
                 emit_transfer(
                     app,
                     &transfer_id,
-                    file_name,
+                    &file_name,
                     remote_path,
                     "download",
                     purpose,
@@ -871,10 +1192,11 @@ pub fn download_remote_file_to_path(
         }
         "ftp" => {
             stop_if_transfer_cancelled(&transfer_id)?;
+            ensure_local_write_allowed(save_path, &conflict_action)?;
             emit_transfer(
                 app,
                 &transfer_id,
-                file_name,
+                &file_name,
                 remote_path,
                 "download",
                 purpose,
@@ -901,10 +1223,11 @@ pub fn download_remote_file_to_path(
 
     match result {
         Ok(total_bytes) => {
+            clear_transfer_retry(&transfer_id);
             emit_transfer(
                 app,
                 &transfer_id,
-                file_name,
+                &file_name,
                 remote_path,
                 "download",
                 purpose,
@@ -929,7 +1252,7 @@ pub fn download_remote_file_to_path(
             emit_transfer(
                 app,
                 &transfer_id,
-                file_name,
+                &file_name,
                 remote_path,
                 "download",
                 purpose,
@@ -1299,6 +1622,53 @@ fn download_target_path(app: &AppHandle, file_name: &str) -> Result<PathBuf, Str
     Ok(downloads_dir.join(file_name))
 }
 
+fn unique_local_file_name(parent: Option<&Path>, file_name: &str) -> String {
+    let Some(parent) = parent else {
+        return file_name.to_string();
+    };
+
+    let path = Path::new(file_name);
+    let stem = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.is_empty())
+        .unwrap_or(file_name);
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(|value| format!(".{value}"))
+        .unwrap_or_default();
+
+    for index in 1..10_000 {
+        let suffix = if index == 1 {
+            " copy".to_string()
+        } else {
+            format!(" copy {index}")
+        };
+        let candidate = format!("{stem}{suffix}{extension}");
+        if !parent.join(&candidate).exists() {
+            return candidate;
+        }
+    }
+
+    format!(
+        "{stem} copy {}{extension}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_millis())
+            .unwrap_or(0)
+    )
+}
+
+fn sanitize_transfer_name(file_name: &str) -> String {
+    let sanitized = sanitize_file_name(file_name.trim());
+    if sanitized.is_empty() {
+        "transfer.bin".into()
+    } else {
+        sanitized
+    }
+}
+
 fn drag_cache_path(file_name: &str) -> PathBuf {
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -1465,6 +1835,7 @@ fn emit_transfer(
             total_bytes,
             message: message.to_string(),
             local_path,
+            retryable: (state == "error").then(|| transfer_retryable(transfer_id)),
         },
     );
 }

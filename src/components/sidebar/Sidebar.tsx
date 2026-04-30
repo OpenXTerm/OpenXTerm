@@ -42,6 +42,7 @@ import {
   createRemoteDirectory,
   deleteRemoteEntry,
   downloadRemoteEntry,
+  inspectDownloadTarget,
   listRemoteDirectory,
   renameRemoteEntry,
   startNativeEntriesDrag,
@@ -49,6 +50,12 @@ import {
   uploadRemoteFile,
 } from '../../lib/bridge'
 import { logOpenXTermError } from '../../lib/errorLog'
+import {
+  normalizedNameKey,
+  uniqueConflictName,
+  type FileConflictRequest,
+  type FileConflictResolution,
+} from '../../lib/fileConflict'
 import type { SessionImportSummary } from '../../state/useOpenXTermStore'
 import { splitSessionFolderPath } from '../../lib/sessionUtils'
 import {
@@ -60,6 +67,7 @@ import { createBatchChildTransferId, createBatchTransferId, rememberBatchTransfe
 import { parseMobaXtermSessionsFile } from '../../lib/mobaxtermImport'
 import { useOpenXTermStore } from '../../state/useOpenXTermStore'
 import { RemoteEntryPropertiesModal } from '../workspace/RemoteEntryPropertiesModal'
+import { FileConflictModal } from '../workspace/FileConflictModal'
 import type {
   MacroDefinition,
   RemoteDirectorySnapshot,
@@ -379,6 +387,7 @@ export function Sidebar({
   const sessionDropTargetPathRef = useRef<string | null>(null)
   const lastNativeSftpDropAtRef = useRef(0)
   const failedFollowedSftpPathRef = useRef<string | null>(null)
+  const sftpConflictResolverRef = useRef<((resolution: FileConflictResolution) => void) | null>(null)
   const suppressSessionTreeClickRef = useRef(false)
   const enqueueTransfer = useOpenXTermStore((state) => state.enqueueTransfer)
   const importMobaXtermSessions = useOpenXTermStore((state) => state.importMobaXtermSessions)
@@ -402,6 +411,7 @@ export function Sidebar({
   })
   const [sftpPathDraft, setSftpPathDraft] = useState('/')
   const [followRemoteTerminal, setFollowRemoteTerminal] = useState(false)
+  const [sftpConflictRequest, setSftpConflictRequest] = useState<FileConflictRequest | null>(null)
   const [sessionMessage, setSessionMessage] = useState('')
   const [expandedSessionFolders, setExpandedSessionFolders] = useState<Record<string, boolean>>({})
   const [sessionTreeDragState, setSessionTreeDragState] = useState<SessionSidebarDragState | null>(null)
@@ -589,6 +599,113 @@ export function Sidebar({
   const hasSftpEntryNamed = useCallback((name: string, ignoredPath?: string) => {
     return sftpEntries.some((entry) => entry.name === name && entry.path !== ignoredPath)
   }, [sftpEntries])
+
+  const askSftpFileConflict = useCallback((request: FileConflictRequest) => {
+    setSftpConflictRequest(request)
+    return new Promise<FileConflictResolution>((resolve) => {
+      sftpConflictResolverRef.current = resolve
+    })
+  }, [])
+
+  function handleSftpConflictResolve(resolution: FileConflictResolution) {
+    sftpConflictResolverRef.current?.(resolution)
+    sftpConflictResolverRef.current = null
+    setSftpConflictRequest(null)
+  }
+
+  const resolveSftpUploadTargets = useCallback(async <T extends { name: string },>(
+    items: T[],
+    targetPathForName: (name: string) => string,
+  ) => {
+    const reservedNames = new Set<string>()
+    let applyToAll: FileConflictResolution | null = null
+    const resolved: Array<T & { targetName: string; conflictAction: 'overwrite' | 'error' }> = []
+
+    for (const item of items) {
+      const nameTaken = (candidate: string) => hasSftpEntryNamed(candidate) || reservedNames.has(normalizedNameKey(candidate))
+      let targetName = item.name
+      let conflictAction: 'overwrite' | 'error' = 'error'
+
+      if (nameTaken(targetName)) {
+        const suggestedName = uniqueConflictName(targetName, nameTaken)
+        const resolution: FileConflictResolution = applyToAll ?? await askSftpFileConflict({
+          itemName: targetName,
+          targetPath: targetPathForName(targetName),
+          suggestedName,
+          operation: 'upload',
+          allowApplyToAll: items.length > 1,
+        })
+
+        if (resolution.applyToAll) {
+          applyToAll = resolution
+        }
+
+        if (resolution.action === 'skip') {
+          continue
+        }
+
+        if (resolution.action === 'rename') {
+          targetName = resolution.applyToAll ? suggestedName : (resolution.newName ?? suggestedName)
+          if (nameTaken(targetName)) {
+            targetName = uniqueConflictName(targetName, nameTaken)
+          }
+        } else {
+          conflictAction = 'overwrite'
+        }
+      }
+
+      reservedNames.add(normalizedNameKey(targetName))
+      resolved.push({ ...item, targetName, conflictAction })
+    }
+
+    return resolved
+  }, [askSftpFileConflict, hasSftpEntryNamed])
+
+  const resolveSftpDownloadTarget = useCallback(async (
+    entry: RemoteFileEntry,
+    allowApplyToAll: boolean,
+    applyToAll: FileConflictResolution | null = null,
+  ) => {
+    const inspection = await inspectDownloadTarget(entry.name)
+    if (!inspection.exists) {
+      return {
+        targetName: inspection.fileName,
+        conflictAction: 'error' as const,
+        resolution: applyToAll,
+      }
+    }
+
+    const resolution: FileConflictResolution = applyToAll ?? await askSftpFileConflict({
+      itemName: inspection.fileName,
+      targetPath: inspection.path,
+      suggestedName: inspection.suggestedFileName,
+      operation: 'download',
+      allowApplyToAll,
+    })
+
+    if (resolution.action === 'skip') {
+      return {
+        targetName: '',
+        conflictAction: 'error' as const,
+        skipped: true,
+        resolution: resolution.applyToAll ? resolution : applyToAll,
+      }
+    }
+
+    if (resolution.action === 'rename') {
+      return {
+        targetName: resolution.applyToAll ? inspection.suggestedFileName : (resolution.newName ?? inspection.suggestedFileName),
+        conflictAction: 'error' as const,
+        resolution: resolution.applyToAll ? resolution : applyToAll,
+      }
+    }
+
+    return {
+      targetName: inspection.fileName,
+      conflictAction: 'overwrite' as const,
+      resolution: resolution.applyToAll ? resolution : applyToAll,
+    }
+  }, [askSftpFileConflict])
 
   function startRenameSftpEntry(entry: RemoteFileEntry) {
     setSftpContextMenu(null)
@@ -1109,65 +1226,60 @@ export function Sidebar({
       lastNativeSftpDropAtRef.current = Date.now()
 
       void (async () => {
-        const uploadPaths = droppedPaths.filter((localPath) => {
-          const fileName = localPath.split('/').filter(Boolean).at(-1) ?? 'upload.bin'
-          return !hasSftpEntryNamed(fileName)
-        })
-        const skippedCount = droppedPaths.length - uploadPaths.length
-        if (skippedCount > 0) {
-          setSftpMessage(
-            skippedCount === 1
-              ? 'A dropped item already exists. Rename or delete it before uploading.'
-              : `${skippedCount} dropped items already exist. Rename or delete them before uploading.`,
-          )
-        }
-        if (uploadPaths.length === 0) {
+        const uploadItems = await resolveSftpUploadTargets(
+          droppedPaths.map((localPath) => ({
+            localPath,
+            name: localPath.split('/').filter(Boolean).at(-1) ?? 'upload.bin',
+          })),
+          (name) => joinRemotePath(currentSftpPath, name),
+        )
+        if (uploadItems.length === 0) {
+          setSftpMessage('Upload skipped.')
           return
         }
 
         setSftpLoading(true)
         const transferIds: string[] = []
         try {
-          const batchTransferId = uploadPaths.length > 1 ? createBatchTransferId('upload') : null
+          const batchTransferId = uploadItems.length > 1 ? createBatchTransferId('upload') : null
           if (batchTransferId) {
             enqueueTransfer({
               transferId: batchTransferId,
-              fileName: itemCountLabel(uploadPaths.length),
+              fileName: itemCountLabel(uploadItems.length),
               remotePath: currentSftpPath,
               direction: 'upload',
               purpose: 'upload',
               state: 'queued',
               transferredBytes: 0,
               totalBytes: undefined,
-              localPath: batchLocalPathLabel(uploadPaths),
-              itemCount: uploadPaths.length,
-              message: `Queued ${uploadPaths.length} items for upload`,
+              localPath: batchLocalPathLabel(uploadItems.map((item) => item.localPath)),
+              itemCount: uploadItems.length,
+              message: `Queued ${uploadItems.length} items for upload`,
             })
           }
 
-          for (const [index, localPath] of uploadPaths.entries()) {
-            const fileName = localPath.split('/').filter(Boolean).at(-1) ?? 'upload.bin'
+          for (const [index, item] of uploadItems.entries()) {
             const transferId = batchTransferId
-              ? createBatchChildTransferId(batchTransferId, index, uploadPaths.length)
+              ? createBatchChildTransferId(batchTransferId, index, uploadItems.length)
               : `upload-${crypto.randomUUID()}`
             transferIds.push(transferId)
             if (!batchTransferId) {
               enqueueTransfer({
                 transferId,
-                fileName,
-                remotePath: currentSftpPath === '/' ? `/${fileName}` : `${currentSftpPath}/${fileName}`,
+                fileName: item.targetName,
+                remotePath: joinRemotePath(currentSftpPath, item.targetName),
                 direction: 'upload',
                 purpose: 'upload',
                 state: 'queued',
                 transferredBytes: 0,
                 totalBytes: undefined,
-                localPath,
+                localPath: item.localPath,
                 message: 'Queued for upload',
               })
             }
-            await uploadLocalPath(selectedSftpSession, currentSftpPath, localPath, transferId)
+            await uploadLocalPath(selectedSftpSession, currentSftpPath, item.localPath, transferId, item.targetName, item.conflictAction)
           }
-          setSftpMessage(`Uploaded ${uploadPaths.length} file${uploadPaths.length > 1 ? 's' : ''} to ${currentSftpPath}`)
+          setSftpMessage(`Uploaded ${uploadItems.length} item${uploadItems.length > 1 ? 's' : ''} to ${currentSftpPath}`)
           await loadSelectedSftpDirectory(currentSftpPath)
         } catch (error) {
           logOpenXTermError('sidebar.sftp.drop-upload', error, {
@@ -1191,70 +1303,66 @@ export function Sidebar({
       disposed = true
       unlisten?.()
     }
-  }, [activeSection, currentSftpPath, enqueueTransfer, hasSftpEntryNamed, loadSelectedSftpDirectory, selectedSftpSession])
+  }, [activeSection, currentSftpPath, enqueueTransfer, hasSftpEntryNamed, loadSelectedSftpDirectory, resolveSftpUploadTargets, selectedSftpSession])
 
   async function uploadSidebarBrowserFiles(files: File[], source: 'upload' | 'drop-upload') {
     if (files.length === 0 || !selectedSftpSession) {
       return
     }
 
-    const skippedFiles = files.filter((file) => hasSftpEntryNamed(file.name))
-    const uploadFiles = files.filter((file) => !hasSftpEntryNamed(file.name))
-    if (skippedFiles.length > 0) {
-      setSftpMessage(
-        skippedFiles.length === 1
-          ? `${skippedFiles[0].name} already exists. Rename or delete it before uploading.`
-          : `${skippedFiles.length} files already exist. Rename or delete them before uploading.`,
-      )
-    }
-    if (uploadFiles.length === 0) {
+    const uploadItems = await resolveSftpUploadTargets(
+      files.map((file) => ({ file, name: file.name })),
+      (name) => joinRemotePath(currentSftpPath, name),
+    )
+    if (uploadItems.length === 0) {
+      setSftpMessage('Upload skipped.')
       return
     }
 
     setSftpLoading(true)
     try {
-      const batchTransferId = uploadFiles.length > 1 ? createBatchTransferId('upload') : null
+      const batchTransferId = uploadItems.length > 1 ? createBatchTransferId('upload') : null
       if (batchTransferId) {
         enqueueTransfer({
           transferId: batchTransferId,
-          fileName: itemCountLabel(uploadFiles.length),
+          fileName: itemCountLabel(uploadItems.length),
           remotePath: currentSftpPath,
           direction: 'upload',
           purpose: 'upload',
           state: 'queued',
           transferredBytes: 0,
-          totalBytes: uploadFiles.reduce((sum, file) => sum + file.size, 0),
-          itemCount: uploadFiles.length,
-          message: `Queued ${uploadFiles.length} files for upload`,
+          totalBytes: uploadItems.reduce((sum, item) => sum + item.file.size, 0),
+          itemCount: uploadItems.length,
+          message: `Queued ${uploadItems.length} files for upload`,
         })
       }
 
-      for (const [index, file] of uploadFiles.entries()) {
+      for (const [index, item] of uploadItems.entries()) {
         const transferId = batchTransferId
-          ? createBatchChildTransferId(batchTransferId, index, uploadFiles.length)
+          ? createBatchChildTransferId(batchTransferId, index, uploadItems.length)
           : `upload-${crypto.randomUUID()}`
         if (!batchTransferId) {
           enqueueTransfer({
             transferId,
-            fileName: file.name,
-            remotePath: currentSftpPath === '/' ? `/${file.name}` : `${currentSftpPath}/${file.name}`,
+            fileName: item.targetName,
+            remotePath: joinRemotePath(currentSftpPath, item.targetName),
             direction: 'upload',
             purpose: 'upload',
             state: 'queued',
             transferredBytes: 0,
-            totalBytes: file.size,
+            totalBytes: item.file.size,
             message: 'Queued for upload',
           })
         }
-        const bytes = Array.from(new Uint8Array(await file.arrayBuffer()))
-        await uploadRemoteFile(selectedSftpSession, currentSftpPath, file.name, bytes, transferId)
+        const bytes = Array.from(new Uint8Array(await item.file.arrayBuffer()))
+        await uploadRemoteFile(selectedSftpSession, currentSftpPath, item.targetName, bytes, transferId, item.conflictAction)
       }
-      setSftpMessage(`Uploaded ${uploadFiles.length} file${uploadFiles.length > 1 ? 's' : ''} to ${currentSftpPath}`)
+      setSftpMessage(`Uploaded ${uploadItems.length} file${uploadItems.length > 1 ? 's' : ''} to ${currentSftpPath}`)
       await loadSelectedSftpDirectory(currentSftpPath)
     } catch (error) {
       logOpenXTermError(`sidebar.sftp.${source}`, error, {
         ...sidebarSftpErrorContext(selectedSftpSession, source, currentSftpPath),
-        files: uploadFiles.map((file) => ({ name: file.name, size: file.size })),
+        files: uploadItems.map((item) => ({ name: item.file.name, targetName: item.targetName, size: item.file.size })),
       })
       setSftpMessage(error instanceof Error ? error.message : 'Unable to upload file.')
     } finally {
@@ -1340,12 +1448,22 @@ export function Sidebar({
     try {
       const files = Array.from(fileList)
       const rootFolderName = files[0]?.webkitRelativePath?.split('/').filter(Boolean)[0] ?? 'folder'
+      const rootResolution = await resolveSftpUploadTargets(
+        [{ name: rootFolderName }],
+        (name) => joinRemotePath(currentSftpPath, name),
+      )
+      if (rootResolution.length === 0) {
+        setSftpMessage('Folder upload skipped.')
+        return
+      }
+      const rootTargetName = rootResolution[0].targetName
+      const rootConflictAction = rootResolution[0].conflictAction
       const batchTransferId = files.length > 1 ? createBatchTransferId('upload') : null
       if (batchTransferId) {
         enqueueTransfer({
           transferId: batchTransferId,
-          fileName: rootFolderName,
-          remotePath: joinRemotePath(currentSftpPath, rootFolderName),
+          fileName: rootTargetName,
+          remotePath: joinRemotePath(currentSftpPath, rootTargetName),
           direction: 'upload',
           purpose: 'upload',
           state: 'queued',
@@ -1359,6 +1477,9 @@ export function Sidebar({
       for (const [index, file] of files.entries()) {
         const relativePath = file.webkitRelativePath || file.name
         const parts = relativePath.split('/').filter(Boolean)
+        if (parts.length > 0) {
+          parts[0] = rootTargetName
+        }
         const fileName = parts.at(-1) ?? file.name
         const remoteDir = parts.length > 1
           ? parts.slice(0, -1).reduce((path, segment) => joinRemotePath(path, segment), currentSftpPath)
@@ -1383,7 +1504,7 @@ export function Sidebar({
           })
         }
         const bytes = Array.from(new Uint8Array(await file.arrayBuffer()))
-        await uploadRemoteFile(selectedSftpSession, remoteDir, fileName, bytes, transferId)
+        await uploadRemoteFile(selectedSftpSession, remoteDir, fileName, bytes, transferId, rootConflictAction)
       }
       setSftpMessage(`Uploaded folder contents to ${currentSftpPath}`)
       await loadSelectedSftpDirectory(currentSftpPath)
@@ -1503,33 +1624,58 @@ export function Sidebar({
     setSftpLoading(true)
     try {
       let lastResult = ''
-      const batchTransferId = entries.length > 1 ? createBatchTransferId('download') : null
-      const knownTotalBytes = entries.every((entry) => entry.kind === 'file' && typeof entry.sizeBytes === 'number')
-        ? entries.reduce((sum, entry) => sum + (entry.sizeBytes ?? 0), 0)
+      let applyToAll: FileConflictResolution | null = null
+      const downloadItems: Array<{
+        entry: RemoteFileEntry
+        targetName: string
+        conflictAction: 'overwrite' | 'error'
+      }> = []
+
+      for (const entry of entries) {
+        const target = await resolveSftpDownloadTarget(entry, entries.length > 1, applyToAll)
+        applyToAll = target.resolution
+        if (!target.skipped) {
+          downloadItems.push({
+            entry,
+            targetName: target.targetName,
+            conflictAction: target.conflictAction,
+          })
+        }
+      }
+
+      if (downloadItems.length === 0) {
+        setSftpMessage('Download skipped.')
+        return
+      }
+
+      const batchTransferId = downloadItems.length > 1 ? createBatchTransferId('download') : null
+      const knownTotalBytes = downloadItems.every((item) => item.entry.kind === 'file' && typeof item.entry.sizeBytes === 'number')
+        ? downloadItems.reduce((sum, item) => sum + (item.entry.sizeBytes ?? 0), 0)
         : undefined
       if (batchTransferId) {
         enqueueTransfer({
           transferId: batchTransferId,
-          fileName: itemCountLabel(entries.length),
+          fileName: itemCountLabel(downloadItems.length),
           remotePath: currentSftpPath,
           direction: 'download',
           purpose: 'download',
           state: 'queued',
           transferredBytes: 0,
           totalBytes: knownTotalBytes,
-          itemCount: entries.length,
-          message: `Queued ${entries.length} items for download`,
+          itemCount: downloadItems.length,
+          message: `Queued ${downloadItems.length} items for download`,
         })
       }
 
-      for (const [index, entry] of entries.entries()) {
+      for (const [index, item] of downloadItems.entries()) {
+        const { entry } = item
         const transferId = batchTransferId
-          ? createBatchChildTransferId(batchTransferId, index, entries.length)
+          ? createBatchChildTransferId(batchTransferId, index, downloadItems.length)
           : `download-${crypto.randomUUID()}`
         if (!batchTransferId) {
           enqueueTransfer({
             transferId,
-            fileName: entry.name,
+            fileName: item.targetName,
             remotePath: entry.path,
             direction: 'download',
             purpose: 'download',
@@ -1539,13 +1685,13 @@ export function Sidebar({
             message: entry.kind === 'folder' ? 'Queued folder download' : 'Queued for download',
           })
         }
-        const result = await downloadRemoteEntry(selectedSftpSession, entry.path, entry.kind, transferId)
+        const result = await downloadRemoteEntry(selectedSftpSession, entry.path, entry.kind, transferId, item.targetName, item.conflictAction)
         lastResult = `${result.fileName} -> ${result.savedTo}`
       }
       setSftpMessage(
-        entries.length === 1
+        downloadItems.length === 1
           ? `Downloaded ${lastResult}`
-          : `Downloaded ${entries.length} item${entries.length > 1 ? 's' : ''}`,
+          : `Downloaded ${downloadItems.length} item${downloadItems.length > 1 ? 's' : ''}`,
       )
     } catch (error) {
       logOpenXTermError('sidebar.sftp.download-entry', error, {
@@ -2088,6 +2234,7 @@ export function Sidebar({
                 onApplied={handleSftpPropertiesApplied}
               />
             )}
+            <FileConflictModal request={sftpConflictRequest} onResolve={handleSftpConflictResolve} />
           </>
         )}
 

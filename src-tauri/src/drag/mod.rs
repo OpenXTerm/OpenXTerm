@@ -49,8 +49,8 @@ use windows_core::{implement, Error as WindowsError, BOOL, HRESULT};
 #[cfg(target_os = "windows")]
 use crate::runtime::open_embedded_sftp;
 use crate::{
-    transfer as file_ops,
     models::{RemoteDragEntry, SessionDefinition},
+    transfer as file_ops,
 };
 
 static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
@@ -267,6 +267,7 @@ fn write_promised_file(
         &file_kind,
         "drag-export",
         Some(transfer_id),
+        Some("overwrite".into()),
     )
     .map(|_| ())
 }

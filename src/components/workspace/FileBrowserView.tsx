@@ -16,6 +16,7 @@ import { getCurrentWebview } from '@tauri-apps/api/webview'
 import {
   createRemoteDirectory,
   deleteRemoteEntry,
+  inspectDownloadTarget,
   downloadRemoteFile,
   listRemoteDirectory,
   startNativeFileDrag,
@@ -23,6 +24,12 @@ import {
   uploadRemoteFile,
 } from '../../lib/bridge'
 import { logOpenXTermError } from '../../lib/errorLog'
+import {
+  normalizedNameKey,
+  uniqueConflictName,
+  type FileConflictRequest,
+  type FileConflictResolution,
+} from '../../lib/fileConflict'
 import {
   remotePropertiesResultKey,
   requestRemoteEntryPropertiesWindow,
@@ -32,6 +39,7 @@ import { createBatchChildTransferId, createBatchTransferId } from '../../lib/tra
 import type { RemoteDirectorySnapshot, RemoteFileEntry, SessionDefinition } from '../../types/domain'
 import { useOpenXTermStore } from '../../state/useOpenXTermStore'
 import { RemoteEntryPropertiesModal } from './RemoteEntryPropertiesModal'
+import { FileConflictModal } from './FileConflictModal'
 
 interface FileBrowserViewProps {
   session: SessionDefinition
@@ -206,6 +214,8 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
   const [pathDraft, setPathDraft] = useState('/')
   const [contextMenu, setContextMenu] = useState<FileContextMenuState | null>(null)
   const [propertiesEntry, setPropertiesEntry] = useState<RemoteFileEntry | null>(null)
+  const [conflictRequest, setConflictRequest] = useState<FileConflictRequest | null>(null)
+  const conflictResolverRef = useRef<((resolution: FileConflictResolution) => void) | null>(null)
 
   const visibleEntries = useMemo(() => {
     const entries = snapshot?.entries ?? []
@@ -226,6 +236,118 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
     }) as CSSProperties,
     [columnWidths],
   )
+
+  const askFileConflict = useCallback((request: FileConflictRequest) => {
+    setConflictRequest(request)
+    return new Promise<FileConflictResolution>((resolve) => {
+      conflictResolverRef.current = resolve
+    })
+  }, [])
+
+  function handleConflictResolve(resolution: FileConflictResolution) {
+    conflictResolverRef.current?.(resolution)
+    conflictResolverRef.current = null
+    setConflictRequest(null)
+  }
+
+  const hasSnapshotEntryNamed = useCallback((name: string) => {
+    const key = normalizedNameKey(name)
+    return (snapshot?.entries ?? []).some((entry) => normalizedNameKey(entry.name) === key)
+  }, [snapshot?.entries])
+
+  const resolveUploadTargets = useCallback(async <T extends { name: string },>(
+    items: T[],
+    targetPathForName: (name: string) => string,
+  ) => {
+    const reservedNames = new Set<string>()
+    let applyToAll: FileConflictResolution | null = null
+    const resolved: Array<T & { targetName: string; conflictAction: 'overwrite' | 'error' }> = []
+
+    for (const item of items) {
+      const nameTaken = (candidate: string) => hasSnapshotEntryNamed(candidate) || reservedNames.has(normalizedNameKey(candidate))
+      let targetName = item.name
+      let conflictAction: 'overwrite' | 'error' = 'error'
+
+      if (nameTaken(targetName)) {
+        const suggestedName = uniqueConflictName(targetName, nameTaken)
+        const resolution: FileConflictResolution = applyToAll ?? await askFileConflict({
+          itemName: targetName,
+          targetPath: targetPathForName(targetName),
+          suggestedName,
+          operation: 'upload',
+          allowApplyToAll: items.length > 1,
+        })
+
+        if (resolution.applyToAll) {
+          applyToAll = resolution
+        }
+
+        if (resolution.action === 'skip') {
+          continue
+        }
+
+        if (resolution.action === 'rename') {
+          targetName = resolution.applyToAll ? suggestedName : (resolution.newName ?? suggestedName)
+          if (nameTaken(targetName)) {
+            targetName = uniqueConflictName(targetName, nameTaken)
+          }
+        } else {
+          conflictAction = 'overwrite'
+        }
+      }
+
+      reservedNames.add(normalizedNameKey(targetName))
+      resolved.push({ ...item, targetName, conflictAction })
+    }
+
+    return resolved
+  }, [askFileConflict, hasSnapshotEntryNamed])
+
+  const resolveDownloadTarget = useCallback(async (
+    entry: RemoteFileEntry,
+    allowApplyToAll: boolean,
+    applyToAll: FileConflictResolution | null = null,
+  ) => {
+    const inspection = await inspectDownloadTarget(entry.name)
+    if (!inspection.exists) {
+      return {
+        targetName: inspection.fileName,
+        conflictAction: 'error' as const,
+        resolution: applyToAll,
+      }
+    }
+
+    const resolution: FileConflictResolution = applyToAll ?? await askFileConflict({
+      itemName: inspection.fileName,
+      targetPath: inspection.path,
+      suggestedName: inspection.suggestedFileName,
+      operation: 'download',
+      allowApplyToAll,
+    })
+
+    if (resolution.action === 'skip') {
+      return {
+        targetName: '',
+        conflictAction: 'error' as const,
+        skipped: true,
+        resolution: resolution.applyToAll ? resolution : applyToAll,
+      }
+    }
+
+    if (resolution.action === 'rename') {
+      return {
+        targetName: resolution.applyToAll ? inspection.suggestedFileName : (resolution.newName ?? inspection.suggestedFileName),
+        conflictAction: 'error' as const,
+        resolution: resolution.applyToAll ? resolution : applyToAll,
+      }
+    }
+
+    return {
+      targetName: inspection.fileName,
+      conflictAction: 'overwrite' as const,
+      resolution: resolution.applyToAll ? resolution : applyToAll,
+    }
+  }, [askFileConflict])
 
   function handleColumnResizeStart(index: number, event: ReactPointerEvent<HTMLButtonElement>) {
     event.preventDefault()
@@ -400,45 +522,56 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
       void (async () => {
         setBusy(true)
         try {
-          const batchTransferId = droppedPaths.length > 1 ? createBatchTransferId('upload') : null
+          const uploadItems = await resolveUploadTargets(
+            droppedPaths.map((localPath) => ({
+              localPath,
+              name: localPath.split('/').filter(Boolean).at(-1) ?? 'upload.bin',
+            })),
+            (name) => currentPath === '/' ? `/${name}` : `${currentPath}/${name}`,
+          )
+          if (uploadItems.length === 0) {
+            setMessage('Upload skipped.')
+            return
+          }
+
+          const batchTransferId = uploadItems.length > 1 ? createBatchTransferId('upload') : null
           if (batchTransferId) {
             enqueueTransfer({
               transferId: batchTransferId,
-              fileName: itemCountLabel(droppedPaths.length),
+              fileName: itemCountLabel(uploadItems.length),
               remotePath: currentPath,
               direction: 'upload',
               purpose: 'upload',
               state: 'queued',
               transferredBytes: 0,
               totalBytes: undefined,
-              localPath: `${droppedPaths.length} local items`,
-              itemCount: droppedPaths.length,
-              message: `Queued ${droppedPaths.length} items for upload`,
+              localPath: `${uploadItems.length} local items`,
+              itemCount: uploadItems.length,
+              message: `Queued ${uploadItems.length} items for upload`,
             })
           }
 
-          for (const [index, localPath] of droppedPaths.entries()) {
-            const fileName = localPath.split('/').filter(Boolean).at(-1) ?? 'upload.bin'
+          for (const [index, item] of uploadItems.entries()) {
             const transferId = batchTransferId
-              ? createBatchChildTransferId(batchTransferId, index, droppedPaths.length)
+              ? createBatchChildTransferId(batchTransferId, index, uploadItems.length)
               : `upload-${crypto.randomUUID()}`
             if (!batchTransferId) {
               enqueueTransfer({
                 transferId,
-                fileName,
-                remotePath: currentPath === '/' ? `/${fileName}` : `${currentPath}/${fileName}`,
+                fileName: item.targetName,
+                remotePath: currentPath === '/' ? `/${item.targetName}` : `${currentPath}/${item.targetName}`,
                 direction: 'upload',
                 purpose: 'upload',
                 state: 'queued',
                 transferredBytes: 0,
                 totalBytes: undefined,
-                localPath,
+                localPath: item.localPath,
                 message: 'Queued for upload',
               })
             }
-            await uploadLocalFile(session, currentPath, localPath, transferId)
+            await uploadLocalFile(session, currentPath, item.localPath, transferId, item.targetName, item.conflictAction)
           }
-          setMessage(`Uploaded ${droppedPaths.length} file${droppedPaths.length > 1 ? 's' : ''} to ${currentPath}`)
+          setMessage(`Uploaded ${uploadItems.length} item${uploadItems.length > 1 ? 's' : ''} to ${currentPath}`)
           await loadDirectory(currentPath)
         } catch (error) {
           logOpenXTermError('file-browser.drop-upload', error, {
@@ -461,7 +594,7 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
       disposed = true
       unlisten?.()
     }
-  }, [currentPath, enqueueTransfer, loadDirectory, session])
+  }, [currentPath, enqueueTransfer, loadDirectory, resolveUploadTargets, session])
 
   async function handleCreateFolder() {
     const name = window.prompt('Folder name')
@@ -517,9 +650,14 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
     setBusy(true)
     try {
       const transferId = `download-${crypto.randomUUID()}`
+      const target = await resolveDownloadTarget(selectedEntry, false)
+      if (target.skipped) {
+        setMessage('Download skipped.')
+        return
+      }
       enqueueTransfer({
         transferId,
-        fileName: selectedEntry.name,
+        fileName: target.targetName,
         remotePath: selectedEntry.path,
         direction: 'download',
         purpose: 'download',
@@ -528,7 +666,7 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
         totalBytes: selectedEntry.sizeBytes,
         message: 'Queued for download',
       })
-      const result = await downloadRemoteFile(session, selectedEntry.path, transferId)
+      const result = await downloadRemoteFile(session, selectedEntry.path, transferId, target.targetName, target.conflictAction)
       setMessage(`Downloaded ${result.fileName} -> ${result.savedTo}`)
     } catch (error) {
       logOpenXTermError('file-browser.download-file', error, fileBrowserErrorContext(session, 'download', selectedEntry.path))
@@ -575,43 +713,52 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
 
     setBusy(true)
     try {
-      const batchTransferId = files.length > 1 ? createBatchTransferId('upload') : null
+      const uploadItems = await resolveUploadTargets(
+        files.map((file) => ({ file, name: file.name })),
+        (name) => currentPath === '/' ? `/${name}` : `${currentPath}/${name}`,
+      )
+      if (uploadItems.length === 0) {
+        setMessage('Upload skipped.')
+        return
+      }
+
+      const batchTransferId = uploadItems.length > 1 ? createBatchTransferId('upload') : null
       if (batchTransferId) {
         enqueueTransfer({
           transferId: batchTransferId,
-          fileName: itemCountLabel(files.length),
+          fileName: itemCountLabel(uploadItems.length),
           remotePath: currentPath,
           direction: 'upload',
           purpose: 'upload',
           state: 'queued',
           transferredBytes: 0,
-          totalBytes: files.reduce((sum, file) => sum + file.size, 0),
-          itemCount: files.length,
-          message: `Queued ${files.length} files for upload`,
+          totalBytes: uploadItems.reduce((sum, item) => sum + item.file.size, 0),
+          itemCount: uploadItems.length,
+          message: `Queued ${uploadItems.length} files for upload`,
         })
       }
 
-      for (const [index, file] of files.entries()) {
+      for (const [index, item] of uploadItems.entries()) {
         const transferId = batchTransferId
-          ? createBatchChildTransferId(batchTransferId, index, files.length)
+          ? createBatchChildTransferId(batchTransferId, index, uploadItems.length)
           : `upload-${crypto.randomUUID()}`
         if (!batchTransferId) {
           enqueueTransfer({
             transferId,
-            fileName: file.name,
-            remotePath: currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`,
+            fileName: item.targetName,
+            remotePath: currentPath === '/' ? `/${item.targetName}` : `${currentPath}/${item.targetName}`,
             direction: 'upload',
             purpose: 'upload',
             state: 'queued',
             transferredBytes: 0,
-            totalBytes: file.size,
+            totalBytes: item.file.size,
             message: 'Queued for upload',
           })
         }
-        const bytes = Array.from(new Uint8Array(await file.arrayBuffer()))
-        await uploadRemoteFile(session, currentPath, file.name, bytes, transferId)
+        const bytes = Array.from(new Uint8Array(await item.file.arrayBuffer()))
+        await uploadRemoteFile(session, currentPath, item.targetName, bytes, transferId, item.conflictAction)
       }
-      setMessage(`Uploaded ${files.length} file${files.length > 1 ? 's' : ''} to ${currentPath}`)
+      setMessage(`Uploaded ${uploadItems.length} file${uploadItems.length > 1 ? 's' : ''} to ${currentPath}`)
       await loadDirectory(currentPath)
     } catch (error) {
       logOpenXTermError('file-browser.upload-file', error, {
@@ -913,6 +1060,7 @@ ${message || 'Drop local files here to upload or select a file to drag it back t
           onApplied={handlePropertiesApplied}
         />
       )}
+      <FileConflictModal request={conflictRequest} onResolve={handleConflictResolve} />
     </div>
   )
 }

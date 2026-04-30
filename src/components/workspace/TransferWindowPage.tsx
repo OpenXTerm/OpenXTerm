@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 
-import { cancelTransfer, listenTransferProgress } from '../../lib/bridge'
+import { cancelTransfer, listenTransferProgress, retryTransfer } from '../../lib/bridge'
 import { aggregateBatchProgress, hydrateBatchTransfers } from '../../lib/transferBatch'
-import { mergeTransferProgress, readTransferQueueSnapshot, writeTransferQueueSnapshot } from '../../lib/transferQueue'
+import { TRANSFER_RETRY_MESSAGE, mergeTransferProgress, readTransferQueueSnapshot, writeTransferQueueSnapshot } from '../../lib/transferQueue'
 import type { TransferProgressPayload } from '../../types/domain'
 import { TransferProgressModal } from './TransferProgressModal'
 
@@ -76,9 +76,12 @@ export function TransferWindowPage() {
         return
       }
 
-      const transferPayload = aggregateBatchProgress(payload) ?? payload
-      const pendingItem = pendingItemsRef.current.get(transferPayload.transferId)
-      pendingItemsRef.current.set(transferPayload.transferId, mergeTransferProgress(pendingItem, transferPayload))
+      const aggregatePayload = aggregateBatchProgress(payload)
+      const transferPayloads = aggregatePayload ? [payload, aggregatePayload] : [payload]
+      for (const transferPayload of transferPayloads) {
+        const pendingItem = pendingItemsRef.current.get(transferPayload.transferId)
+        pendingItemsRef.current.set(transferPayload.transferId, mergeTransferProgress(pendingItem, transferPayload))
+      }
 
       if (flushFrameRef.current === null) {
         flushFrameRef.current = window.requestAnimationFrame(flushPendingItems)
@@ -106,15 +109,18 @@ export function TransferWindowPage() {
       return sorted
     }
 
-    return sorted.filter((item) => item.transferId === transferId)
+    return sorted.filter((item) => {
+      if (item.transferId === transferId) {
+        return true
+      }
+
+      return item.transferId.startsWith(`${transferId}::item::`) && item.state === 'error'
+    })
   }, [items, transferId])
-  const activeItems = useMemo(() => {
-    return orderedItems.filter((item) => item.state === 'queued' || item.state === 'running')
-  }, [orderedItems])
-  const allItemsFinished = orderedItems.length > 0 && activeItems.length === 0
+  const allItemsCompleted = orderedItems.length > 0 && orderedItems.every((item) => item.state === 'completed')
 
   useEffect(() => {
-    if (!allItemsFinished) {
+    if (!allItemsCompleted) {
       return
     }
 
@@ -123,7 +129,7 @@ export function TransferWindowPage() {
     }, 2000)
 
     return () => window.clearTimeout(closeTimer)
-  }, [allItemsFinished])
+  }, [allItemsCompleted])
 
   function handleCancelTransfer(item: TransferProgressPayload) {
     void cancelTransfer(item.transferId)
@@ -141,6 +147,44 @@ export function TransferWindowPage() {
     })
   }
 
+  function handleRetryTransfer(item: TransferProgressPayload) {
+    if (item.retryable !== true || item.state !== 'error') {
+      return
+    }
+
+    setItems((current) => {
+      const next = {
+        ...current,
+        [item.transferId]: {
+          ...item,
+          state: 'queued',
+          transferredBytes: 0,
+          message: TRANSFER_RETRY_MESSAGE,
+          retryable: false,
+        } satisfies TransferProgressPayload,
+      }
+      writeTransferQueueSnapshot(next)
+      return next
+    })
+
+    void retryTransfer(item.transferId).catch((error) => {
+      setItems((current) => {
+        const next = {
+          ...current,
+          [item.transferId]: mergeTransferProgress(current[item.transferId], {
+            ...item,
+            state: 'error',
+            transferredBytes: 0,
+            message: error instanceof Error ? error.message : 'Unable to retry transfer.',
+            retryable: item.retryable,
+          }),
+        }
+        writeTransferQueueSnapshot(next)
+        return next
+      })
+    })
+  }
+
   return (
     <div className="transfer-window-page">
       <TransferProgressModal
@@ -148,6 +192,7 @@ export function TransferWindowPage() {
         open
         embedded
         onCancel={handleCancelTransfer}
+        onRetry={handleRetryTransfer}
         onClose={() => {
           closeCurrentTransferWindow()
         }}

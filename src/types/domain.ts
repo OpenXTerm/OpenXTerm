@@ -203,6 +203,14 @@ export interface FileDownloadResult {
   savedTo: string
 }
 
+export interface DownloadTargetInspection {
+  fileName: string
+  path: string
+  exists: boolean
+  suggestedFileName: string
+  suggestedPath: string
+}
+
 export interface RemoteDragEntry {
   remotePath: string
   fileName: string
@@ -242,4 +250,5 @@ export interface TransferProgressPayload {
   message: string
   localPath?: string
   itemCount?: number
+  retryable?: boolean
 }

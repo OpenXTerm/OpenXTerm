@@ -76,7 +76,7 @@ OpenXTerm is independent software. It is not affiliated with, endorsed by, or co
 
 - Secrets are not yet stored through platform credential stores.
 - SFTP authentication reuse needs more real-world hardening, especially on Windows where helper connections still cannot recover a password after the originating SSH tab closes.
-- File transfer cancel/retry/overwrite conflict handling needs a dedicated pass.
+- File transfer edge cases still need hardening around disconnects, permissions, and low disk space.
 - Packaging/signing/notarization is not release-ready.
 - GitHub Releases are currently expected to ship unsigned / unnotarized artifacts until signing secrets and release hardening are added.
 - Storage migrations need versioning before stable release.
@@ -180,6 +180,8 @@ Goal: SFTP should cover common daily file-management tasks.
 - Sortable remote file table columns.
 - Manual remote path input.
 - Linked SFTP can follow the active remote terminal directory.
+- Overwrite/skip/rename conflict handling.
+- Retry failed transfer from the transfer window.
 
 ### In Progress
 
@@ -191,8 +193,6 @@ Goal: SFTP should cover common daily file-management tasks.
 - Chmod support.
 - Clickable breadcrumb navigation.
 - Remote folder download hardening.
-- Overwrite/skip/rename conflict handling.
-- Retry failed transfer.
 - Better permission/no-space/disconnect errors.
 - Better Windows auth guidance when terminal password entry cannot be reused.
 
