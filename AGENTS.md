@@ -60,6 +60,7 @@ CI/CD workflow:
 - [`src/App.tsx`](src/App.tsx): top-level wiring, modals, sidebar/workspace composition
 - [`src/state/useOpenXTermStore.ts`](src/state/useOpenXTermStore.ts): central state and most app workflows
 - [`src/components/forms/SessionEditorModal.tsx`](src/components/forms/SessionEditorModal.tsx): compact tabbed session editor, X11 assistant, per-session terminal style, font picker
+- [`src/components/forms/SessionEditorTabs.tsx`](src/components/forms/SessionEditorTabs.tsx): session editor tab panels for general, connection, terminal, and advanced settings
 - [`src/components/forms/sessionEditorHelpers.ts`](src/components/forms/sessionEditorHelpers.ts): pure session-editor draft/default/preset helpers
 - [`src/components/forms/AppLockOverlay.tsx`](src/components/forms/AppLockOverlay.tsx): lock screen for system auth / Touch ID / PIN flows
 - [`src/components/sidebar/Sidebar.tsx`](src/components/sidebar/Sidebar.tsx): sessions tree, session-folder drag/drop, SFTP sidebar, tools, macros
@@ -67,6 +68,8 @@ CI/CD workflow:
 - [`src/components/workspace/Workspace.tsx`](src/components/workspace/Workspace.tsx): active tab rendering
 - [`src/components/workspace/TerminalSurface.tsx`](src/components/workspace/TerminalSurface.tsx): xterm host, stopped-session UX, per-session appearance application
 - [`src/components/workspace/FileBrowserView.tsx`](src/components/workspace/FileBrowserView.tsx): remote directory UI, upload/download/drag flows
+- [`src/components/workspace/FileTable.tsx`](src/components/workspace/FileTable.tsx): remote file table rendering, column headers, selection, sorting UI, and row context-menu wiring
+- [`src/components/workspace/fileTableModel.ts`](src/components/workspace/fileTableModel.ts): file table sort types and column width constants
 - [`src/hooks/useSftpConflictResolver.ts`](src/hooks/useSftpConflictResolver.ts): shared SFTP upload/download conflict resolution
 - [`src/hooks/useRemotePropertiesWindow.ts`](src/hooks/useRemotePropertiesWindow.ts): shared remote properties OS-window/fallback modal handling
 - [`src/lib/bridge.ts`](src/lib/bridge.ts): Tauri invoke/listen boundary

@@ -35,6 +35,8 @@ OpenXTerm is independent software. It is not affiliated with, endorsed by, or co
 - Kept X11 failure detection pattern matching data-driven and moved the remaining inline request-failure match into the pattern table.
 - Introduced first-pass CSS color variables for the core dark surface, border, hover, text, and accent colors.
 - Split session editor defaults, draft creation, terminal presets, and small tab/font helpers into a pure helper module.
+- Split the session editor tab panels into focused components so `SessionEditorModal.tsx` now owns state/effects/form composition instead of all tab JSX.
+- Split workspace file table rendering out of `FileBrowserView.tsx` while keeping transfer and directory-operation state in the container.
 
 ### Codebase Refactor Backlog
 

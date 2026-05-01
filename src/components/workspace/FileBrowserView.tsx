@@ -10,7 +10,7 @@ import {
   type FormEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react'
-import { ArrowDownToLine, ArrowUp, Copy, Eye, FileText, Folder, FolderPlus, Info, LoaderCircle, RefreshCw, Trash2, Upload } from 'lucide-react'
+import { ArrowDownToLine, ArrowUp, Copy, Eye, FolderPlus, Info, LoaderCircle, RefreshCw, Trash2, Upload } from 'lucide-react'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
 
 import {
@@ -31,17 +31,16 @@ import type { RemoteDirectorySnapshot, RemoteFileEntry, SessionDefinition } from
 import { useOpenXTermStore } from '../../state/useOpenXTermStore'
 import { RemoteEntryPropertiesModal } from './RemoteEntryPropertiesModal'
 import { FileConflictModal } from './FileConflictModal'
+import {
+  FILE_TABLE_DEFAULT_COLUMN_WIDTHS,
+  FILE_TABLE_MIN_COLUMN_WIDTHS,
+  type FileSortKey,
+  type SortDirection,
+} from './fileTableModel'
+import { FileTable } from './FileTable'
 
 interface FileBrowserViewProps {
   session: SessionDefinition
-}
-
-type FileSortKey = 'name' | 'size' | 'modified' | 'owner' | 'group' | 'access'
-type SortDirection = 'asc' | 'desc'
-
-interface FileTableColumn {
-  key: FileSortKey
-  label: string
 }
 
 interface FileContextMenuState {
@@ -49,17 +48,6 @@ interface FileContextMenuState {
   x: number
   y: number
 }
-
-const FILE_TABLE_COLUMNS: FileTableColumn[] = [
-  { key: 'name', label: 'Name' },
-  { key: 'size', label: 'Size (KB)' },
-  { key: 'modified', label: 'Last modified' },
-  { key: 'owner', label: 'Owner' },
-  { key: 'group', label: 'Group' },
-  { key: 'access', label: 'Access' },
-]
-const FILE_TABLE_DEFAULT_COLUMN_WIDTHS = [240, 82, 142, 86, 86, 108]
-const FILE_TABLE_MIN_COLUMN_WIDTHS = [150, 58, 96, 58, 58, 78]
 
 function parentPathOf(path: string) {
   if (!path || path === '/') {
@@ -80,18 +68,6 @@ function movedEnough(startX: number, startY: number, currentX: number, currentY:
 
 function itemCountLabel(count: number) {
   return count === 1 ? '1 item' : `${count} items`
-}
-
-function remoteSizeKbLabel(entry: RemoteFileEntry) {
-  if (entry.kind === 'folder') {
-    return ''
-  }
-
-  if (typeof entry.sizeBytes === 'number') {
-    return Math.max(1, Math.ceil(entry.sizeBytes / 1024)).toLocaleString()
-  }
-
-  return entry.sizeLabel === '--' ? '' : entry.sizeLabel
 }
 
 function isHiddenEntry(entry: RemoteFileEntry) {
@@ -791,71 +767,23 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
             <span>{session.kind.toUpperCase()} {snapshot?.path ?? currentPath}</span>
             {busy && <LoaderCircle size={14} className="spinning" />}
           </div>
-          <div className="file-list" style={fileTableStyle}>
-            {visibleEntries.length ? (
-              <>
-                <div className="file-row file-row-header" role="row">
-                  {FILE_TABLE_COLUMNS.map((column, index) => (
-                    <span key={column.key} className="file-table-header-cell">
-                      <button
-                        className="file-table-sort-button"
-                        type="button"
-                        aria-label={`Sort by ${column.label}`}
-                        onClick={() => handleSortColumn(column.key)}
-                      >
-                        <span>{column.label}</span>
-                        {sortState.key === column.key && (
-                          <span aria-hidden="true">{sortState.direction === 'asc' ? '^' : 'v'}</span>
-                        )}
-                      </button>
-                      <button
-                        className="file-table-column-resizer"
-                        type="button"
-                        aria-label={`Resize ${column.label} column`}
-                        onPointerDown={(event) => handleColumnResizeStart(index, event)}
-                      />
-                    </span>
-                  ))}
-                </div>
-                {visibleEntries.map((entry) => (
-                  <button
-                    key={entry.path}
-                    type="button"
-                    className={`file-row ${selectedPath === entry.path ? 'selected' : ''} ${entry.kind === 'file' ? 'draggable' : ''}`}
-                    onPointerDown={(event) => handleNativeDragPointerDown(event, entry)}
-                    onClick={() => setSelectedPath(entry.path)}
-                    onContextMenu={(event) => {
-                      event.preventDefault()
-                      event.stopPropagation()
-                      setSelectedPath(entry.path)
-                      setContextMenu({ entry, x: event.clientX, y: event.clientY })
-                    }}
-                    onDoubleClick={() => {
-                      if (entry.kind === 'folder') {
-                        void loadDirectory(entry.path)
-                      }
-                    }}
-                  >
-                    <div className="file-row-name">
-                      {entry.kind === 'folder' ? <Folder size={14} /> : <FileText size={14} />}
-                      <span>{entry.name}</span>
-                    </div>
-                    <span>{remoteSizeKbLabel(entry)}</span>
-                    <span>{entry.modifiedLabel}</span>
-                    <span>{entry.ownerLabel ?? ''}</span>
-                    <span>{entry.groupLabel ?? ''}</span>
-                    <span>{entry.accessLabel ?? ''}</span>
-                  </button>
-                ))}
-              </>
-            ) : (
-              <div className="file-empty">
-                {snapshot?.entries.length && !showHidden
-                  ? 'Only hidden files are present. Turn on Show hidden to view them.'
-                  : 'This directory is empty.'}
-              </div>
-            )}
-          </div>
+          <FileTable
+            entries={visibleEntries}
+            rawEntryCount={snapshot?.entries.length ?? 0}
+            selectedPath={selectedPath}
+            showHidden={showHidden}
+            sortState={sortState}
+            style={fileTableStyle}
+            onColumnResizeStart={handleColumnResizeStart}
+            onNativeDragPointerDown={handleNativeDragPointerDown}
+            onOpenContextMenu={(entry, x, y) => {
+              setSelectedPath(entry.path)
+              setContextMenu({ entry, x, y })
+            }}
+            onOpenDirectory={(entry) => void loadDirectory(entry.path)}
+            onSelectEntry={(entry) => setSelectedPath(entry.path)}
+            onSortColumn={handleSortColumn}
+          />
           {dropActive && (
             <div className="file-drop-overlay">
               <strong>Drop files to upload</strong>
