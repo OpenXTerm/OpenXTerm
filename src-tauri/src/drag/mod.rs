@@ -16,7 +16,7 @@ use std::{
 };
 
 #[cfg(target_os = "windows")]
-use libssh_rs::{OpenFlags, Sftp, SftpFile};
+use libssh_rs::{FileType, OpenFlags, Sftp, SftpFile};
 use tauri::{AppHandle, Window};
 #[cfg(target_os = "windows")]
 use windows::Win32::{
@@ -174,20 +174,10 @@ fn start_native_file_drag_impl(
         return Ok(false);
     }
 
-    let drag_entries = entries
-        .iter()
-        .map(|entry| {
-            if entry.kind != "file" {
-                return Err("Windows drag-out currently exports files only.".to_string());
-            }
-
-            Ok(WindowsVirtualDragEntry {
-                remote_path: entry.remote_path.clone(),
-                file_name: entry.file_name.clone(),
-                size_bytes: entry.size_bytes,
-            })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    let drag_entries = collect_windows_virtual_drag_entries(session, entries)?;
+    if drag_entries.is_empty() {
+        return Err("Windows drag-out folder does not contain downloadable files.".to_string());
+    }
 
     let data_object: IDataObject =
         WindowsVirtualFileDataObject::new(session.clone(), drag_entries).into();
@@ -318,6 +308,138 @@ struct WindowsVirtualDragEntry {
     remote_path: String,
     file_name: String,
     size_bytes: Option<u64>,
+}
+
+#[cfg(target_os = "windows")]
+fn collect_windows_virtual_drag_entries(
+    session: &SessionDefinition,
+    entries: &[RemoteDragEntry],
+) -> Result<Vec<WindowsVirtualDragEntry>, String> {
+    let mut drag_entries = Vec::new();
+    let mut sftp = None;
+
+    for entry in entries {
+        match entry.kind.as_str() {
+            "file" => drag_entries.push(WindowsVirtualDragEntry {
+                remote_path: entry.remote_path.clone(),
+                file_name: sanitize_windows_virtual_file_name(&entry.file_name),
+                size_bytes: entry.size_bytes,
+            }),
+            "folder" => {
+                if sftp.is_none() {
+                    sftp = Some(open_embedded_sftp(
+                        session,
+                        None,
+                        "Windows drag-out folder enumeration",
+                    )?);
+                }
+                let folder_name = sanitize_windows_virtual_file_name(
+                    entry
+                        .file_name
+                        .trim()
+                        .strip_suffix('/')
+                        .unwrap_or(&entry.file_name),
+                );
+                let sftp = sftp
+                    .as_ref()
+                    .ok_or_else(|| "Windows drag-out SFTP session was not opened".to_string())?;
+                collect_windows_virtual_drag_folder(
+                    sftp,
+                    &entry.remote_path,
+                    &folder_name,
+                    &mut drag_entries,
+                )?;
+            }
+            other => {
+                return Err(format!(
+                    "Windows drag-out does not support remote entry kind {other}"
+                ));
+            }
+        }
+    }
+
+    Ok(drag_entries)
+}
+
+#[cfg(target_os = "windows")]
+fn collect_windows_virtual_drag_folder(
+    sftp: &Sftp,
+    remote_dir: &str,
+    relative_dir: &str,
+    out: &mut Vec<WindowsVirtualDragEntry>,
+) -> Result<(), String> {
+    let entries = sftp
+        .read_dir(remote_dir)
+        .map_err(|error| format!("failed to list remote drag-out folder {remote_dir}: {error}"))?;
+
+    for entry in entries {
+        let Some(name) = entry.name() else {
+            continue;
+        };
+        if name == "." || name == ".." {
+            continue;
+        }
+
+        let remote_path = join_remote_drag_path(remote_dir, name);
+        let relative_path =
+            join_windows_virtual_path(relative_dir, &sanitize_windows_virtual_file_name(name));
+        if is_windows_sftp_directory(entry.file_type()) {
+            collect_windows_virtual_drag_folder(sftp, &remote_path, &relative_path, out)?;
+            continue;
+        }
+
+        out.push(WindowsVirtualDragEntry {
+            remote_path,
+            file_name: relative_path,
+            size_bytes: entry.len(),
+        });
+    }
+
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn is_windows_sftp_directory(file_type: Option<FileType>) -> bool {
+    matches!(file_type, Some(FileType::Directory))
+}
+
+#[cfg(target_os = "windows")]
+fn join_remote_drag_path(base: &str, name: &str) -> String {
+    if base == "/" {
+        format!("/{name}")
+    } else {
+        format!("{}/{name}", base.trim_end_matches('/'))
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn join_windows_virtual_path(base: &str, name: &str) -> String {
+    if base.is_empty() {
+        name.to_string()
+    } else {
+        format!("{base}\\{name}")
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn sanitize_windows_virtual_file_name(name: &str) -> String {
+    let sanitized = name
+        .chars()
+        .map(|ch| match ch {
+            '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' => '_',
+            _ if ch.is_control() => '_',
+            _ => ch,
+        })
+        .collect::<String>()
+        .trim()
+        .trim_matches('.')
+        .to_string();
+
+    if sanitized.is_empty() {
+        "download".into()
+    } else {
+        sanitized
+    }
 }
 
 #[cfg(target_os = "windows")]

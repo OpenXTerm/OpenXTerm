@@ -16,7 +16,6 @@ import { getCurrentWebview } from '@tauri-apps/api/webview'
 import {
   createRemoteDirectory,
   deleteRemoteEntry,
-  inspectDownloadTarget,
   downloadRemoteFile,
   listRemoteDirectory,
   startNativeFileDrag,
@@ -24,18 +23,10 @@ import {
   uploadRemoteFile,
 } from '../../lib/bridge'
 import { logOpenXTermError } from '../../lib/errorLog'
-import {
-  normalizedNameKey,
-  uniqueConflictName,
-  type FileConflictRequest,
-  type FileConflictResolution,
-} from '../../lib/fileConflict'
-import {
-  remotePropertiesResultKey,
-  requestRemoteEntryPropertiesWindow,
-  type RemotePropertiesWindowResult,
-} from '../../lib/remotePropertiesWindow'
+import { useRemotePropertiesWindow } from '../../hooks/useRemotePropertiesWindow'
+import { localPathBaseName } from '../../lib/localPath'
 import { queueBatchTransfers } from '../../lib/transferBatch'
+import { useSftpConflictResolver } from '../../hooks/useSftpConflictResolver'
 import type { RemoteDirectorySnapshot, RemoteFileEntry, SessionDefinition } from '../../types/domain'
 import { useOpenXTermStore } from '../../state/useOpenXTermStore'
 import { RemoteEntryPropertiesModal } from './RemoteEntryPropertiesModal'
@@ -213,9 +204,6 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
   })
   const [pathDraft, setPathDraft] = useState('/')
   const [contextMenu, setContextMenu] = useState<FileContextMenuState | null>(null)
-  const [propertiesEntry, setPropertiesEntry] = useState<RemoteFileEntry | null>(null)
-  const [conflictRequest, setConflictRequest] = useState<FileConflictRequest | null>(null)
-  const conflictResolverRef = useRef<((resolution: FileConflictResolution) => void) | null>(null)
 
   const visibleEntries = useMemo(() => {
     const entries = snapshot?.entries ?? []
@@ -236,118 +224,12 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
     }) as CSSProperties,
     [columnWidths],
   )
-
-  const askFileConflict = useCallback((request: FileConflictRequest) => {
-    setConflictRequest(request)
-    return new Promise<FileConflictResolution>((resolve) => {
-      conflictResolverRef.current = resolve
-    })
-  }, [])
-
-  function handleConflictResolve(resolution: FileConflictResolution) {
-    conflictResolverRef.current?.(resolution)
-    conflictResolverRef.current = null
-    setConflictRequest(null)
-  }
-
-  const hasSnapshotEntryNamed = useCallback((name: string) => {
-    const key = normalizedNameKey(name)
-    return (snapshot?.entries ?? []).some((entry) => normalizedNameKey(entry.name) === key)
-  }, [snapshot?.entries])
-
-  const resolveUploadTargets = useCallback(async <T extends { name: string },>(
-    items: T[],
-    targetPathForName: (name: string) => string,
-  ) => {
-    const reservedNames = new Set<string>()
-    let applyToAll: FileConflictResolution | null = null
-    const resolved: Array<T & { targetName: string; conflictAction: 'overwrite' | 'error' }> = []
-
-    for (const item of items) {
-      const nameTaken = (candidate: string) => hasSnapshotEntryNamed(candidate) || reservedNames.has(normalizedNameKey(candidate))
-      let targetName = item.name
-      let conflictAction: 'overwrite' | 'error' = 'error'
-
-      if (nameTaken(targetName)) {
-        const suggestedName = uniqueConflictName(targetName, nameTaken)
-        const resolution: FileConflictResolution = applyToAll ?? await askFileConflict({
-          itemName: targetName,
-          targetPath: targetPathForName(targetName),
-          suggestedName,
-          operation: 'upload',
-          allowApplyToAll: items.length > 1,
-        })
-
-        if (resolution.applyToAll) {
-          applyToAll = resolution
-        }
-
-        if (resolution.action === 'skip') {
-          continue
-        }
-
-        if (resolution.action === 'rename') {
-          targetName = resolution.applyToAll ? suggestedName : (resolution.newName ?? suggestedName)
-          if (nameTaken(targetName)) {
-            targetName = uniqueConflictName(targetName, nameTaken)
-          }
-        } else {
-          conflictAction = 'overwrite'
-        }
-      }
-
-      reservedNames.add(normalizedNameKey(targetName))
-      resolved.push({ ...item, targetName, conflictAction })
-    }
-
-    return resolved
-  }, [askFileConflict, hasSnapshotEntryNamed])
-
-  const resolveDownloadTarget = useCallback(async (
-    entry: RemoteFileEntry,
-    allowApplyToAll: boolean,
-    applyToAll: FileConflictResolution | null = null,
-  ) => {
-    const inspection = await inspectDownloadTarget(entry.name)
-    if (!inspection.exists) {
-      return {
-        targetName: inspection.fileName,
-        conflictAction: 'error' as const,
-        resolution: applyToAll,
-      }
-    }
-
-    const resolution: FileConflictResolution = applyToAll ?? await askFileConflict({
-      itemName: inspection.fileName,
-      targetPath: inspection.path,
-      suggestedName: inspection.suggestedFileName,
-      operation: 'download',
-      allowApplyToAll,
-    })
-
-    if (resolution.action === 'skip') {
-      return {
-        targetName: '',
-        conflictAction: 'error' as const,
-        skipped: true,
-        resolution: resolution.applyToAll ? resolution : applyToAll,
-      }
-    }
-
-    if (resolution.action === 'rename') {
-      return {
-        targetName: resolution.applyToAll ? inspection.suggestedFileName : (resolution.newName ?? inspection.suggestedFileName),
-        conflictAction: 'error' as const,
-        resolution: resolution.applyToAll ? resolution : applyToAll,
-      }
-    }
-
-    return {
-      targetName: inspection.fileName,
-      conflictAction: 'overwrite' as const,
-      resolution: resolution.applyToAll ? resolution : applyToAll,
-    }
-  }, [askFileConflict])
+  const {
+    conflictRequest,
+    resolveConflict: handleConflictResolve,
+    resolveDownloadTarget,
+    resolveUploadTargets,
+  } = useSftpConflictResolver(snapshot?.entries ?? [], { compareNames: 'normalized' })
 
   function handleColumnResizeStart(index: number, event: ReactPointerEvent<HTMLButtonElement>) {
     event.preventDefault()
@@ -406,6 +288,26 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
       setBusy(false)
     }
   }, [session])
+  const setSelectedEntryPaths = useCallback((paths: string[]) => {
+    setSelectedPath(paths[0] ?? null)
+  }, [])
+  const {
+    closeProperties,
+    handlePropertiesApplied,
+    openProperties,
+    propertiesEntry,
+  } = useRemotePropertiesWindow({
+    clearSelectionOnStorageResult: false,
+    closeContextMenu: () => setContextMenu(null),
+    currentPath,
+    errorContext: fileBrowserErrorContext,
+    errorScope: 'file-browser.properties-result',
+    loadDirectory: (_session, path) => loadDirectory(path),
+    selectedSession: session,
+    sessions: [session],
+    setMessage,
+    setSelectedEntryPaths,
+  })
 
   useEffect(() => {
     setSnapshot(null)
@@ -451,30 +353,6 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
       window.removeEventListener('keydown', handleKeyDown)
     }
   }, [contextMenu])
-
-  useEffect(() => {
-    function handleStorage(event: StorageEvent) {
-      if (event.key !== remotePropertiesResultKey() || !event.newValue) {
-        return
-      }
-
-      try {
-        const result = JSON.parse(event.newValue) as RemotePropertiesWindowResult
-        if (result.sessionId !== session.id) {
-          return
-        }
-
-        void loadDirectory(result.currentPath).then(() => {
-          setMessage(result.message)
-        })
-      } catch (error) {
-        logOpenXTermError('file-browser.properties-result', error, fileBrowserErrorContext(session, 'properties-result', currentPath))
-      }
-    }
-
-    window.addEventListener('storage', handleStorage)
-    return () => window.removeEventListener('storage', handleStorage)
-  }, [currentPath, loadDirectory, session])
 
   useEffect(() => {
     if (!('__TAURI_INTERNALS__' in window)) {
@@ -525,7 +403,7 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
           const uploadItems = await resolveUploadTargets(
             droppedPaths.map((localPath) => ({
               localPath,
-              name: localPath.split('/').filter(Boolean).at(-1) ?? 'upload.bin',
+              name: localPathBaseName(localPath),
             })),
             (name) => currentPath === '/' ? `/${name}` : `${currentPath}/${name}`,
           )
@@ -678,21 +556,6 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
       logOpenXTermError('file-browser.copy-path', error, fileBrowserErrorContext(session, 'copy-path', pathToCopy))
       setMessage(error instanceof Error ? error.message : 'Unable to copy remote path.')
     }
-  }
-
-  async function handleOpenProperties(entry: RemoteFileEntry) {
-    setSelectedPath(entry.path)
-    setContextMenu(null)
-    const opened = await requestRemoteEntryPropertiesWindow(session, entry, currentPath)
-    if (!opened) {
-      setPropertiesEntry(entry)
-    }
-  }
-
-  async function handlePropertiesApplied(nextMessage: string) {
-    setPropertiesEntry(null)
-    await loadDirectory(currentPath)
-    setMessage(nextMessage)
   }
 
   async function handlePathSubmit(event: FormEvent<HTMLFormElement>) {
@@ -860,7 +723,7 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
           <Copy size={14} />
           <span>Copy path</span>
         </button>
-        <button type="button" onClick={() => selectedEntry && void handleOpenProperties(selectedEntry)} disabled={busy || !selectedEntry}>
+        <button type="button" onClick={() => selectedEntry && void openProperties(selectedEntry)} disabled={busy || !selectedEntry}>
           <Info size={14} />
           <span>Properties</span>
         </button>
@@ -1031,7 +894,7 @@ ${message || 'Drop local files here to upload or select a file to drag it back t
           onClick={(event) => event.stopPropagation()}
           onContextMenu={(event) => event.preventDefault()}
         >
-          <button type="button" role="menuitem" onClick={() => void handleOpenProperties(contextMenu.entry)}>
+          <button type="button" role="menuitem" onClick={() => void openProperties(contextMenu.entry)}>
             <Info size={14} />
             <span>Properties</span>
           </button>
@@ -1044,7 +907,7 @@ ${message || 'Drop local files here to upload or select a file to drag it back t
           entry={propertiesEntry}
           currentPath={currentPath}
           busy={busy}
-          onClose={() => setPropertiesEntry(null)}
+          onClose={closeProperties}
           onApplied={handlePropertiesApplied}
         />
       )}

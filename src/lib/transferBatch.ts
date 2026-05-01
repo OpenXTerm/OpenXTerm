@@ -4,6 +4,7 @@ const BATCH_CHILD_MARKER = '::item::'
 
 const batchParents = new Map<string, TransferProgressPayload>()
 const batchChildren = new Map<string, Map<string, TransferProgressPayload>>()
+const batchParentTotalBytes = new Map<string, number>()
 
 type BatchTransferPrefix = TransferProgressPayload['direction'] | 'drag-export'
 type TransferPayloadDraft = Omit<TransferProgressPayload, 'transferId'>
@@ -51,6 +52,13 @@ export function isBatchChildTransferId(transferId: string) {
 export function rememberBatchTransfer(item: TransferProgressPayload) {
   if (typeof item.itemCount === 'number' && item.itemCount > 1) {
     batchParents.set(item.transferId, item)
+    if (item.state === 'queued') {
+      if (typeof item.totalBytes === 'number') {
+        batchParentTotalBytes.set(item.transferId, item.totalBytes)
+      } else {
+        batchParentTotalBytes.delete(item.transferId)
+      }
+    }
   }
 }
 
@@ -116,9 +124,11 @@ export function aggregateBatchProgress(payload: TransferProgressPayload) {
   const allCompleted = allKnownChildrenReported && completedChildren.length === expectedItems
   const hasRunningChild = children.some((item) => item.state === 'running')
   const hasStartedChild = children.some((item) => item.state !== 'queued')
+  const parentWasActive = parent?.state === 'running' || parent?.state === 'completed'
   const knownChildTotals = children.map((item) => item.totalBytes).filter((value): value is number => typeof value === 'number')
-  const parentTotal = typeof parent?.totalBytes === 'number'
-    ? parent.totalBytes
+  const explicitParentTotal = batchParentTotalBytes.get(parsed.parentId)
+  const parentTotal = typeof explicitParentTotal === 'number'
+    ? explicitParentTotal
     : knownChildTotals.length > 0
       ? knownChildTotals.reduce((sum, value) => sum + value, 0)
       : undefined
@@ -131,13 +141,16 @@ export function aggregateBatchProgress(payload: TransferProgressPayload) {
       return sum + item.transferredBytes
     }, 0),
   )
-  const currentChild = children.find((item) => item.state === 'running') ?? children.at(-1) ?? payload
+  const currentChild = children.find((item) => item.state === 'running')
+    ?? [...children].reverse().find((item) => item.state !== 'queued')
+    ?? children.at(-1)
+    ?? payload
   const itemWord = expectedItems === 1 ? 'item' : 'items'
   const state = errorChild
     ? 'error'
     : allCompleted
       ? 'completed'
-      : hasRunningChild || hasStartedChild
+      : hasRunningChild || hasStartedChild || parentWasActive
         ? 'running'
         : 'queued'
 
@@ -147,7 +160,7 @@ export function aggregateBatchProgress(payload: TransferProgressPayload) {
       ? `${expectedItems} ${itemWord} complete`
       : `${completedChildren.length}/${expectedItems} ${itemWord}; ${currentChild.message}`
 
-  return {
+  const aggregate = {
     transferId: parsed.parentId,
     fileName: parent?.fileName ?? `${expectedItems} ${itemWord}`,
     remotePath: parent?.remotePath ?? currentChild.remotePath,
@@ -160,4 +173,7 @@ export function aggregateBatchProgress(payload: TransferProgressPayload) {
     localPath: parent?.localPath,
     itemCount: expectedItems,
   } satisfies TransferProgressPayload
+
+  batchParents.set(parsed.parentId, aggregate)
+  return aggregate
 }

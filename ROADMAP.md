@@ -17,9 +17,41 @@ OpenXTerm is independent software. It is not affiliated with, endorsed by, or co
 ### Highest Priority Next
 
 - Refactor the largest reliability-sensitive modules in small reviewed steps:
-  - split `src/components/sidebar/Sidebar.tsx` into focused sidebar sections and hooks without changing SFTP/session behavior;
+  - finish the remaining frontend SFTP consolidation by extracting shared upload/download, selection, and table helpers from `src/components/sidebar/Sidebar.tsx` and `src/components/workspace/FileBrowserView.tsx`;
   - split `src/state/useOpenXTermStore.ts` into UI/domain/transfer slices while preserving existing selectors and persistence behavior;
   - extract shared transfer lifecycle helpers from `src-tauri/src/transfer/mod.rs` with manual SFTP upload/download/retry/cancel smoke tests after each step.
+
+### Recent Refactor Progress
+
+- Split large sidebar UI sections out of `src/components/sidebar/Sidebar.tsx` into focused sidebar components.
+- Extracted session-tree drag/drop state into `src/components/sidebar/useSessionTreeDrag.ts`.
+- Extracted SFTP selection, table sizing/sorting, conflict resolution, properties-window handling, session import handling, and follow-remote-terminal behavior into hooks/utilities.
+- Shared SFTP conflict resolution between sidebar SFTP and workspace file browser through `src/hooks/useSftpConflictResolver.ts`.
+- Shared remote properties-window handling between sidebar SFTP and workspace file browser through `src/hooks/useRemotePropertiesWindow.ts`.
+- Fixed Windows drag-in basename handling for local paths with backslashes through `src/lib/localPath.ts`.
+- Fixed batch transfer aggregation so multi-item downloads do not regress from running progress back to queued/waiting.
+- Added Windows SFTP folder drag-out support by expanding dragged folders into virtual file entries for Explorer.
+
+### Codebase Refactor Backlog
+
+- Frontend SFTP consolidation:
+  - finish reducing `Sidebar.tsx` to orchestration only; current pass reduced it to roughly 1.1k lines, but upload/download/delete/create/rename/native drag wiring still lives there;
+  - continue reducing `FileBrowserView.tsx`; current pass reduced it below 1k lines and shares conflict/properties hooks, but table controls, selection, and upload/download orchestration are still local;
+  - extract shared SFTP upload/download orchestration only after another smoke pass for drag-in, drag-out, batch downloads, conflict overwrite/skip/rename, retry, and cancel.
+- Backend transfer layer:
+  - split `src-tauri/src/transfer/mod.rs` into transfer lifecycle/progress, upload, download, retry/cancel, listing, and transfer-window modules;
+  - avoid behavior rewrites until each extracted path has manual upload/download/retry/cancel smoke coverage.
+- Store architecture:
+  - split `src/state/useOpenXTermStore.ts` into UI, domain, transfer/status, and runtime-listener slices;
+  - preserve persisted state shape and public selectors during the first pass.
+- Session editor:
+  - split `src/components/forms/SessionEditorModal.tsx` into tab components and focused hooks for terminal presets, X11 settings, and font picker state.
+- Styling:
+  - reduce `src/index.css` by grouping component styles and introducing shared color/spacing variables before theme work.
+- Runtime and parsing cleanup:
+  - keep X11 diagnostic string matching data-driven rather than long inline condition chains;
+  - add lightweight runtime guards for persisted JSON/localStorage boundaries instead of unchecked `as` casts;
+  - continue removing dead runtime metadata paths and platform-specific temp-path assumptions when found.
 
 ### Done
 
