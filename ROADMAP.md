@@ -37,6 +37,7 @@ OpenXTerm is independent software. It is not affiliated with, endorsed by, or co
 - Split session editor defaults, draft creation, terminal presets, and small tab/font helpers into a pure helper module.
 - Split the session editor tab panels into focused components so `SessionEditorModal.tsx` now owns state/effects/form composition instead of all tab JSX.
 - Split workspace file table rendering out of `FileBrowserView.tsx` while keeping transfer and directory-operation state in the container.
+- Started the Zustand store split by extracting public store types and pure helper logic from `useOpenXTermStore.ts`.
 
 ### Codebase Refactor Backlog
 

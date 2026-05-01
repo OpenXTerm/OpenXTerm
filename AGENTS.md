@@ -59,6 +59,8 @@ CI/CD workflow:
 
 - [`src/App.tsx`](src/App.tsx): top-level wiring, modals, sidebar/workspace composition
 - [`src/state/useOpenXTermStore.ts`](src/state/useOpenXTermStore.ts): central state and most app workflows
+- [`src/state/openXTermStoreTypes.ts`](src/state/openXTermStoreTypes.ts): Zustand store public state/action types and import summary type
+- [`src/state/openXTermStoreHelpers.ts`](src/state/openXTermStoreHelpers.ts): pure store helpers for sorting, folder paths, status mapping, tab seeding, and transfer ordering
 - [`src/components/forms/SessionEditorModal.tsx`](src/components/forms/SessionEditorModal.tsx): compact tabbed session editor, X11 assistant, per-session terminal style, font picker
 - [`src/components/forms/SessionEditorTabs.tsx`](src/components/forms/SessionEditorTabs.tsx): session editor tab panels for general, connection, terminal, and advanced settings
 - [`src/components/forms/sessionEditorHelpers.ts`](src/components/forms/sessionEditorHelpers.ts): pure session-editor draft/default/preset helpers
