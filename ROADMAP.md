@@ -31,6 +31,10 @@ OpenXTerm is independent software. It is not affiliated with, endorsed by, or co
 - Fixed Windows drag-in basename handling for local paths with backslashes through `src/lib/localPath.ts`.
 - Fixed batch transfer aggregation so multi-item downloads do not regress from running progress back to queued/waiting.
 - Added Windows SFTP folder drag-out support by expanding dragged folders into virtual file entries for Explorer.
+- Added runtime guards for remote properties-window `localStorage` JSON payloads/results.
+- Kept X11 failure detection pattern matching data-driven and moved the remaining inline request-failure match into the pattern table.
+- Introduced first-pass CSS color variables for the core dark surface, border, hover, text, and accent colors.
+- Split session editor defaults, draft creation, terminal presets, and small tab/font helpers into a pure helper module.
 
 ### Codebase Refactor Backlog
 
@@ -47,7 +51,7 @@ OpenXTerm is independent software. It is not affiliated with, endorsed by, or co
 - Session editor:
   - split `src/components/forms/SessionEditorModal.tsx` into tab components and focused hooks for terminal presets, X11 settings, and font picker state.
 - Styling:
-  - reduce `src/index.css` by grouping component styles and introducing shared color/spacing variables before theme work.
+  - continue reducing `src/index.css` by grouping component styles and expanding shared color/spacing variables before theme work.
 - Runtime and parsing cleanup:
   - keep X11 diagnostic string matching data-driven rather than long inline condition chains;
   - add lightweight runtime guards for persisted JSON/localStorage boundaries instead of unchecked `as` casts;

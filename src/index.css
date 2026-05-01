@@ -1,8 +1,16 @@
 :root {
   color-scheme: dark;
   font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  background: #111315;
-  color: #e7eaeb;
+  --color-bg: #111315;
+  --color-border: #273034;
+  --color-hover: #20282c;
+  --color-text: #e7eaeb;
+  --color-muted: #cad1d4;
+  --color-accent: #8ff0c1;
+  --color-accent-strong: #7df0b5;
+  --color-accent-surface: #1a4035;
+  background: var(--color-bg);
+  color: var(--color-text);
 }
 
 * {
@@ -15,7 +23,7 @@ body,
   margin: 0;
   min-height: 100%;
   height: 100%;
-  background: #111315;
+  background: var(--color-bg);
 }
 
 body {
@@ -40,20 +48,20 @@ button {
   flex-direction: column;
   height: 100%;
   background:
-    linear-gradient(180deg, rgba(7, 17, 16, 0.96) 0%, rgba(14, 16, 18, 0.98) 14%, #111315 100%);
+    linear-gradient(180deg, rgba(7, 17, 16, 0.96) 0%, rgba(14, 16, 18, 0.98) 14%, var(--color-bg) 100%);
 }
 
 .boot-screen {
   display: grid;
   place-items: center;
   height: 100%;
-  background: #111315;
-  color: #8ff0c1;
+  background: var(--color-bg);
+  color: var(--color-accent);
   font-size: 14px;
 }
 
 .topbar {
-  border-bottom: 1px solid #273034;
+  border-bottom: 1px solid var(--color-border);
   background: rgba(5, 15, 14, 0.95);
 }
 
@@ -86,7 +94,7 @@ button {
 .chrome-action {
   border: 0;
   background: transparent;
-  color: #cad1d4;
+  color: var(--color-muted);
   height: 22px;
   padding: 0 8px;
   border-radius: 6px;
@@ -98,7 +106,7 @@ button {
 }
 
 .topbar-menuitem.active {
-  background: #20282c;
+  background: var(--color-hover);
   color: #eef3f4;
 }
 
@@ -117,7 +125,7 @@ button {
   display: grid;
   gap: 2px;
   padding: 6px;
-  border: 1px solid #273034;
+  border: 1px solid var(--color-border);
   border-radius: 10px;
   background: rgba(9, 18, 20, 0.98);
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.34);
@@ -127,7 +135,7 @@ button {
 .topbar-dropdown-item {
   border: 0;
   background: transparent;
-  color: #cad1d4;
+  color: var(--color-muted);
   min-height: 28px;
   padding: 0 10px;
   border-radius: 6px;
@@ -137,8 +145,8 @@ button {
 }
 
 .chrome-action.accent {
-  background: #1a4035;
-  color: #7df0b5;
+  background: var(--color-accent-surface);
+  color: var(--color-accent-strong);
 }
 
 .topbar-menuitem:hover,
@@ -150,7 +158,7 @@ button {
 .ghost-button:hover,
 .solid-button:hover,
 .modal-close:hover {
-  background: #20282c;
+  background: var(--color-hover);
 }
 
 .sidebar-header-button:disabled,
@@ -187,8 +195,8 @@ button {
   min-height: 0;
   cursor: col-resize;
   background: linear-gradient(180deg, #111417 0%, #151a1d 100%);
-  border-left: 1px solid #20282c;
-  border-right: 1px solid #20282c;
+  border-left: 1px solid var(--color-hover);
+  border-right: 1px solid var(--color-hover);
 }
 
 .sidebar-resizer:hover {
@@ -201,7 +209,7 @@ button {
   align-items: center;
   gap: 4px;
   padding: 6px 0;
-  border-right: 1px solid #20282c;
+  border-right: 1px solid var(--color-hover);
   background: #0a0d0f;
 }
 
@@ -228,7 +236,7 @@ button {
 
 .rail-button.active {
   background: #18302a;
-  color: #8ff0c1;
+  color: var(--color-accent);
 }
 
 .sidebar-panel {
@@ -277,7 +285,7 @@ button {
 .file-toolbar button.active {
   background: #18302a;
   border-color: #2d6a56;
-  color: #8ff0c1;
+  color: var(--color-accent);
 }
 
 .sidebar-icon-button {
@@ -364,7 +372,7 @@ button {
   border: 1px solid #2d6a56;
   border-radius: 6px;
   background: #18302a;
-  color: #8ff0c1;
+  color: var(--color-accent);
   padding: 0 8px;
   font-size: 11px;
   font-weight: 600;
@@ -388,7 +396,7 @@ button {
 .sidebar-sftp-chip.active {
   background: #18302a;
   border-color: #2d6a56;
-  color: #8ff0c1;
+  color: var(--color-accent);
 }
 
 .sidebar-sftp-path,
@@ -401,7 +409,7 @@ button {
 .sidebar-session-note {
   padding: 6px 9px;
   border-bottom: 1px solid #1b2124;
-  color: #8ff0c1;
+  color: var(--color-accent);
   font-size: 11px;
 }
 
@@ -433,7 +441,7 @@ button {
   border: 1px solid #2d6a56;
   border-radius: 6px;
   background: #18302a;
-  color: #8ff0c1;
+  color: var(--color-accent);
   padding: 0 8px;
   font-size: 11px;
   font-weight: 600;
@@ -455,7 +463,7 @@ button {
 
 .sidebar-sftp-path strong {
   flex: 0 0 auto;
-  color: #8ff0c1;
+  color: var(--color-accent);
   font-size: 10px;
   font-weight: 600;
 }
@@ -834,7 +842,7 @@ button {
 
 .sidebar-context-menu button:hover {
   background: #18302a;
-  color: #8ff0c1;
+  color: var(--color-accent);
 }
 
 .sidebar-list.sidebar-drop-active {
@@ -943,7 +951,7 @@ button {
   min-width: 0;
   min-height: 0;
   flex: 1;
-  background: #111315;
+  background: var(--color-bg);
 }
 
 .welcome-pane {
@@ -972,7 +980,7 @@ button {
 
 .home-eyebrow {
   margin: 0;
-  color: #8ff0c1;
+  color: var(--color-accent);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0;
@@ -1023,7 +1031,7 @@ button {
 .home-action.primary {
   border-color: #2c5f4f;
   background: #17352c;
-  color: #8ff0c1;
+  color: var(--color-accent);
 }
 
 .home-action:hover,
@@ -1037,7 +1045,7 @@ button {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  border: 1px solid #273034;
+  border: 1px solid var(--color-border);
   background: #121619;
 }
 
@@ -1095,7 +1103,7 @@ button {
   height: 24px;
   border-radius: 6px;
   background: #17211f;
-  color: #8ff0c1;
+  color: var(--color-accent);
 }
 
 .home-session-main,
@@ -1205,7 +1213,7 @@ button {
 }
 
 .terminal-search-bar button:hover {
-  background: #20282c;
+  background: var(--color-hover);
 }
 
 .terminal-search-toggle {
@@ -1218,7 +1226,7 @@ button {
 
 .terminal-search-feedback {
   max-width: 180px;
-  color: #8ff0c1;
+  color: var(--color-accent);
   font-size: 11px;
 }
 
@@ -1664,7 +1672,7 @@ button {
 .file-conflict-actions button.active {
   border-color: #2d6a56;
   background: #18302a;
-  color: #8ff0c1;
+  color: var(--color-accent);
 }
 
 .file-conflict-rename,

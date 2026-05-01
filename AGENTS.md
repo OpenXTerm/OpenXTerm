@@ -60,13 +60,18 @@ CI/CD workflow:
 - [`src/App.tsx`](src/App.tsx): top-level wiring, modals, sidebar/workspace composition
 - [`src/state/useOpenXTermStore.ts`](src/state/useOpenXTermStore.ts): central state and most app workflows
 - [`src/components/forms/SessionEditorModal.tsx`](src/components/forms/SessionEditorModal.tsx): compact tabbed session editor, X11 assistant, per-session terminal style, font picker
+- [`src/components/forms/sessionEditorHelpers.ts`](src/components/forms/sessionEditorHelpers.ts): pure session-editor draft/default/preset helpers
 - [`src/components/forms/AppLockOverlay.tsx`](src/components/forms/AppLockOverlay.tsx): lock screen for system auth / Touch ID / PIN flows
 - [`src/components/sidebar/Sidebar.tsx`](src/components/sidebar/Sidebar.tsx): sessions tree, session-folder drag/drop, SFTP sidebar, tools, macros
 - [`src/components/status/StatusBar.tsx`](src/components/status/StatusBar.tsx): live lower rail, CPU history graph, lock button
 - [`src/components/workspace/Workspace.tsx`](src/components/workspace/Workspace.tsx): active tab rendering
 - [`src/components/workspace/TerminalSurface.tsx`](src/components/workspace/TerminalSurface.tsx): xterm host, stopped-session UX, per-session appearance application
 - [`src/components/workspace/FileBrowserView.tsx`](src/components/workspace/FileBrowserView.tsx): remote directory UI, upload/download/drag flows
+- [`src/hooks/useSftpConflictResolver.ts`](src/hooks/useSftpConflictResolver.ts): shared SFTP upload/download conflict resolution
+- [`src/hooks/useRemotePropertiesWindow.ts`](src/hooks/useRemotePropertiesWindow.ts): shared remote properties OS-window/fallback modal handling
 - [`src/lib/bridge.ts`](src/lib/bridge.ts): Tauri invoke/listen boundary
+- [`src/lib/remotePropertiesWindow.ts`](src/lib/remotePropertiesWindow.ts): remote entry properties window payload/result storage helpers
+- [`src/lib/localPath.ts`](src/lib/localPath.ts): cross-platform local path basename helper for drag/upload paths
 - [`src/lib/sessionUtils.ts`](src/lib/sessionUtils.ts): shared tab/session helpers and startup transcript copy
 - [`src/lib/mobaxtermImport.ts`](src/lib/mobaxtermImport.ts): `.mxtsessions` parser
 - [`src/lib/transferBatch.ts`](src/lib/transferBatch.ts): batch transfer aggregation

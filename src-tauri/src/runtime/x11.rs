@@ -43,6 +43,7 @@ const X11_DISPLAY_FAILURE_PATTERNS: &[&str] = &[
     "can't open display",
     "unable to open display",
 ];
+const X11_FORWARD_REQUEST_FAILURE_PATTERNS: &[&str] = &["x11 forwarding request failed on channel"];
 
 #[derive(Clone)]
 pub(super) struct X11ForwardConfig {
@@ -127,10 +128,7 @@ pub(super) fn maybe_report_x11_forwarding_failure(
     }
 
     let normalized = chunk.to_ascii_lowercase();
-    if X11_GLX_FAILURE_PATTERNS
-        .iter()
-        .any(|pattern| normalized.contains(pattern))
-    {
+    if contains_any_x11_failure_pattern(&normalized, X11_GLX_FAILURE_PATTERNS) {
         if x11_failure_diagnosed
             .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
             .is_ok()
@@ -144,12 +142,12 @@ pub(super) fn maybe_report_x11_forwarding_failure(
         return;
     }
 
-    let reason = if normalized.contains("x11 forwarding request failed on channel") {
+    let reason = if contains_any_x11_failure_pattern(
+        &normalized,
+        X11_FORWARD_REQUEST_FAILURE_PATTERNS,
+    ) {
         "The SSH server rejected the X11 forwarding request for this interactive session."
-    } else if X11_DISPLAY_FAILURE_PATTERNS
-        .iter()
-        .any(|pattern| normalized.contains(pattern))
-    {
+    } else if contains_any_x11_failure_pattern(&normalized, X11_DISPLAY_FAILURE_PATTERNS) {
         "A remote GUI command could not find a usable DISPLAY. X11 forwarding is not active in this shell."
     } else {
         return;
@@ -163,6 +161,12 @@ pub(super) fn maybe_report_x11_forwarding_failure(
     }
 
     report_x11_forwarding_failure(app, tab_id, session, reason);
+}
+
+fn contains_any_x11_failure_pattern(normalized_output: &str, patterns: &[&str]) -> bool {
+    patterns
+        .iter()
+        .any(|pattern| normalized_output.contains(pattern))
 }
 
 pub(super) fn report_x11_forwarding_failure(

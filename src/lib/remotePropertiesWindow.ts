@@ -20,6 +20,45 @@ export interface RemotePropertiesWindowResult {
   changedAt: number
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function hasString(value: Record<string, unknown>, key: string) {
+  return typeof value[key] === 'string'
+}
+
+function isRemoteFileEntry(value: unknown): value is RemoteFileEntry {
+  return isRecord(value)
+    && hasString(value, 'name')
+    && hasString(value, 'path')
+    && (value.kind === 'file' || value.kind === 'folder')
+}
+
+function isSessionDefinition(value: unknown): value is SessionDefinition {
+  return isRecord(value)
+    && hasString(value, 'id')
+    && hasString(value, 'name')
+    && hasString(value, 'kind')
+}
+
+function isRemotePropertiesWindowPayload(value: unknown): value is RemotePropertiesWindowPayload {
+  return isRecord(value)
+    && hasString(value, 'requestId')
+    && hasString(value, 'currentPath')
+    && isSessionDefinition(value.session)
+    && isRemoteFileEntry(value.entry)
+}
+
+export function isRemotePropertiesWindowResult(value: unknown): value is RemotePropertiesWindowResult {
+  return isRecord(value)
+    && hasString(value, 'requestId')
+    && hasString(value, 'sessionId')
+    && hasString(value, 'currentPath')
+    && hasString(value, 'message')
+    && typeof value.changedAt === 'number'
+}
+
 function isTauriRuntime() {
   return '__TAURI_INTERNALS__' in window
 }
@@ -47,7 +86,8 @@ export function readRemotePropertiesPayload(requestId: string): RemoteProperties
   }
 
   try {
-    return JSON.parse(raw) as RemotePropertiesWindowPayload
+    const parsed: unknown = JSON.parse(raw)
+    return isRemotePropertiesWindowPayload(parsed) ? parsed : null
   } catch {
     return null
   }

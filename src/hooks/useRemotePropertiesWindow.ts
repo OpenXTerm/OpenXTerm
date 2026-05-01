@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react'
 
 import { logOpenXTermError } from '../lib/errorLog'
 import {
+  isRemotePropertiesWindowResult,
   remotePropertiesResultKey,
   requestRemoteEntryPropertiesWindow,
-  type RemotePropertiesWindowResult,
 } from '../lib/remotePropertiesWindow'
 import type { RemoteFileEntry, SessionDefinition } from '../types/domain'
 
@@ -65,7 +65,11 @@ export function useRemotePropertiesWindow({
       }
 
       try {
-        const result = JSON.parse(event.newValue) as RemotePropertiesWindowResult
+        const parsed: unknown = JSON.parse(event.newValue)
+        if (!isRemotePropertiesWindowResult(parsed)) {
+          return
+        }
+        const result = parsed
         const session = sessions.find((item) => item.id === result.sessionId)
         if (!session) {
           return
