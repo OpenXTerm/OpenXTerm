@@ -43,6 +43,7 @@ OpenXTerm is independent software. It is not affiliated with, endorsed by, or co
 - Continued the Zustand store split by moving transfer enqueue/progress aggregation/flush side effects into `openXTermStoreTransfers.ts`.
 - Added a dedicated `canceled` transfer state so user-canceled transfers are neutral, auto-close cleanly, and do not appear as operational errors.
 - Continued the Zustand store split by moving terminal/status/transfer listener registration into `openXTermStoreListeners.ts`.
+- Continued the Zustand store split by moving session/folder/import/macro domain actions into `openXTermStoreDomain.ts`.
 - Extracted sidebar SFTP native drag-out pointer handling into `src/components/sidebar/useSftpNativeDragOut.ts`.
 - Extracted sidebar SFTP create, rename, delete, path-submit, and download actions into `src/components/sidebar/useSftpEntryOperations.ts`.
 - Extracted sidebar SFTP upload, folder upload, browser drag-in, and native Tauri file drop handling into `src/components/sidebar/useSftpUploads.ts`.
@@ -60,7 +61,7 @@ OpenXTerm is independent software. It is not affiliated with, endorsed by, or co
   - split `src-tauri/src/transfer/mod.rs` into transfer lifecycle/progress, upload, download, retry/cancel, listing, and transfer-window modules;
   - avoid behavior rewrites until each extracted path has manual upload/download/retry/cancel smoke coverage.
 - Store architecture:
-  - split `src/state/useOpenXTermStore.ts` into UI, domain, transfer/status, and runtime-listener slices;
+  - continue splitting `src/state/useOpenXTermStore.ts`; transfer/listener/domain actions are extracted, while UI tab and terminal command actions still live in the root store;
   - preserve persisted state shape and public selectors during the first pass.
 - Session editor:
   - split `src/components/forms/SessionEditorModal.tsx` into tab components and focused hooks for terminal presets, X11 settings, and font picker state.
