@@ -3,6 +3,8 @@ import { SearchAddon } from '@xterm/addon-search'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
 
+import { readClipboardText } from '../../lib/bridge'
+
 interface TerminalSurfaceProps {
   tabId: string
   title: string
@@ -45,6 +47,18 @@ function saveTerminalOutput(title: string, chunks: string[]) {
   link.download = `${safeTitle}-${stamp}.log`
   link.click()
   window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+function isKeyboardPasteShortcut(event: KeyboardEvent) {
+  return event.type === 'keydown'
+    && (
+      ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'v')
+      || (event.shiftKey && event.key === 'Insert')
+    )
+}
+
+function normalizePastedText(text: string) {
+  return text.replace(/\r\n/g, '\r').replace(/\n/g, '\r')
 }
 
 export function TerminalSurface({
@@ -97,6 +111,7 @@ export function TerminalSurface({
       return
     }
 
+    const hostElement = hostRef.current
     const resolvedFontFamily = fontFamily?.trim() || '"SF Mono", "JetBrains Mono", Menlo, monospace'
     const resolvedFontSize = Number.isFinite(fontSize) && (fontSize ?? 0) >= 9 ? Number(fontSize) : 13
     const resolvedForeground = foreground?.trim() || '#d8dadb'
@@ -124,6 +139,14 @@ export function TerminalSurface({
     const searchAddon = new SearchAddon()
     terminal.loadAddon(fit)
     terminal.loadAddon(searchAddon)
+    const pasteText = (text: string) => {
+      if (!text || !interactive || stoppedRef.current) {
+        return
+      }
+
+      inputHandlerRef.current?.(normalizePastedText(text))
+    }
+
     terminal.attachCustomKeyEventHandler((event) => {
       const isFindShortcut = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f'
       if (isFindShortcut) {
@@ -131,9 +154,20 @@ export function TerminalSurface({
         setSearchOpen(true)
         return false
       }
+      if (isKeyboardPasteShortcut(event)) {
+        if (!interactive || stoppedRef.current) {
+          return true
+        }
+
+        event.preventDefault()
+        void readClipboardText().then((text) => {
+          pasteText(text)
+        }).catch(() => {})
+        return false
+      }
       return true
     })
-    terminal.open(hostRef.current)
+    terminal.open(hostElement)
     fit.fit()
     resizeHandlerRef.current?.(terminal.cols, terminal.rows)
 
@@ -141,7 +175,18 @@ export function TerminalSurface({
       fit.fit()
       resizeHandlerRef.current?.(terminal.cols, terminal.rows)
     })
-    observer.observe(hostRef.current)
+    observer.observe(hostElement)
+
+    const handlePaste = (event: ClipboardEvent) => {
+      const text = event.clipboardData?.getData('text/plain')
+      if (!text || !interactive || stoppedRef.current) {
+        return
+      }
+
+      event.preventDefault()
+      pasteText(text)
+    }
+    hostElement.addEventListener('paste', handlePaste)
 
     const dataDisposable = (interactive || allowStoppedActions)
       ? terminal.onData((data) => {
@@ -180,6 +225,7 @@ export function TerminalSurface({
 
     return () => {
       observer.disconnect()
+      hostElement.removeEventListener('paste', handlePaste)
       dataDisposable?.dispose()
       resizeDisposable.dispose()
       terminal.dispose()

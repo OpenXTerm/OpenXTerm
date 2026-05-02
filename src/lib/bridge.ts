@@ -25,9 +25,61 @@ import type {
 } from '../types/domain'
 
 const BROWSER_STORAGE_KEY = 'openxterm.browser.state'
+const syntheticTransferProgressHandlers = new Set<(payload: TransferProgressPayload) => void>()
 
 function isTauriRuntime() {
   return '__TAURI_INTERNALS__' in window
+}
+
+function baseName(path: string) {
+  return path.split(/[\\/]/).filter(Boolean).at(-1) ?? path
+}
+
+function joinRemotePath(parent: string, name: string) {
+  const cleanName = name.split('/').filter(Boolean).join('/')
+  if (!cleanName) {
+    return parent || '/'
+  }
+
+  if (!parent || parent === '/') {
+    return `/${cleanName}`
+  }
+
+  return `${parent.replace(/\/+$/, '')}/${cleanName}`
+}
+
+function errorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : String(error || fallback)
+}
+
+function emitSyntheticTransferProgress(payload: TransferProgressPayload) {
+  queueMicrotask(() => {
+    for (const handler of syntheticTransferProgressHandlers) {
+      handler(payload)
+    }
+  })
+}
+
+async function invokeTransfer<T>(
+  command: string,
+  args: Record<string, unknown>,
+  fallback: TransferProgressPayload | null,
+) {
+  try {
+    return await invoke<T>(command, args)
+  } catch (error) {
+    if (fallback) {
+      const message = errorMessage(error, 'Transfer failed.')
+      const canceled = message === 'Transfer canceled'
+      emitSyntheticTransferProgress({
+        ...fallback,
+        state: canceled ? 'canceled' : 'error',
+        message: canceled ? 'Canceled' : message,
+        retryable: canceled ? false : true,
+      })
+    }
+    throw error
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -319,6 +371,14 @@ export async function sendTerminalInput(tabId: string, data: string) {
   await invoke('send_terminal_input', { tabId, data })
 }
 
+export async function readClipboardText() {
+  if (isTauriRuntime()) {
+    return invoke<string>('read_clipboard_text')
+  }
+
+  return ''
+}
+
 export async function stopTerminalSession(tabId: string) {
   if (!isTauriRuntime()) {
     return
@@ -440,7 +500,19 @@ export async function uploadRemoteFile(
     return
   }
 
-  await invoke('upload_remote_file', { session, remoteDir, fileName, bytes, transferId, conflictAction })
+  await invokeTransfer('upload_remote_file', { session, remoteDir, fileName, bytes, transferId, conflictAction }, transferId
+    ? {
+        transferId,
+        fileName,
+        remotePath: joinRemotePath(remoteDir, fileName),
+        direction: 'upload',
+        purpose: 'upload',
+        state: 'error',
+        transferredBytes: 0,
+        totalBytes: bytes.length,
+        message: 'Transfer failed.',
+      }
+    : null)
 }
 
 export async function uploadLocalFile(
@@ -455,7 +527,20 @@ export async function uploadLocalFile(
     return
   }
 
-  await invoke('upload_local_file', { session, remoteDir, localPath, transferId, remoteName, conflictAction })
+  const fileName = remoteName?.trim() || baseName(localPath)
+  await invokeTransfer('upload_local_file', { session, remoteDir, localPath, transferId, remoteName, conflictAction }, transferId
+    ? {
+        transferId,
+        fileName,
+        remotePath: joinRemotePath(remoteDir, fileName),
+        direction: 'upload',
+        purpose: 'upload',
+        state: 'error',
+        transferredBytes: 0,
+        message: 'Transfer failed.',
+        localPath,
+      }
+    : null)
 }
 
 export async function uploadLocalPath(
@@ -477,7 +562,18 @@ export async function downloadRemoteFile(
   conflictAction = 'error',
 ) {
   if (isTauriRuntime()) {
-    return invoke<FileDownloadResult>('download_remote_file', { session, remotePath, transferId, fileName, conflictAction })
+    return invokeTransfer<FileDownloadResult>('download_remote_file', { session, remotePath, transferId, fileName, conflictAction }, transferId
+      ? {
+          transferId,
+          fileName: fileName?.trim() || baseName(remotePath),
+          remotePath,
+          direction: 'download',
+          purpose: 'download',
+          state: 'error',
+          transferredBytes: 0,
+          message: 'Transfer failed.',
+        }
+      : null)
   }
 
   return {
@@ -495,14 +591,27 @@ export async function downloadRemoteEntry(
   conflictAction = 'error',
 ) {
   if (isTauriRuntime()) {
-    return invoke<FileDownloadResult>('download_remote_entry', {
-      session,
-      remotePath,
-      kind,
-      transferId,
-      fileName,
-      conflictAction,
-    })
+    return invokeTransfer<FileDownloadResult>('download_remote_entry', {
+        session,
+        remotePath,
+        kind,
+        transferId,
+        fileName,
+        conflictAction,
+      },
+      transferId
+        ? {
+            transferId,
+            fileName: fileName?.trim() || baseName(remotePath),
+            remotePath,
+            direction: 'download',
+            purpose: 'download',
+            state: 'error',
+            transferredBytes: 0,
+            message: 'Transfer failed.',
+          }
+        : null,
+    )
   }
 
   return {
@@ -523,7 +632,16 @@ export async function prepareRemoteDragFile(
     } satisfies FileDownloadResult
   }
 
-  return invoke<FileDownloadResult>('prepare_remote_drag_file', { session, remotePath, transferId })
+  return invokeTransfer<FileDownloadResult>('prepare_remote_drag_file', { session, remotePath, transferId }, {
+    transferId,
+    fileName: baseName(remotePath),
+    remotePath,
+    direction: 'download',
+    purpose: 'drag-export',
+    state: 'error',
+    transferredBytes: 0,
+    message: 'Transfer failed.',
+  })
 }
 
 export async function startNativeFileDrag(
@@ -605,11 +723,19 @@ export async function listenMenuAction(handler: (payload: MenuActionPayload) => 
 }
 
 export async function listenTransferProgress(handler: (payload: TransferProgressPayload) => void) {
+  syntheticTransferProgressHandlers.add(handler)
   if (!isTauriRuntime()) {
-    return () => {}
+    return () => {
+      syntheticTransferProgressHandlers.delete(handler)
+    }
   }
 
-  return listen<TransferProgressPayload>('openxterm://transfer-progress', (event) => {
+  const unlisten = await listen<TransferProgressPayload>('openxterm://transfer-progress', (event) => {
     handler(event.payload)
   })
+
+  return () => {
+    syntheticTransferProgressHandlers.delete(handler)
+    void unlisten()
+  }
 }

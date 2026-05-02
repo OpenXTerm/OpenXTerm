@@ -311,6 +311,28 @@ impl EmbeddedSshController {
     }
 
     fn handle_input_bytes(&self, bytes: &[u8]) -> io::Result<usize> {
+        if bytes.is_empty() {
+            return Ok(0);
+        }
+
+        let running_channel = {
+            let state = self.state.lock().map_err(|_| {
+                io::Error::new(io::ErrorKind::Other, "embedded SSH state is poisoned")
+            })?;
+            match &*state {
+                EmbeddedSshState::Running { channel } => Some(channel.clone()),
+                _ => None,
+            }
+        };
+
+        if let Some(channel) = running_channel {
+            let channel = lock_embedded_ssh_channel(&channel);
+            let mut stdin = channel.stdin();
+            stdin.write_all(bytes)?;
+            stdin.flush()?;
+            return Ok(bytes.len());
+        }
+
         for &byte in bytes {
             self.handle_input_byte(byte)?;
         }

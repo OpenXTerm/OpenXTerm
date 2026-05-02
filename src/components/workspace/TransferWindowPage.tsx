@@ -41,7 +41,20 @@ export function TransferWindowPage() {
       if (event.key === 'openxterm.transfer.queue') {
         const snapshot = readTransferQueueSnapshot()
         hydrateBatchTransfers(snapshot)
-        setItems(snapshot)
+        setItems((current) => {
+          let changed = false
+          const next = { ...current }
+
+          for (const item of Object.values(snapshot)) {
+            const mergedTransfer = mergeTransferProgress(next[item.transferId], item)
+            if (next[item.transferId] !== mergedTransfer) {
+              next[item.transferId] = mergedTransfer
+              changed = true
+            }
+          }
+
+          return changed ? next : current
+        })
       }
     }
 
@@ -116,13 +129,13 @@ export function TransferWindowPage() {
       return sorted
     }
 
-    return sorted.filter((item) => {
-      if (item.transferId === transferId) {
-        return true
-      }
+    const parentItem = sorted.find((item) => item.transferId === transferId)
+    const childItems = sorted.filter((item) => item.transferId.startsWith(`${transferId}::item::`))
+    const visibleChildItems = parentItem
+      ? childItems.filter((item) => item.state === 'error' || item.state === 'canceled')
+      : childItems
 
-      return item.transferId.startsWith(`${transferId}::item::`) && (item.state === 'error' || item.state === 'canceled')
-    })
+    return parentItem ? [parentItem, ...visibleChildItems] : visibleChildItems
   }, [items, transferId])
   const allItemsFinished = orderedItems.length > 0
     && orderedItems.every((item) => item.state === 'completed' || item.state === 'canceled')
@@ -138,6 +151,18 @@ export function TransferWindowPage() {
 
     return () => window.clearTimeout(closeTimer)
   }, [allItemsFinished])
+
+  useEffect(() => {
+    if (!transferId || orderedItems.length > 0) {
+      return
+    }
+
+    const closeTimer = window.setTimeout(() => {
+      closeCurrentTransferWindow()
+    }, 3000)
+
+    return () => window.clearTimeout(closeTimer)
+  }, [orderedItems.length, transferId])
 
   function handleCancelTransfer(item: TransferProgressPayload) {
     void cancelTransfer(item.transferId)

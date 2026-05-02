@@ -43,6 +43,7 @@ pub fn run() {
             commands::start_telnet_session,
             commands::start_serial_session,
             commands::send_terminal_input,
+            commands::read_clipboard_text,
             commands::stop_terminal_session,
             commands::resize_terminal_session,
             commands::list_remote_directory,

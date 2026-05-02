@@ -1,10 +1,14 @@
 use std::{fs, io::Read};
 
+use std::time::Duration;
+
 use libssh_rs::{
     Channel as LibsshChannel, Session as LibsshSession, Sftp as LibsshSftp, SshOption,
 };
 
 use crate::{models::SessionDefinition, proxy::configure_libssh_proxy_socket};
+
+const EMBEDDED_SSH_TIMEOUT: Duration = Duration::from_secs(8);
 
 use super::super::x11::X11ForwardConfig;
 use super::super::{expand_tilde, shell_quote};
@@ -176,6 +180,8 @@ fn connect_embedded_ssh_session_with_username(
         .map_err(|error| format!("failed to configure embedded SSH port: {error}"))?;
     ssh.set_option(SshOption::User(Some(username.to_string())))
         .map_err(|error| format!("failed to configure embedded SSH username: {error}"))?;
+    ssh.set_option(SshOption::Timeout(EMBEDDED_SSH_TIMEOUT))
+        .map_err(|error| format!("failed to configure embedded SSH timeout: {error}"))?;
     ssh.set_option(SshOption::KnownHosts(None))
         .map_err(|error| format!("failed to configure embedded SSH known_hosts path: {error}"))?;
     ssh.set_option(SshOption::GlobalKnownHosts(None))

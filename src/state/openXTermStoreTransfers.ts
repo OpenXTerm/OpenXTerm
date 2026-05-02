@@ -87,19 +87,29 @@ export function handleTransferProgress(set: StoreSetter, payload: TransferProgre
 
 export function enqueueTransferItem(set: StoreSetter, item: TransferProgressPayload) {
   rememberBatchTransfer(item)
+  const aggregatePayload = aggregateBatchProgress(item)
   set((state) => {
-    const mergedTransfer = mergeTransferProgress(state.transferItems[item.transferId], item)
-    if (state.transferItems[item.transferId] === mergedTransfer) {
-      requestTransferWindow(mergedTransfer)
+    const payloads = aggregatePayload ? [item, aggregatePayload] : [item]
+    let changed = false
+    const nextTransfers = { ...state.transferItems }
+
+    for (const payload of payloads) {
+      const mergedTransfer = mergeTransferProgress(nextTransfers[payload.transferId], payload)
+      if (nextTransfers[payload.transferId] !== mergedTransfer) {
+        nextTransfers[payload.transferId] = mergedTransfer
+        changed = true
+      }
+    }
+
+    const transferForWindow = aggregatePayload ?? item
+    if (!changed) {
+      requestTransferWindow(transferForWindow)
       return state
     }
 
-    const transferItems = sortTransfers({
-      ...state.transferItems,
-      [item.transferId]: mergedTransfer,
-    })
+    const transferItems = sortTransfers(nextTransfers)
     writeTransferQueueSnapshot(transferItems)
-    requestTransferWindow(mergedTransfer)
+    requestTransferWindow(transferForWindow)
     return {
       transferItems,
       transferModalDismissed: false,

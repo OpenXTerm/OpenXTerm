@@ -27,10 +27,6 @@ export function requestTransferWindow(item: TransferProgressPayload) {
     return
   }
 
-  if (item.purpose === 'drag-export') {
-    return
-  }
-
   if (isBatchChildTransferId(item.transferId)) {
     return
   }
@@ -73,7 +69,7 @@ export function requestTransferWindow(item: TransferProgressPayload) {
       })
 
       void win.once('tauri://error', () => {
-        // The Rust side also tries to open this window, so a duplicate-label race is harmless.
+        // A duplicate-label race is harmless if another frontend event opened the same transfer window.
       })
     })
     .catch(() => {

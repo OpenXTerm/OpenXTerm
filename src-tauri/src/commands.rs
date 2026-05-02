@@ -203,6 +203,15 @@ pub fn send_terminal_input(
 }
 
 #[tauri::command]
+pub fn read_clipboard_text() -> Result<String, String> {
+    let mut clipboard =
+        arboard::Clipboard::new().map_err(|error| format!("failed to open clipboard: {error}"))?;
+    clipboard
+        .get_text()
+        .map_err(|error| format!("failed to read clipboard text: {error}"))
+}
+
+#[tauri::command]
 pub fn stop_terminal_session(runtime: State<'_, AppRuntime>, tab_id: String) -> Result<(), String> {
     runtime.stop_terminal(&tab_id)
 }

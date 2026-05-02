@@ -1,9 +1,10 @@
 use std::{
     fs,
     fs::File,
-    io::{Read, Write},
+    io::{ErrorKind, Read, Write},
     path::{Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
+    thread,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 mod entries;
@@ -15,7 +16,7 @@ mod sftp;
 mod state;
 
 use ftp::{run_ftp_download, run_ftp_upload};
-use libssh_rs::{OpenFlags, Sftp};
+use libssh_rs::{OpenFlags, Sftp, SftpFile};
 use metadata::is_directory;
 use paths::{
     download_target_path, drag_cache_path, join_remote_path, local_directory_total_size,
@@ -40,6 +41,8 @@ pub use entries::{
 
 const TRANSFER_CHUNK_SIZE: usize = 256 * 1024;
 const TRANSFER_RETRY_MESSAGE: &str = "Retrying transfer";
+const SFTP_WRITE_STALL_TIMEOUT: Duration = Duration::from_secs(10);
+const SFTP_WRITE_RETRY_SLEEP: Duration = Duration::from_millis(50);
 
 pub fn cancel_transfer(transfer_id: &str) -> Result<(), String> {
     state::mark_transfer_cancelled(transfer_id)
@@ -243,8 +246,7 @@ pub fn upload_remote_file(
             let mut transferred = 0u64;
             for chunk in bytes.chunks(TRANSFER_CHUNK_SIZE) {
                 stop_if_transfer_cancelled(&transfer_id)?;
-                file.write_all(chunk)
-                    .map_err(|error| format!("failed to upload remote file: {error}"))?;
+                write_sftp_chunk_with_timeout(&mut file, chunk, &remote_path, &transfer_id)?;
                 transferred += chunk.len() as u64;
                 emit_transfer(
                     app,
@@ -582,9 +584,7 @@ fn upload_sftp_file_with_progress(
             break;
         }
 
-        target
-            .write_all(&buffer[..read])
-            .map_err(|error| format!("failed to upload remote file {remote_path}: {error}"))?;
+        write_sftp_chunk_with_timeout(&mut target, &buffer[..read], remote_path, transfer_id)?;
         *transferred += read as u64;
         emit_transfer(
             app,
@@ -602,6 +602,59 @@ fn upload_sftp_file_with_progress(
     }
 
     Ok(())
+}
+
+fn write_sftp_chunk_with_timeout(
+    target: &mut SftpFile,
+    chunk: &[u8],
+    remote_path: &str,
+    transfer_id: &str,
+) -> Result<(), String> {
+    target.set_blocking(false);
+
+    let mut written = 0usize;
+    let mut last_progress = Instant::now();
+    while written < chunk.len() {
+        stop_if_transfer_cancelled(transfer_id)?;
+        match target.write(&chunk[written..]) {
+            Ok(0) => {
+                if last_progress.elapsed() >= SFTP_WRITE_STALL_TIMEOUT {
+                    return Err(format!(
+                        "failed to upload remote file {remote_path}: write stalled for {} seconds",
+                        SFTP_WRITE_STALL_TIMEOUT.as_secs()
+                    ));
+                }
+                thread::sleep(SFTP_WRITE_RETRY_SLEEP);
+            }
+            Ok(count) => {
+                written += count;
+                last_progress = Instant::now();
+            }
+            Err(error) if is_sftp_write_would_block(&error) => {
+                if last_progress.elapsed() >= SFTP_WRITE_STALL_TIMEOUT {
+                    return Err(format!(
+                        "failed to upload remote file {remote_path}: write stalled for {} seconds",
+                        SFTP_WRITE_STALL_TIMEOUT.as_secs()
+                    ));
+                }
+                thread::sleep(SFTP_WRITE_RETRY_SLEEP);
+            }
+            Err(error) => {
+                return Err(format!(
+                    "failed to upload remote file {remote_path}: {error}"
+                ));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn is_sftp_write_would_block(error: &std::io::Error) -> bool {
+    matches!(
+        error.kind(),
+        ErrorKind::WouldBlock | ErrorKind::TimedOut | ErrorKind::Interrupted
+    ) || error.to_string().contains("sftp error code 0")
 }
 
 pub fn download_remote_entry(

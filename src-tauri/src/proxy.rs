@@ -14,6 +14,7 @@ use libssh_rs::{Session as LibsshSession, SshOption};
 use crate::models::SessionDefinition;
 
 const PROXY_CONNECT_TIMEOUT: Duration = Duration::from_secs(8);
+const PROXY_IO_TIMEOUT: Duration = Duration::from_secs(8);
 
 pub fn connect_tcp_stream(session: &SessionDefinition) -> Result<TcpStream, String> {
     connect_tcp_stream_to(session, &session.host, session.port)
@@ -266,7 +267,15 @@ fn connect_first(addresses: impl Iterator<Item = SocketAddr>) -> Result<TcpStrea
     let mut last_error = None;
     for address in addresses {
         match TcpStream::connect_timeout(&address, PROXY_CONNECT_TIMEOUT) {
-            Ok(stream) => return Ok(stream),
+            Ok(stream) => {
+                stream
+                    .set_read_timeout(Some(PROXY_IO_TIMEOUT))
+                    .map_err(|error| format!("failed to configure proxy read timeout: {error}"))?;
+                stream
+                    .set_write_timeout(Some(PROXY_IO_TIMEOUT))
+                    .map_err(|error| format!("failed to configure proxy write timeout: {error}"))?;
+                return Ok(stream);
+            }
             Err(error) => last_error = Some(error),
         }
     }
