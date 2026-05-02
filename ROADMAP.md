@@ -46,12 +46,14 @@ OpenXTerm is independent software. It is not affiliated with, endorsed by, or co
 - Extracted sidebar SFTP native drag-out pointer handling into `src/components/sidebar/useSftpNativeDragOut.ts`.
 - Extracted sidebar SFTP create, rename, delete, path-submit, and download actions into `src/components/sidebar/useSftpEntryOperations.ts`.
 - Extracted sidebar SFTP upload, folder upload, browser drag-in, and native Tauri file drop handling into `src/components/sidebar/useSftpUploads.ts`.
+- Extracted workspace file browser table state/sorting/resizing into `src/components/workspace/useFileTableControls.ts`.
+- Extracted workspace file browser native drag-out pointer handling into `src/components/workspace/useFileNativeDragOut.ts`.
 
 ### Codebase Refactor Backlog
 
 - Frontend SFTP consolidation:
   - finish reducing `Sidebar.tsx` to orchestration only; current pass reduced it below 500 lines, with section wiring and selected-session state still intentionally local;
-  - continue reducing `FileBrowserView.tsx`; current pass reduced it below 1k lines and shares conflict/properties hooks, but table controls, selection, and upload/download orchestration are still local;
+  - continue reducing `FileBrowserView.tsx`; current pass reduced it to roughly 700 lines and shares conflict/properties/table/native-drag hooks, but selection and upload/download orchestration are still local;
   - extract shared SFTP upload/download orchestration only after another smoke pass for drag-in, drag-out, batch downloads, conflict overwrite/skip/rename, retry, and cancel.
 - Backend transfer layer:
   - split `src-tauri/src/transfer/mod.rs` into transfer lifecycle/progress, upload, download, retry/cancel, listing, and transfer-window modules;

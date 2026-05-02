@@ -5,10 +5,8 @@ import {
   useRef,
   useState,
   type ChangeEvent,
-  type CSSProperties,
   type DragEvent,
   type FormEvent,
-  type PointerEvent as ReactPointerEvent,
 } from 'react'
 import { ArrowDownToLine, ArrowUp, Copy, Eye, FolderPlus, Info, LoaderCircle, RefreshCw, Trash2, Upload } from 'lucide-react'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
@@ -18,7 +16,6 @@ import {
   deleteRemoteEntry,
   downloadRemoteFile,
   listRemoteDirectory,
-  startNativeFileDrag,
   uploadLocalFile,
   uploadRemoteFile,
 } from '../../lib/bridge'
@@ -32,13 +29,9 @@ import type { RemoteDirectorySnapshot, RemoteFileEntry, SessionDefinition } from
 import { useOpenXTermStore } from '../../state/useOpenXTermStore'
 import { RemoteEntryPropertiesModal } from './RemoteEntryPropertiesModal'
 import { FileConflictModal } from './FileConflictModal'
-import {
-  FILE_TABLE_DEFAULT_COLUMN_WIDTHS,
-  FILE_TABLE_MIN_COLUMN_WIDTHS,
-  type FileSortKey,
-  type SortDirection,
-} from './fileTableModel'
 import { FileTable } from './FileTable'
+import { useFileNativeDragOut } from './useFileNativeDragOut'
+import { useFileTableControls } from './useFileTableControls'
 
 interface FileBrowserViewProps {
   session: SessionDefinition
@@ -63,16 +56,8 @@ function parentPathOf(path: string) {
   return `/${parts.slice(0, -1).join('/')}`
 }
 
-function movedEnough(startX: number, startY: number, currentX: number, currentY: number) {
-  return Math.hypot(currentX - startX, currentY - startY) > 5
-}
-
 function itemCountLabel(count: number) {
   return count === 1 ? '1 item' : `${count} items`
-}
-
-function isHiddenEntry(entry: RemoteFileEntry) {
-  return entry.name.startsWith('.')
 }
 
 function normalizeRemotePath(path: string) {
@@ -82,47 +67,6 @@ function normalizeRemotePath(path: string) {
   }
 
   return `/${trimmed.replace(/^\/+/, '').replace(/\/{2,}/g, '/')}`.replace(/\/+$/, '') || '/'
-}
-
-function compareText(left: string | undefined, right: string | undefined) {
-  return (left ?? '').localeCompare(right ?? '', undefined, { numeric: true, sensitivity: 'base' })
-}
-
-function compareFileEntries(left: RemoteFileEntry, right: RemoteFileEntry, key: FileSortKey, direction: SortDirection) {
-  if (left.kind !== right.kind) {
-    return left.kind === 'folder' ? -1 : 1
-  }
-
-  const multiplier = direction === 'asc' ? 1 : -1
-  let result = 0
-
-  switch (key) {
-    case 'size':
-      result = (left.sizeBytes ?? -1) - (right.sizeBytes ?? -1)
-      break
-    case 'modified':
-      result = compareText(left.modifiedLabel, right.modifiedLabel)
-      break
-    case 'owner':
-      result = compareText(left.ownerLabel, right.ownerLabel)
-      break
-    case 'group':
-      result = compareText(left.groupLabel, right.groupLabel)
-      break
-    case 'access':
-      result = compareText(left.accessLabel, right.accessLabel)
-      break
-    case 'name':
-    default:
-      result = compareText(left.name, right.name)
-      break
-  }
-
-  if (result === 0) {
-    result = compareText(left.name, right.name)
-  }
-
-  return result * multiplier
 }
 
 function fileBrowserErrorContext(session: SessionDefinition, action: string, path: string) {
@@ -173,77 +117,34 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [dropActive, setDropActive] = useState(false)
-  const [showHidden, setShowHidden] = useState(false)
-  const [columnWidths, setColumnWidths] = useState(FILE_TABLE_DEFAULT_COLUMN_WIDTHS)
-  const [sortState, setSortState] = useState<{ key: FileSortKey; direction: SortDirection }>({
-    key: 'name',
-    direction: 'asc',
-  })
   const [pathDraft, setPathDraft] = useState('/')
   const [contextMenu, setContextMenu] = useState<FileContextMenuState | null>(null)
-
-  const visibleEntries = useMemo(() => {
-    const entries = snapshot?.entries ?? []
-    const filteredEntries = showHidden ? entries : entries.filter((entry) => !isHiddenEntry(entry))
-    return [...filteredEntries].sort((left, right) => (
-      compareFileEntries(left, right, sortState.key, sortState.direction)
-    ))
-  }, [showHidden, snapshot, sortState.direction, sortState.key])
+  const {
+    fileTableStyle,
+    handleColumnResizeStart,
+    handleSortColumn,
+    setShowHidden,
+    showHidden,
+    sortState,
+    visibleEntries,
+  } = useFileTableControls(snapshot)
 
   const selectedEntry = useMemo(
     () => visibleEntries.find((entry) => entry.path === selectedPath) ?? null,
     [selectedPath, visibleEntries],
   )
   const pathToCopy = selectedEntry?.path ?? snapshot?.path ?? currentPath
-  const fileTableStyle = useMemo(
-    () => ({
-      '--file-table-columns': columnWidths.map((width) => `${width}px`).join(' '),
-    }) as CSSProperties,
-    [columnWidths],
-  )
   const {
     conflictRequest,
     resolveConflict: handleConflictResolve,
     resolveDownloadTarget,
     resolveUploadTargets,
   } = useSftpConflictResolver(snapshot?.entries ?? [], { compareNames: 'normalized' })
-
-  function handleColumnResizeStart(index: number, event: ReactPointerEvent<HTMLButtonElement>) {
-    event.preventDefault()
-    event.stopPropagation()
-
-    const startX = event.clientX
-    const startWidth = columnWidths[index]
-
-    document.body.style.cursor = 'col-resize'
-    document.body.style.userSelect = 'none'
-
-    const handlePointerMove = (moveEvent: PointerEvent) => {
-      const minWidth = FILE_TABLE_MIN_COLUMN_WIDTHS[index] ?? 58
-      const nextWidth = Math.max(minWidth, Math.round(startWidth + moveEvent.clientX - startX))
-      setColumnWidths((current) => current.map((width, columnIndex) => (
-        columnIndex === index ? nextWidth : width
-      )))
-    }
-
-    const handlePointerUp = () => {
-      window.removeEventListener('pointermove', handlePointerMove)
-      window.removeEventListener('pointerup', handlePointerUp)
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-    }
-
-    window.addEventListener('pointermove', handlePointerMove)
-    window.addEventListener('pointerup', handlePointerUp)
-  }
-
-  function handleSortColumn(key: FileSortKey) {
-    setSortState((current) => (
-      current.key === key
-        ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
-        : { key, direction: 'asc' }
-    ))
-  }
+  const handleNativeDragPointerDown = useFileNativeDragOut({
+    session,
+    setMessage,
+    setSelectedPath,
+  })
 
   const loadDirectory = useCallback(async (targetPath: string) => {
     const normalizedPath = normalizeRemotePath(targetPath)
@@ -636,62 +537,6 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
 
     await uploadFiles(droppedFiles)
     setBusy(false)
-  }
-
-  function handleNativeDragPointerDown(
-    event: ReactPointerEvent<HTMLButtonElement>,
-    entry: RemoteFileEntry,
-  ) {
-    if (entry.kind !== 'file' || event.button !== 0) {
-      return
-    }
-
-    setSelectedPath(entry.path)
-    const startX = event.clientX
-    const startY = event.clientY
-    const dragButton = event.currentTarget
-    const pointerId = event.pointerId
-    let started = false
-
-    const handlePointerMove = (moveEvent: PointerEvent) => {
-      if (started || !movedEnough(startX, startY, moveEvent.clientX, moveEvent.clientY)) {
-        return
-      }
-
-      started = true
-      window.removeEventListener('pointermove', handlePointerMove)
-      window.removeEventListener('pointerup', handlePointerUp)
-      try {
-        dragButton.releasePointerCapture(pointerId)
-      } catch {
-        // Native drag can outlive the webview pointer capture on Windows.
-      }
-      moveEvent.preventDefault()
-      moveEvent.stopPropagation()
-      void startNativeFileDrag(session, entry.path, entry.name, entry.sizeBytes, moveEvent.clientX, moveEvent.clientY)
-        .then((dragStarted) => {
-          if (!dragStarted) {
-            setMessage('Native drag-out could not start for this file.')
-          }
-        })
-        .catch((error) => {
-          logOpenXTermError('file-browser.native-drag', error, fileBrowserErrorContext(session, 'native-drag', entry.path))
-          setMessage(error instanceof Error ? error.message : 'Native drag-out failed.')
-        })
-    }
-
-    const handlePointerUp = () => {
-      try {
-        dragButton.releasePointerCapture(pointerId)
-      } catch {
-        // The pointer may already be released when drag never starts.
-      }
-      window.removeEventListener('pointermove', handlePointerMove)
-      window.removeEventListener('pointerup', handlePointerUp)
-    }
-
-    window.addEventListener('pointermove', handlePointerMove)
-    window.addEventListener('pointerup', handlePointerUp)
   }
 
   return (
