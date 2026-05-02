@@ -1,0 +1,229 @@
+:root {
+  color-scheme: dark;
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'SF Mono', 'JetBrains Mono', Menlo, monospace;
+  --color-bg: #111315;
+  --color-border: #273034;
+  --color-hover: #20282c;
+  --color-text: #e7eaeb;
+  --color-muted: #cad1d4;
+  --color-accent: #8ff0c1;
+  --color-accent-strong: #7df0b5;
+  --color-accent-bright: #7af0b5;
+  --color-accent-surface: #1a4035;
+  --color-accent-surface-muted: #18302a;
+  --color-accent-border: #2d6a56;
+  --color-surface: #101416;
+  --color-surface-raised: #121719;
+  --color-surface-muted: #181d20;
+  --color-surface-subtle: #1b2124;
+  --color-surface-input: #12171a;
+  --color-border-strong: #334046;
+  --color-border-muted: #2d383d;
+  --color-border-subtle: #232b2f;
+  --color-border-success: #4aa57d;
+  --color-text-strong: #eef2f3;
+  --color-text-soft: #d9e0e3;
+  --color-text-form: #dfe4e6;
+  --color-text-dim: #8fa2a9;
+  --color-text-muted-strong: #8ea0a6;
+  --color-text-subtle: #7b8b90;
+  --color-green-active: #143128;
+  --color-green-active-border: #2f7f62;
+  --color-panel-border: #2e3b40;
+  --color-table-header: #202426;
+  --color-table-header-text: #b4bec2;
+  --color-table-line: #1a2023;
+  --color-table-text: #d6dde0;
+  --color-menu-hover-border: #2c5f4f;
+  --color-menu-hover: #17352c;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+  height: 100%;
+  background: var(--color-bg);
+}
+
+body {
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background:
+    linear-gradient(180deg, rgba(7, 17, 16, 0.96) 0%, rgba(14, 16, 18, 0.98) 14%, var(--color-bg) 100%);
+}
+
+.boot-screen {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  background: var(--color-bg);
+  color: var(--color-accent);
+  font-size: 14px;
+}
+
+.topbar {
+  border-bottom: 1px solid var(--color-border);
+  background: rgba(5, 15, 14, 0.95);
+}
+
+.topbar-menubar {
+  display: flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 12px;
+}
+
+.platform-macos .topbar-menubar {
+  padding-left: 86px;
+}
+
+.topbar-menuitems {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  position: relative;
+}
+
+.topbar-menu-group {
+  position: relative;
+}
+
+.topbar-menuitem,
+.chrome-action {
+  border: 0;
+  background: transparent;
+  color: var(--color-muted);
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.topbar-menuitem {
+  font-size: 12px;
+}
+
+.topbar-menuitem.active {
+  background: var(--color-hover);
+  color: #eef3f4;
+}
+
+.chrome-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+}
+
+.topbar-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 180px;
+  display: grid;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: rgba(9, 18, 20, 0.98);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.34);
+  z-index: 120;
+}
+
+.topbar-dropdown-item {
+  border: 0;
+  background: transparent;
+  color: var(--color-muted);
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  text-align: left;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.chrome-action.accent {
+  background: var(--color-accent-surface);
+  color: var(--color-accent-strong);
+}
+
+.topbar-menuitem:hover,
+.topbar-dropdown-item:hover,
+.chrome-action:hover,
+.sidebar-header-button:hover,
+.sidebar-icon-button:hover,
+.file-toolbar button:hover,
+.ghost-button:hover,
+.solid-button:hover,
+.modal-close:hover {
+  background: var(--color-hover);
+}
+
+.sidebar-header-button:disabled,
+.sidebar-icon-button:disabled,
+.file-toolbar button:disabled,
+.ghost-button:disabled,
+.solid-button:disabled,
+.modal-close:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.sidebar-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.workbench {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+}
+
+.sidebar {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  min-height: 0;
+  background: #0f1214;
+}
+
+.sidebar-resizer {
+  width: 6px;
+  min-height: 0;
+  cursor: col-resize;
+  background: linear-gradient(180deg, #111417 0%, #151a1d 100%);
+  border-left: 1px solid var(--color-hover);
+  border-right: 1px solid var(--color-hover);
+}
+
+.sidebar-resizer:hover {
+  background: linear-gradient(180deg, #17342d 0%, #1a3b33 100%);
+}

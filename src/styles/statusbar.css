@@ -1,0 +1,92 @@
+.spinning {
+  animation: spin 0.9s linear infinite;
+}
+
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 7px;
+  min-height: 28px;
+  border-top: 1px solid #2b3438;
+  background: #0c1011;
+  overflow: auto hidden;
+}
+
+.status-segment,
+.status-chip {
+  flex: 0 0 auto;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 6px;
+  border: 1px solid #2e383c;
+  border-radius: 4px;
+  background: #111719;
+  color: #dfe5e7;
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.status-segment-icon {
+  display: inline-flex;
+  color: #91a0a4;
+}
+
+.status-segment-label {
+  color: #91a0a4;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.status-segment-value {
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.status-segment-accent,
+.status-chip-accent {
+  color: var(--color-accent-bright);
+  border-color: #2c6a50;
+  background: #10201a;
+}
+
+.status-chip-static {
+  color: #ffd25a;
+}
+
+.status-chip-button {
+  cursor: pointer;
+  font: inherit;
+}
+
+.status-chip-button:disabled {
+  opacity: 0.48;
+  cursor: default;
+}
+
+.status-cpu-segment {
+  padding-right: 5px;
+}
+
+.status-cpu-sparkline {
+  width: 48px;
+  height: 14px;
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 1px;
+  padding: 1px 2px;
+  border-left: 1px solid #293438;
+  border-right: 1px solid #293438;
+}
+
+.status-cpu-bar {
+  width: 2px;
+  max-height: 12px;
+  border-radius: 1px 1px 0 0;
+  background: #57d797;
+  opacity: 0.88;
+}

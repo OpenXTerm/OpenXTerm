@@ -34,6 +34,8 @@ OpenXTerm is independent software. It is not affiliated with, endorsed by, or co
 - Added runtime guards for remote properties-window `localStorage` JSON payloads/results.
 - Kept X11 failure detection pattern matching data-driven and moved the remaining inline request-failure match into the pattern table.
 - Introduced first-pass CSS color variables for the core dark surface, border, hover, text, and accent colors.
+- Expanded shared CSS color variables for repeated sidebar surfaces, borders, text tones, and accent states.
+- Split the former monolithic `src/index.css` into focused files under `src/styles/`, leaving `index.css` as a small ordered import entrypoint.
 - Split session editor defaults, draft creation, terminal presets, and small tab/font helpers into a pure helper module.
 - Split the session editor tab panels into focused components so `SessionEditorModal.tsx` now owns state/effects/form composition instead of all tab JSX.
 - Split workspace file table rendering out of `FileBrowserView.tsx` while keeping transfer and directory-operation state in the container.
@@ -57,7 +59,7 @@ OpenXTerm is independent software. It is not affiliated with, endorsed by, or co
 - Session editor:
   - split `src/components/forms/SessionEditorModal.tsx` into tab components and focused hooks for terminal presets, X11 settings, and font picker state.
 - Styling:
-  - continue reducing `src/index.css` by grouping component styles and expanding shared color/spacing variables before theme work.
+  - continue reducing focused `src/styles/*.css` files by grouping component styles and expanding shared color/spacing variables before theme work.
 - Runtime and parsing cleanup:
   - keep X11 diagnostic string matching data-driven rather than long inline condition chains;
   - add lightweight runtime guards for persisted JSON/localStorage boundaries instead of unchecked `as` casts;
