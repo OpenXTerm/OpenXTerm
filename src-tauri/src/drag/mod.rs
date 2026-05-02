@@ -1,10 +1,12 @@
 use std::{
     ffi::c_void,
     ffi::{c_char, CStr},
-    io::{Read, Seek, SeekFrom},
     path::PathBuf,
     sync::OnceLock,
 };
+
+#[cfg(target_os = "windows")]
+use std::io::{Read, Seek, SeekFrom};
 
 #[cfg(target_os = "windows")]
 use std::{

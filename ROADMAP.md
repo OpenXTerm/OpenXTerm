@@ -53,6 +53,13 @@ OpenXTerm is independent software. It is not affiliated with, endorsed by, or co
 - Extracted workspace file browser native drag-out pointer handling into `src/components/workspace/useFileNativeDragOut.ts`.
 - Extracted workspace file browser selection, path-to-copy, and context-menu lifecycle into `src/components/workspace/useFileBrowserSelection.ts`.
 - Tightened transfer queue localStorage parsing by replacing fallback `as` casts with an explicit typed return.
+- Started the backend transfer split by moving transfer progress event emission and transfer-window reveal logic into `src-tauri/src/transfer/progress.rs`.
+- Continued the backend transfer split by moving transfer retry/cancel runtime state into `src-tauri/src/transfer/state.rs`.
+- Continued the backend transfer split by moving transfer path/name/local-size helpers into `src-tauri/src/transfer/paths.rs`.
+- Continued the backend transfer split by moving remote metadata formatting helpers into `src-tauri/src/transfer/metadata.rs`.
+- Continued the backend transfer split by moving FTP/curl helpers into `src-tauri/src/transfer/ftp.rs`.
+- Continued the backend transfer split by moving SFTP open/list/delete/conflict/size helpers into `src-tauri/src/transfer/sftp.rs`.
+- Continued the backend transfer split by moving remote entry CRUD/inspect commands into `src-tauri/src/transfer/entries.rs`.
 
 ### Codebase Refactor Backlog
 
@@ -61,7 +68,7 @@ OpenXTerm is independent software. It is not affiliated with, endorsed by, or co
   - continue reducing `FileBrowserView.tsx`; current pass reduced it below 700 lines and shares conflict/properties/table/native-drag/selection hooks, but upload/download orchestration is still local;
   - extract shared SFTP upload/download orchestration only after another smoke pass for drag-in, drag-out, batch downloads, conflict overwrite/skip/rename, retry, and cancel.
 - Backend transfer layer:
-  - split `src-tauri/src/transfer/mod.rs` into transfer lifecycle/progress, upload, download, retry/cancel, listing, and transfer-window modules;
+  - continue splitting `src-tauri/src/transfer/mod.rs`; progress event emission, transfer-window reveal logic, retry/cancel state, path helpers, metadata formatting, FTP helpers, non-transfer-loop SFTP helpers, and remote entry CRUD are extracted, while upload/download loops and shared lifecycle helpers still live in the root module;
   - avoid behavior rewrites until each extracted path has manual upload/download/retry/cancel smoke coverage.
 - Store architecture:
   - continue splitting `src/state/useOpenXTermStore.ts` only when new concerns appear; transfer/listener/domain/terminal/tab actions are extracted and the root store is now mostly bootstrap/preferences/composition;
