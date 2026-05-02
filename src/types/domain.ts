@@ -57,6 +57,7 @@ export interface UiPreferences {
   theme: 'dark'
   activeSidebar: SidebarSection
   sidebarWidth?: number
+  statusBarVisible?: boolean
 }
 
 export interface SystemAuthSupport {
@@ -231,9 +232,11 @@ export interface RemoteDragEntry {
 }
 
 export type MenuAction =
+  | 'open-settings'
   | 'new-session'
   | 'new-macro'
   | 'show-sessions'
+  | 'show-sftp'
   | 'show-tools'
   | 'show-macros'
   | 'lock-app'

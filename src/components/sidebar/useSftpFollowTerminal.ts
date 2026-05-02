@@ -61,7 +61,6 @@ export function useSftpFollowTerminal({
 
   return {
     canFollowRemoteTerminal,
-    followedSftpPath,
     followRemoteTerminal: effectiveFollowRemoteTerminal,
     setFollowRemoteTerminal,
   }

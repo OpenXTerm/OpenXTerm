@@ -85,6 +85,12 @@ pub struct UiPreferences {
     pub active_sidebar: String,
     #[serde(default)]
     pub sidebar_width: Option<u16>,
+    #[serde(default = "default_status_bar_visible")]
+    pub status_bar_visible: bool,
+}
+
+fn default_status_bar_visible() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

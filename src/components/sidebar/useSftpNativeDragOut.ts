@@ -54,11 +54,9 @@ export function useSftpNativeDragOut({
     let started = false
     const previousUserSelect = document.body.style.userSelect
     const previousWebkitUserSelect = document.body.style.webkitUserSelect
-    const previousCursor = document.body.style.cursor
 
     document.body.style.userSelect = 'none'
     document.body.style.webkitUserSelect = 'none'
-    document.body.style.cursor = 'grabbing'
 
     window.getSelection()?.removeAllRanges()
 
@@ -68,7 +66,6 @@ export function useSftpNativeDragOut({
       window.removeEventListener('pointercancel', handlePointerUp, true)
       document.body.style.userSelect = previousUserSelect
       document.body.style.webkitUserSelect = previousWebkitUserSelect
-      document.body.style.cursor = previousCursor
     }
 
     const startDrag = (moveEvent: PointerEvent) => {

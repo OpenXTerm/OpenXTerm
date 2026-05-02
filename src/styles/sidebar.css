@@ -290,14 +290,9 @@
 
 .sidebar-sftp-entry,
 .sidebar-sftp-table-row {
-  cursor: grab;
+  cursor: default;
   touch-action: none;
   -webkit-user-drag: none;
-}
-
-.sidebar-sftp-entry:active,
-.sidebar-sftp-table-row:active {
-  cursor: grabbing;
 }
 
 .sidebar-sftp-table {
@@ -596,14 +591,6 @@
 
 .sidebar-follow-toggle input:disabled + span {
   opacity: 0.6;
-}
-
-.sidebar-follow-path {
-  flex: 1 0 100%;
-  padding-left: 20px;
-  color: #a0c6b8;
-  font-family: var(--font-mono);
-  font-size: 10px;
 }
 
 .sidebar-context-menu,

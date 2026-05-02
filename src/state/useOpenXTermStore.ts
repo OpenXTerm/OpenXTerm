@@ -32,6 +32,7 @@ export const useOpenXTermStore = create<OpenXTermState>((set, get) => ({
     theme: 'dark',
     activeSidebar: 'sessions',
     sidebarWidth: 252,
+    statusBarVisible: true,
   },
   tabs: [createWelcomeTab()],
   activeTabId: 'welcome',
@@ -57,6 +58,7 @@ export const useOpenXTermStore = create<OpenXTermState>((set, get) => ({
       preferences: {
         ...bootstrap.preferences,
         sidebarWidth: clampSidebarWidth(bootstrap.preferences.sidebarWidth ?? 252),
+        statusBarVisible: bootstrap.preferences.statusBarVisible ?? true,
       },
       tabs: [createWelcomeTab()],
       activeTabId: 'welcome',
@@ -68,6 +70,15 @@ export const useOpenXTermStore = create<OpenXTermState>((set, get) => ({
       transferItems: {},
       transferModalDismissed: false,
     })
+  },
+  async updatePreferences(preferences) {
+    const nextPreferences = {
+      ...preferences,
+      sidebarWidth: clampSidebarWidth(preferences.sidebarWidth ?? 252),
+      statusBarVisible: preferences.statusBarVisible ?? true,
+    }
+    await savePreferences(nextPreferences)
+    set({ preferences: nextPreferences })
   },
   async setSidebar(section) {
     const nextPreferences = { ...get().preferences, activeSidebar: section }

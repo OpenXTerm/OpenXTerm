@@ -393,18 +393,19 @@ Goal: the app should no longer feel like a development prototype.
 - System font picker.
 - Status bar icons and CPU graph.
 - Sidebar resize behavior.
+- App settings screen first pass.
+- Status bar visibility setting.
 
 ### In Progress
 
 - Density tuning.
 - Removing leftover demo wording.
+- App settings expansion.
 
 ### TODO
 
-- App settings screen.
 - Default terminal theme settings.
 - Default font settings.
-- Status bar visibility setting.
 - Transfer behavior settings.
 - Keyboard shortcuts.
 - Command palette.

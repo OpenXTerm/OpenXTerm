@@ -4,6 +4,7 @@ const DEFAULT_PREFERENCES: UiPreferences = {
   theme: 'dark',
   activeSidebar: 'sessions',
   sidebarWidth: 252,
+  statusBarVisible: true,
 }
 
 const DEFAULT_SESSIONS: SessionDefinition[] = [

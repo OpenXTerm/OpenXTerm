@@ -362,6 +362,7 @@ fn seed_storage() -> StorageModel {
             theme: "dark".into(),
             active_sidebar: "sessions".into(),
             sidebar_width: Some(252),
+            status_bar_visible: true,
         },
     }
 }

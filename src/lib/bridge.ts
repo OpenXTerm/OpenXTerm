@@ -129,6 +129,10 @@ function isUiPreferences(value: unknown): value is UiPreferences {
       value.sidebarWidth === undefined
       || typeof value.sidebarWidth === 'number'
     )
+    && (
+      value.statusBarVisible === undefined
+      || typeof value.statusBarVisible === 'boolean'
+    )
 }
 
 function readBrowserState(): AppBootstrap {

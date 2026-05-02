@@ -27,6 +27,7 @@ export interface OpenXTermState {
   transferItems: Record<string, TransferProgressPayload>
   transferModalDismissed: boolean
   initialize: () => Promise<void>
+  updatePreferences: (preferences: UiPreferences) => Promise<void>
   setSidebar: (section: SidebarSection) => Promise<void>
   setSidebarWidth: (width: number) => Promise<void>
   enqueueTransfer: (item: TransferProgressPayload) => void

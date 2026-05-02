@@ -286,7 +286,6 @@ export function Sidebar({
   })
   const {
     canFollowRemoteTerminal,
-    followedSftpPath,
     followRemoteTerminal,
     setFollowRemoteTerminal,
   } = useSftpFollowTerminal({
@@ -478,7 +477,6 @@ export function Sidebar({
 
         <SidebarFooter
           canFollowRemoteTerminal={canFollowRemoteTerminal}
-          followedSftpPath={followedSftpPath}
           followRemoteTerminal={followRemoteTerminal}
           onFollowRemoteTerminalChange={setFollowRemoteTerminal}
         />

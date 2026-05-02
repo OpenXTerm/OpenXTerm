@@ -71,6 +71,7 @@ CI/CD workflow:
 - [`src/components/forms/sessionEditorHelpers.ts`](src/components/forms/sessionEditorHelpers.ts): pure session-editor draft/default/preset helpers
 - [`src/components/forms/sessionEditorHooks.ts`](src/components/forms/sessionEditorHooks.ts): session-editor system-font loading and local X11 support inspection hooks
 - [`src/components/forms/FontFamilyPicker.tsx`](src/components/forms/FontFamilyPicker.tsx): searchable system-font picker for per-session terminal fonts
+- [`src/components/forms/AppSettingsModal.tsx`](src/components/forms/AppSettingsModal.tsx): app-level settings for interface preferences and app lock entry points
 - [`src/components/forms/AppLockOverlay.tsx`](src/components/forms/AppLockOverlay.tsx): lock screen for system auth / Touch ID / PIN flows
 - [`src/components/sidebar/Sidebar.tsx`](src/components/sidebar/Sidebar.tsx): sidebar composition shell for sessions, SFTP, tools, and macros
 - [`src/components/sidebar/SessionsSection.tsx`](src/components/sidebar/SessionsSection.tsx): session tree UI, folder actions, and session launch/edit controls
@@ -104,7 +105,7 @@ CI/CD workflow:
 - [`src/lib/mobaxtermImport.ts`](src/lib/mobaxtermImport.ts): `.mxtsessions` parser
 - [`src/lib/transferBatch.ts`](src/lib/transferBatch.ts): batch transfer aggregation
 - [`src/index.css`](src/index.css): ordered CSS import entrypoint
-- [`src/styles/`](src/styles): focused app styles for base tokens, sidebar, workspace, files, status bar, transfers, and session editor
+- [`src/styles/`](src/styles): focused app styles for base tokens, sidebar, workspace, files, status bar, transfers, settings, and session editor
 
 ### Backend
 

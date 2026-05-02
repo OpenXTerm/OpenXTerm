@@ -15,6 +15,8 @@ pub fn install_macos_menu<R: Runtime>(_app: &AppHandle<R>) -> tauri::Result<()> 
                 ..Default::default()
             }))
             .separator()
+            .text("open-settings", "Settings...")
+            .separator()
             .text("lock-app", "Lock OpenXTerm")
             .separator()
             .services()
@@ -38,9 +40,12 @@ pub fn install_macos_menu<R: Runtime>(_app: &AppHandle<R>) -> tauri::Result<()> 
 
         let sessions_menu = SubmenuBuilder::new(app, "Sessions")
             .text("show-sessions", "Show Sessions")
+            .text("show-sftp", "Show SFTP")
             .build()?;
 
         let view_menu = SubmenuBuilder::new(app, "View")
+            .text("show-sessions", "Show Sessions")
+            .text("show-sftp", "Show SFTP")
             .text("show-tools", "Show Tools")
             .text("show-macros", "Show Macros")
             .separator()
@@ -85,8 +90,9 @@ pub fn install_macos_menu<R: Runtime>(_app: &AppHandle<R>) -> tauri::Result<()> 
 
 pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
     let action = match id {
-        "new-session" | "new-macro" | "show-sessions" | "show-tools" | "show-macros"
-        | "lock-app" | "search-terminal" | "clear-terminal" | "reset-terminal" => Some(id),
+        "open-settings" | "new-session" | "new-macro" | "show-sessions" | "show-sftp"
+        | "show-tools" | "show-macros" | "lock-app" | "search-terminal" | "clear-terminal"
+        | "reset-terminal" => Some(id),
         _ => None,
     };
 

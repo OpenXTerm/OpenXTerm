@@ -16,6 +16,13 @@ interface TopBarMenu {
 
 const MENUS: TopBarMenu[] = [
   {
+    label: 'OpenXTerm',
+    items: [
+      { label: 'Settings...', action: 'open-settings' },
+      { label: 'Lock OpenXTerm', action: 'lock-app' },
+    ],
+  },
+  {
     label: 'Terminal',
     items: [
       { label: 'New Session', action: 'new-session' },
@@ -30,12 +37,14 @@ const MENUS: TopBarMenu[] = [
     label: 'Sessions',
     items: [
       { label: 'Show Sessions', action: 'show-sessions' },
+      { label: 'Show SFTP', action: 'show-sftp' },
     ],
   },
   {
     label: 'View',
     items: [
       { label: 'Show Sessions', action: 'show-sessions' },
+      { label: 'Show SFTP', action: 'show-sftp' },
       { label: 'Show Tools', action: 'show-tools' },
       { label: 'Show Macros', action: 'show-macros' },
     ],

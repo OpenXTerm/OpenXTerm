@@ -4,6 +4,7 @@ import { MacroEditorModal } from './components/forms/MacroEditorModal'
 import { MoveSessionModal } from './components/forms/MoveSessionModal'
 import { SessionFolderModal } from './components/forms/SessionFolderModal'
 import { SessionEditorModal } from './components/forms/SessionEditorModal'
+import { AppSettingsModal } from './components/forms/AppSettingsModal'
 import { AppLockOverlay } from './components/forms/AppLockOverlay'
 import { TopBar } from './components/layout/TopBar'
 import { getSystemAuthSupport, listenMenuAction, requestSystemUnlock } from './lib/bridge'
@@ -46,6 +47,7 @@ export function App() {
     terminalCwdByTabId,
     terminalFeeds,
     terminalStoppedByTabId,
+    updatePreferences,
     upsertMacro,
     upsertSession,
     closeTab,
@@ -58,6 +60,7 @@ export function App() {
   const [newSessionFolderParentPath, setNewSessionFolderParentPath] = useState<string | null>(null)
   const [sessionModalOpen, setSessionModalOpen] = useState(false)
   const [macroModalOpen, setMacroModalOpen] = useState(false)
+  const [settingsModalOpen, setSettingsModalOpen] = useState(false)
   const [moveSessionModalOpen, setMoveSessionModalOpen] = useState(false)
   const [sessionFolderModalOpen, setSessionFolderModalOpen] = useState(false)
   const [sidebarWidthDraft, setSidebarWidthDraft] = useState<number | null>(null)
@@ -141,6 +144,9 @@ export function App() {
 
   const handleMenuAction = useCallback((action: MenuAction) => {
     switch (action) {
+      case 'open-settings':
+        setSettingsModalOpen(true)
+        break
       case 'new-session':
         setEditingSession(null)
         setSessionModalOpen(true)
@@ -151,6 +157,9 @@ export function App() {
         break
       case 'show-sessions':
         void setSidebar('sessions')
+        break
+      case 'show-sftp':
+        void setSidebar('sftp')
         break
       case 'show-tools':
         void setSidebar('tools')
@@ -396,14 +405,30 @@ export function App() {
             onCloseTab={closeTab}
             onSelectTab={selectTab}
           />
-          <StatusBar
-            activeTab={activeTab}
-            sessionCpuHistoryByTabId={sessionCpuHistoryByTabId}
-            sessionStatusByTabId={sessionStatusByTabId}
-            sessions={sessions}
-          />
+          {preferences.statusBarVisible !== false && (
+            <StatusBar
+              activeTab={activeTab}
+              sessionCpuHistoryByTabId={sessionCpuHistoryByTabId}
+              sessionStatusByTabId={sessionStatusByTabId}
+              sessions={sessions}
+            />
+          )}
         </div>
       </div>
+
+      {settingsModalOpen && (
+        <AppSettingsModal
+          lockSupport={lockSupport}
+          open={settingsModalOpen}
+          preferences={preferences}
+          onClose={() => setSettingsModalOpen(false)}
+          onLockApp={() => {
+            setSettingsModalOpen(false)
+            handleLockApp()
+          }}
+          onSave={updatePreferences}
+        />
+      )}
 
       {sessionModalOpen && (
         <SessionEditorModal
