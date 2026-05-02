@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   FolderTree,
   Palette,
@@ -6,14 +6,14 @@ import {
   Settings2,
 } from 'lucide-react'
 
-import { inspectLocalX11Support, listSystemFontFamilies } from '../../lib/bridge'
-import type { LocalX11Support, SessionDefinition, SessionDraft } from '../../types/domain'
+import type { SessionDefinition, SessionDraft } from '../../types/domain'
 import {
   SessionEditorAdvancedTab,
   SessionEditorConnectionTab,
   SessionEditorGeneralTab,
   SessionEditorTerminalTab,
 } from './SessionEditorTabs'
+import { useSystemFonts, useX11Support } from './sessionEditorHooks'
 import {
   createDraft,
   supportsAdvancedTab,
@@ -50,15 +50,46 @@ export function SessionEditorModal({
   onClose,
   onSave,
 }: SessionEditorModalProps) {
+  if (!open) {
+    return null
+  }
+
+  const editorKey = `${session?.id ?? 'new'}:${initialFolderPath ?? ''}`
+  return (
+    <SessionEditorModalContent
+      key={editorKey}
+      open={open}
+      session={session}
+      initialFolderPath={initialFolderPath}
+      folderOptions={folderOptions}
+      onClose={onClose}
+      onSave={onSave}
+    />
+  )
+}
+
+function SessionEditorModalContent({
+  open,
+  session,
+  initialFolderPath,
+  folderOptions,
+  onClose,
+  onSave,
+}: SessionEditorModalProps) {
   const isMacOS = typeof navigator !== 'undefined' && navigator.userAgent.includes('Mac')
   const [draft, setDraft] = useState<SessionDraft>(createDraft(session, initialFolderPath))
   const [activeTab, setActiveTab] = useState<SessionEditorTab>('general')
-  const [x11Support, setX11Support] = useState<LocalX11Support | null>(null)
-  const [x11SupportBusy, setX11SupportBusy] = useState(false)
-  const [x11SupportError, setX11SupportError] = useState('')
-  const [systemFonts, setSystemFonts] = useState<string[]>([])
-  const [systemFontsBusy, setSystemFontsBusy] = useState(false)
-  const [systemFontsError, setSystemFontsError] = useState('')
+  const {
+    busy: systemFontsBusy,
+    error: systemFontsError,
+    fonts: systemFonts,
+  } = useSystemFonts(open)
+  const {
+    busy: x11SupportBusy,
+    error: x11SupportError,
+    inspect: checkX11Support,
+    support: x11Support,
+  } = useX11Support(open, draft)
 
   const normalizedFolderOptions = useMemo(
     () =>
@@ -67,101 +98,6 @@ export function SessionEditorModal({
       ),
     [draft.folderPath, folderOptions],
   )
-
-  useEffect(() => {
-    if (!open) {
-      return
-    }
-
-    setDraft(createDraft(session, initialFolderPath))
-    setActiveTab('general')
-    setX11Support(null)
-    setX11SupportBusy(false)
-    setX11SupportError('')
-    setSystemFonts([])
-    setSystemFontsBusy(false)
-    setSystemFontsError('')
-  }, [initialFolderPath, open, session])
-
-  useEffect(() => {
-    if (!open) {
-      return
-    }
-
-    let disposed = false
-    setSystemFontsBusy(true)
-    setSystemFontsError('')
-
-    void listSystemFontFamilies()
-      .then((fonts) => {
-        if (disposed) {
-          return
-        }
-        setSystemFonts(fonts)
-      })
-      .catch((error) => {
-        if (disposed) {
-          return
-        }
-        setSystemFonts([])
-        setSystemFontsError(error instanceof Error ? error.message : String(error))
-      })
-      .finally(() => {
-        if (!disposed) {
-          setSystemFontsBusy(false)
-        }
-      })
-
-    return () => {
-      disposed = true
-    }
-  }, [open])
-
-  useEffect(() => {
-    if (activeTab === 'connection' && !supportsConnectionTab(draft.kind)) {
-      setActiveTab('general')
-      return
-    }
-    if (activeTab === 'advanced' && !supportsAdvancedTab(draft.kind)) {
-      setActiveTab('general')
-    }
-  }, [activeTab, draft.kind])
-
-  useEffect(() => {
-    if (!open || draft.kind !== 'ssh' || !draft.x11Forwarding) {
-      return
-    }
-
-    let disposed = false
-    setX11SupportBusy(true)
-    setX11SupportError('')
-
-    void inspectLocalX11Support(draft.x11Display.trim() || undefined)
-      .then((payload) => {
-        if (!disposed) {
-          setX11Support(payload)
-        }
-      })
-      .catch((error) => {
-        if (!disposed) {
-          setX11Support(null)
-          setX11SupportError(error instanceof Error ? error.message : String(error))
-        }
-      })
-      .finally(() => {
-        if (!disposed) {
-          setX11SupportBusy(false)
-        }
-      })
-
-    return () => {
-      disposed = true
-    }
-  }, [draft.kind, draft.x11Display, draft.x11Forwarding, open])
-
-  if (!open) {
-    return null
-  }
 
   const x11DisplayPlaceholder =
     typeof navigator !== 'undefined' && navigator.userAgent.includes('Windows')
@@ -184,21 +120,7 @@ export function SessionEditorModal({
     }
     return true
   })
-
-  async function handleCheckX11Support() {
-    setX11SupportBusy(true)
-    setX11SupportError('')
-
-    try {
-      const payload = await inspectLocalX11Support(draft.x11Display.trim() || undefined)
-      setX11Support(payload)
-    } catch (error) {
-      setX11Support(null)
-      setX11SupportError(error instanceof Error ? error.message : String(error))
-    } finally {
-      setX11SupportBusy(false)
-    }
-  }
+  const resolvedActiveTab = visibleTabs.some((tab) => tab.id === activeTab) ? activeTab : 'general'
 
   function updateDraft(patch: Partial<SessionDraft>) {
     setDraft((current) => ({ ...current, ...patch }))
@@ -247,7 +169,7 @@ export function SessionEditorModal({
         x11Support={x11Support}
         x11SupportBusy={x11SupportBusy}
         x11SupportError={x11SupportError}
-        onCheckX11Support={() => void handleCheckX11Support()}
+        onCheckX11Support={() => void checkX11Support()}
         updateDraft={updateDraft}
       />
     )
@@ -285,7 +207,7 @@ export function SessionEditorModal({
           <div className="session-editor-tabstrip" role="tablist" aria-label="Session settings tabs">
             {visibleTabs.map((tab) => {
               const Icon = tab.icon
-              const selected = tab.id === activeTab
+              const selected = tab.id === resolvedActiveTab
               return (
                 <button
                   key={tab.id}
@@ -303,14 +225,14 @@ export function SessionEditorModal({
           </div>
 
           <div className="session-editor-tab-meta">
-            <strong>{visibleTabs.find((tab) => tab.id === activeTab)?.label}</strong>
-            <span>{tabDescription(activeTab, draft.kind)}</span>
+            <strong>{visibleTabs.find((tab) => tab.id === resolvedActiveTab)?.label}</strong>
+            <span>{tabDescription(resolvedActiveTab, draft.kind)}</span>
           </div>
 
-          {activeTab === 'general' && renderGeneralTab()}
-          {activeTab === 'connection' && renderConnectionTab()}
-          {activeTab === 'terminal' && renderTerminalTab()}
-          {activeTab === 'advanced' && renderAdvancedTab()}
+          {resolvedActiveTab === 'general' && renderGeneralTab()}
+          {resolvedActiveTab === 'connection' && renderConnectionTab()}
+          {resolvedActiveTab === 'terminal' && renderTerminalTab()}
+          {resolvedActiveTab === 'advanced' && renderAdvancedTab()}
 
           <div className="modal-actions">
             <button className="ghost-button" type="button" onClick={onClose}>

@@ -63,9 +63,11 @@ CI/CD workflow:
 - [`src/state/openXTermStoreHelpers.ts`](src/state/openXTermStoreHelpers.ts): pure store helpers for sorting, folder paths, status mapping, tab seeding, and transfer ordering
 - [`src/state/openXTermStoreTransfers.ts`](src/state/openXTermStoreTransfers.ts): store transfer enqueue, progress aggregation, flush scheduling, and transfer-window side effects
 - [`src/state/openXTermStoreListeners.ts`](src/state/openXTermStoreListeners.ts): one-time terminal/status/transfer event listener registration for the store
-- [`src/components/forms/SessionEditorModal.tsx`](src/components/forms/SessionEditorModal.tsx): compact tabbed session editor, X11 assistant, per-session terminal style, font picker
+- [`src/components/forms/SessionEditorModal.tsx`](src/components/forms/SessionEditorModal.tsx): compact tabbed session editor shell and save/close composition
 - [`src/components/forms/SessionEditorTabs.tsx`](src/components/forms/SessionEditorTabs.tsx): session editor tab panels for general, connection, terminal, and advanced settings
 - [`src/components/forms/sessionEditorHelpers.ts`](src/components/forms/sessionEditorHelpers.ts): pure session-editor draft/default/preset helpers
+- [`src/components/forms/sessionEditorHooks.ts`](src/components/forms/sessionEditorHooks.ts): session-editor system-font loading and local X11 support inspection hooks
+- [`src/components/forms/FontFamilyPicker.tsx`](src/components/forms/FontFamilyPicker.tsx): searchable system-font picker for per-session terminal fonts
 - [`src/components/forms/AppLockOverlay.tsx`](src/components/forms/AppLockOverlay.tsx): lock screen for system auth / Touch ID / PIN flows
 - [`src/components/sidebar/Sidebar.tsx`](src/components/sidebar/Sidebar.tsx): sessions tree, session-folder drag/drop, SFTP sidebar, tools, macros
 - [`src/components/status/StatusBar.tsx`](src/components/status/StatusBar.tsx): live lower rail, CPU history graph, lock button
@@ -473,6 +475,10 @@ Start with:
 Start with:
 
 - [`src/components/forms/SessionEditorModal.tsx`](src/components/forms/SessionEditorModal.tsx)
+- [`src/components/forms/SessionEditorTabs.tsx`](src/components/forms/SessionEditorTabs.tsx)
+- [`src/components/forms/FontFamilyPicker.tsx`](src/components/forms/FontFamilyPicker.tsx)
+- [`src/components/forms/sessionEditorHooks.ts`](src/components/forms/sessionEditorHooks.ts)
+- [`src/components/forms/sessionEditorHelpers.ts`](src/components/forms/sessionEditorHelpers.ts)
 - [`src/index.css`](src/index.css)
 - [`src/lib/bridge.ts`](src/lib/bridge.ts)
 - [`src-tauri/src/platform/fonts.rs`](src-tauri/src/platform/fonts.rs)

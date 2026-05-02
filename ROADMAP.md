@@ -38,6 +38,7 @@ OpenXTerm is independent software. It is not affiliated with, endorsed by, or co
 - Split the former monolithic `src/index.css` into focused files under `src/styles/`, leaving `index.css` as a small ordered import entrypoint.
 - Split session editor defaults, draft creation, terminal presets, and small tab/font helpers into a pure helper module.
 - Split the session editor tab panels into focused components so `SessionEditorModal.tsx` now owns state/effects/form composition instead of all tab JSX.
+- Split session editor system-font loading, X11 support inspection, and searchable font picking into focused hook/component files.
 - Split workspace file table rendering out of `FileBrowserView.tsx` while keeping transfer and directory-operation state in the container.
 - Started the Zustand store split by extracting public store types and pure helper logic from `useOpenXTermStore.ts`.
 - Continued the Zustand store split by moving transfer enqueue/progress aggregation/flush side effects into `openXTermStoreTransfers.ts`.
@@ -79,7 +80,7 @@ OpenXTerm is independent software. It is not affiliated with, endorsed by, or co
   - continue splitting `src/state/useOpenXTermStore.ts` only when new concerns appear; transfer/listener/domain/terminal/tab actions are extracted and the root store is now mostly bootstrap/preferences/composition;
   - preserve persisted state shape and public selectors during the first pass.
 - Session editor:
-  - split `src/components/forms/SessionEditorModal.tsx` into tab components and focused hooks for terminal presets, X11 settings, and font picker state.
+  - keep `src/components/forms/SessionEditorModal.tsx` as a compact composition shell; tab panels, defaults/presets, system-font loading, X11 support inspection, and font picking are now extracted, so remaining work should focus on validation polish and future settings expansion.
 - Styling:
   - continue reducing focused `src/styles/*.css` files by grouping component styles and expanding shared color/spacing variables before theme work.
 - Runtime and parsing cleanup:
