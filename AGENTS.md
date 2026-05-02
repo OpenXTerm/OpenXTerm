@@ -74,12 +74,15 @@ CI/CD workflow:
 - [`src/components/workspace/FileBrowserView.tsx`](src/components/workspace/FileBrowserView.tsx): remote directory UI, upload/download/drag flows
 - [`src/components/workspace/FileTable.tsx`](src/components/workspace/FileTable.tsx): remote file table rendering, column headers, selection, sorting UI, and row context-menu wiring
 - [`src/components/workspace/fileTableModel.ts`](src/components/workspace/fileTableModel.ts): file table sort types and column width constants
+- [`src/components/workspace/fileBrowserUtils.ts`](src/components/workspace/fileBrowserUtils.ts): file-browser path, clipboard, and error-context helpers
+- [`src/components/workspace/useFileBrowserUploads.ts`](src/components/workspace/useFileBrowserUploads.ts): file-browser upload input, browser drop, and Tauri native drop handling
 - [`src/hooks/useSftpConflictResolver.ts`](src/hooks/useSftpConflictResolver.ts): shared SFTP upload/download conflict resolution
 - [`src/hooks/useRemotePropertiesWindow.ts`](src/hooks/useRemotePropertiesWindow.ts): shared remote properties OS-window/fallback modal handling
 - [`src/lib/bridge.ts`](src/lib/bridge.ts): Tauri invoke/listen boundary
 - [`src/lib/remotePropertiesWindow.ts`](src/lib/remotePropertiesWindow.ts): remote entry properties window payload/result storage helpers
 - [`src/lib/localPath.ts`](src/lib/localPath.ts): cross-platform local path basename helper for drag/upload paths
 - [`src/lib/sessionUtils.ts`](src/lib/sessionUtils.ts): shared tab/session helpers and startup transcript copy
+- [`src/lib/sftpTransfers.ts`](src/lib/sftpTransfers.ts): shared SFTP upload/download orchestration and transfer queue wiring
 - [`src/lib/mobaxtermImport.ts`](src/lib/mobaxtermImport.ts): `.mxtsessions` parser
 - [`src/lib/transferBatch.ts`](src/lib/transferBatch.ts): batch transfer aggregation
 - [`src/index.css`](src/index.css): main app styling, including session editor and font picker layout

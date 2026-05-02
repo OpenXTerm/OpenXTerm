@@ -1,4 +1,5 @@
 import type { RemoteFileEntry, SessionDefinition } from '../../types/domain'
+export { batchLocalPathLabel, itemCountLabel, joinRemotePath } from '../../lib/sftpTransfers'
 
 export type SftpSortKey = 'name' | 'size' | 'modified' | 'owner' | 'group' | 'access'
 export type SortDirection = 'asc' | 'desc'
@@ -101,20 +102,4 @@ export function sidebarSftpErrorContext(session: SessionDefinition, action: stri
 
 export function movedEnough(startX: number, startY: number, currentX: number, currentY: number) {
   return Math.hypot(currentX - startX, currentY - startY) > 5
-}
-
-export function joinRemotePath(parent: string, name: string) {
-  return parent === '/' ? `/${name.replace(/^\/+/, '')}` : `${parent.replace(/\/+$/, '')}/${name.replace(/^\/+/, '')}`
-}
-
-export function itemCountLabel(count: number) {
-  return count === 1 ? '1 item' : `${count} items`
-}
-
-export function batchLocalPathLabel(paths: string[]) {
-  if (paths.length === 0) {
-    return undefined
-  }
-
-  return paths.length === 1 ? paths[0] : `${paths.length} local items`
 }

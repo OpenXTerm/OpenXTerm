@@ -3,17 +3,15 @@ import { getCurrentWebview } from '@tauri-apps/api/webview'
 
 import {
   createRemoteDirectory,
-  uploadLocalPath,
   uploadRemoteFile,
 } from '../../lib/bridge'
 import { logOpenXTermError } from '../../lib/errorLog'
 import { localPathBaseName } from '../../lib/localPath'
 import { queueBatchTransfers } from '../../lib/transferBatch'
 import { isTransferCanceledError } from '../../lib/transferQueue'
+import { runBrowserFileUploads, runLocalPathUploads } from '../../lib/sftpTransfers'
 import type { SessionDefinition, SidebarSection, TransferProgressPayload } from '../../types/domain'
 import {
-  batchLocalPathLabel,
-  itemCountLabel,
   joinRemotePath,
   sidebarSftpErrorContext,
 } from './sftpUtils'
@@ -70,38 +68,13 @@ export function useSftpUploads({
     setLoading(true)
     const transferIds: string[] = []
     try {
-      const transferItems = queueBatchTransfers({
-        items: uploadItems,
-        prefix: 'upload',
+      const result = await runLocalPathUploads({
+        currentPath,
         enqueueTransfer,
-        parent: (items) => ({
-          fileName: itemCountLabel(items.length),
-          remotePath: currentPath,
-          direction: 'upload',
-          purpose: 'upload',
-          state: 'queued',
-          transferredBytes: 0,
-          totalBytes: undefined,
-          localPath: batchLocalPathLabel(items.map((item) => item.localPath)),
-          message: `Queued ${items.length} items for upload`,
-        }),
-        child: (item) => ({
-          fileName: item.targetName,
-          remotePath: joinRemotePath(currentPath, item.targetName),
-          direction: 'upload',
-          purpose: 'upload',
-          state: 'queued',
-          transferredBytes: 0,
-          totalBytes: undefined,
-          localPath: item.localPath,
-          message: 'Queued for upload',
-        }),
+        items: uploadItems,
+        session: selectedSession,
       })
-
-      for (const { item, transferId } of transferItems) {
-        transferIds.push(transferId)
-        await uploadLocalPath(selectedSession, currentPath, item.localPath, transferId, item.targetName, item.conflictAction)
-      }
+      transferIds.push(...result.transferIds)
       setMessage(`Uploaded ${uploadItems.length} item${uploadItems.length > 1 ? 's' : ''} to ${currentPath}`)
       await loadDirectory(currentPath)
     } catch (error) {
@@ -193,36 +166,12 @@ export function useSftpUploads({
 
     setLoading(true)
     try {
-      const transferItems = queueBatchTransfers({
-        items: uploadItems,
-        prefix: 'upload',
+      await runBrowserFileUploads({
+        currentPath,
         enqueueTransfer,
-        parent: (items) => ({
-          fileName: itemCountLabel(items.length),
-          remotePath: currentPath,
-          direction: 'upload',
-          purpose: 'upload',
-          state: 'queued',
-          transferredBytes: 0,
-          totalBytes: items.reduce((sum, item) => sum + item.file.size, 0),
-          message: `Queued ${items.length} files for upload`,
-        }),
-        child: (item) => ({
-          fileName: item.targetName,
-          remotePath: joinRemotePath(currentPath, item.targetName),
-          direction: 'upload',
-          purpose: 'upload',
-          state: 'queued',
-          transferredBytes: 0,
-          totalBytes: item.file.size,
-          message: 'Queued for upload',
-        }),
+        items: uploadItems,
+        session: selectedSession,
       })
-
-      for (const { item, transferId } of transferItems) {
-        const bytes = Array.from(new Uint8Array(await item.file.arrayBuffer()))
-        await uploadRemoteFile(selectedSession, currentPath, item.targetName, bytes, transferId, item.conflictAction)
-      }
       setMessage(`Uploaded ${uploadItems.length} file${uploadItems.length > 1 ? 's' : ''} to ${currentPath}`)
       await loadDirectory(currentPath)
     } catch (error) {

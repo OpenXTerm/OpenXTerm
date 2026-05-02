@@ -1,107 +1,37 @@
-import { useCallback, useEffect, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent } from 'react'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { ArrowDownToLine, ArrowUp, Copy, Eye, FolderPlus, Info, LoaderCircle, RefreshCw, Trash2, Upload } from 'lucide-react'
-import { getCurrentWebview } from '@tauri-apps/api/webview'
 
 import {
   createRemoteDirectory,
   deleteRemoteEntry,
-  downloadRemoteFile,
   listRemoteDirectory,
-  uploadLocalFile,
-  uploadRemoteFile,
 } from '../../lib/bridge'
 import { logOpenXTermError } from '../../lib/errorLog'
 import { useRemotePropertiesWindow } from '../../hooks/useRemotePropertiesWindow'
-import { localPathBaseName } from '../../lib/localPath'
-import { queueBatchTransfers } from '../../lib/transferBatch'
 import { isTransferCanceledError } from '../../lib/transferQueue'
+import { runRemoteEntryDownloads } from '../../lib/sftpTransfers'
 import { useSftpConflictResolver } from '../../hooks/useSftpConflictResolver'
 import type { RemoteDirectorySnapshot, SessionDefinition } from '../../types/domain'
 import { useOpenXTermStore } from '../../state/useOpenXTermStore'
 import { RemoteEntryPropertiesModal } from './RemoteEntryPropertiesModal'
 import { FileConflictModal } from './FileConflictModal'
 import { FileTable } from './FileTable'
+import { copyTextToClipboard, fileBrowserErrorContext, normalizeRemotePath, parentPathOf } from './fileBrowserUtils'
 import { useFileBrowserSelection } from './useFileBrowserSelection'
 import { useFileNativeDragOut } from './useFileNativeDragOut'
 import { useFileTableControls } from './useFileTableControls'
+import { useFileBrowserUploads } from './useFileBrowserUploads'
 
 interface FileBrowserViewProps {
   session: SessionDefinition
 }
 
-function parentPathOf(path: string) {
-  if (!path || path === '/') {
-    return '/'
-  }
-
-  const parts = path.split('/').filter(Boolean)
-  if (parts.length <= 1) {
-    return '/'
-  }
-
-  return `/${parts.slice(0, -1).join('/')}`
-}
-
-function itemCountLabel(count: number) {
-  return count === 1 ? '1 item' : `${count} items`
-}
-
-function normalizeRemotePath(path: string) {
-  const trimmed = path.trim()
-  if (!trimmed || trimmed === '/') {
-    return '/'
-  }
-
-  return `/${trimmed.replace(/^\/+/, '').replace(/\/{2,}/g, '/')}`.replace(/\/+$/, '') || '/'
-}
-
-function fileBrowserErrorContext(session: SessionDefinition, action: string, path: string) {
-  return {
-    action,
-    path,
-    sessionId: session.id,
-    sessionName: session.name,
-    host: session.host,
-    kind: session.kind,
-    linkedSshTabId: session.linkedSshTabId,
-  }
-}
-
-async function copyTextToClipboard(text: string) {
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text)
-    return
-  }
-
-  const textarea = document.createElement('textarea')
-  textarea.value = text
-  textarea.setAttribute('readonly', 'true')
-  textarea.style.position = 'fixed'
-  textarea.style.opacity = '0'
-  textarea.style.pointerEvents = 'none'
-  document.body.appendChild(textarea)
-  textarea.select()
-  textarea.setSelectionRange(0, textarea.value.length)
-
-  try {
-    const copied = document.execCommand('copy')
-    if (!copied) {
-      throw new Error('Clipboard copy failed.')
-    }
-  } finally {
-    document.body.removeChild(textarea)
-  }
-}
-
 export function FileBrowserView({ session }: FileBrowserViewProps) {
-  const uploadInputRef = useRef<HTMLInputElement | null>(null)
-  const filePaneRef = useRef<HTMLDivElement | null>(null)
   const enqueueTransfer = useOpenXTermStore((state) => state.enqueueTransfer)
   const [snapshot, setSnapshot] = useState<RemoteDirectorySnapshot | null>(null)
   const [currentPath, setCurrentPath] = useState('/')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
-  const [dropActive, setDropActive] = useState(false)
   const [pathDraft, setPathDraft] = useState('/')
   const {
     fileTableStyle,
@@ -177,6 +107,22 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
     setMessage,
     setSelectedEntryPaths,
   })
+  const {
+    dropActive,
+    filePaneRef,
+    handleFileDrop,
+    handleUploadChange,
+    setDropActive,
+    uploadInputRef,
+  } = useFileBrowserUploads({
+    currentPath,
+    enqueueTransfer,
+    loadDirectory,
+    resolveUploadTargets,
+    session,
+    setBusy,
+    setMessage,
+  })
 
   useEffect(() => {
     setSnapshot(null)
@@ -189,124 +135,6 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
   useEffect(() => {
     setPathDraft(currentPath)
   }, [currentPath])
-
-  useEffect(() => {
-    if (!('__TAURI_INTERNALS__' in window)) {
-      return
-    }
-
-    let disposed = false
-    let unlisten: (() => void) | null = null
-
-    void getCurrentWebview().onDragDropEvent((event) => {
-      if (disposed || !filePaneRef.current) {
-        return
-      }
-
-      const payload = event.payload
-
-      if (payload.type === 'leave') {
-        setDropActive(false)
-        return
-      }
-
-      const bounds = filePaneRef.current.getBoundingClientRect()
-      const inside =
-        payload.position.x >= bounds.left
-        && payload.position.x <= bounds.right
-        && payload.position.y >= bounds.top
-        && payload.position.y <= bounds.bottom
-
-      if (payload.type === 'enter' || payload.type === 'over') {
-        setDropActive(inside)
-        return
-      }
-
-      if (payload.type !== 'drop') {
-        setDropActive(false)
-        return
-      }
-
-      const droppedPaths = payload.paths
-      setDropActive(false)
-      if (!inside || droppedPaths.length === 0) {
-        return
-      }
-
-      void (async () => {
-        setBusy(true)
-        try {
-          const uploadItems = await resolveUploadTargets(
-            droppedPaths.map((localPath) => ({
-              localPath,
-              name: localPathBaseName(localPath),
-            })),
-            (name) => currentPath === '/' ? `/${name}` : `${currentPath}/${name}`,
-          )
-          if (uploadItems.length === 0) {
-            setMessage('Upload skipped.')
-            return
-          }
-
-          const transferItems = queueBatchTransfers({
-            items: uploadItems,
-            prefix: 'upload',
-            enqueueTransfer,
-            parent: (items) => ({
-              fileName: itemCountLabel(items.length),
-              remotePath: currentPath,
-              direction: 'upload',
-              purpose: 'upload',
-              state: 'queued',
-              transferredBytes: 0,
-              totalBytes: undefined,
-              localPath: `${items.length} local items`,
-              message: `Queued ${items.length} items for upload`,
-            }),
-            child: (item) => ({
-              fileName: item.targetName,
-              remotePath: currentPath === '/' ? `/${item.targetName}` : `${currentPath}/${item.targetName}`,
-              direction: 'upload',
-              purpose: 'upload',
-              state: 'queued',
-              transferredBytes: 0,
-              totalBytes: undefined,
-              localPath: item.localPath,
-              message: 'Queued for upload',
-            }),
-          })
-
-          for (const { item, transferId } of transferItems) {
-            await uploadLocalFile(session, currentPath, item.localPath, transferId, item.targetName, item.conflictAction)
-          }
-          setMessage(`Uploaded ${uploadItems.length} item${uploadItems.length > 1 ? 's' : ''} to ${currentPath}`)
-          await loadDirectory(currentPath)
-        } catch (error) {
-          if (isTransferCanceledError(error)) {
-            setMessage('Transfer canceled.')
-            return
-          }
-          logOpenXTermError('file-browser.drop-upload', error, {
-            ...fileBrowserErrorContext(session, 'drop-upload', currentPath),
-            droppedPaths,
-          })
-          setMessage(error instanceof Error ? error.message : 'Unable to upload dropped file.')
-        } finally {
-          setBusy(false)
-        }
-      })()
-    }).then((dispose) => {
-      if (disposed) {
-        return
-      }
-      unlisten = dispose
-    })
-
-    return () => {
-      disposed = true
-      unlisten?.()
-    }
-  }, [currentPath, enqueueTransfer, loadDirectory, resolveUploadTargets, session])
 
   async function handleCreateFolder() {
     const name = window.prompt('Folder name')
@@ -361,25 +189,22 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
 
     setBusy(true)
     try {
-      const transferId = `download-${crypto.randomUUID()}`
       const target = await resolveDownloadTarget(selectedEntry, false)
       if (target.skipped) {
         setMessage('Download skipped.')
         return
       }
-      enqueueTransfer({
-        transferId,
-        fileName: target.targetName,
-        remotePath: selectedEntry.path,
-        direction: 'download',
-        purpose: 'download',
-        state: 'queued',
-        transferredBytes: 0,
-        totalBytes: selectedEntry.sizeBytes,
-        message: 'Queued for download',
+      const result = await runRemoteEntryDownloads({
+        currentPath,
+        enqueueTransfer,
+        items: [{
+          entry: selectedEntry,
+          targetName: target.targetName,
+          conflictAction: target.conflictAction,
+        }],
+        session,
       })
-      const result = await downloadRemoteFile(session, selectedEntry.path, transferId, target.targetName, target.conflictAction)
-      setMessage(`Downloaded ${result.fileName} -> ${result.savedTo}`)
+      setMessage(`Downloaded ${result.lastResult}`)
     } catch (error) {
       if (isTransferCanceledError(error)) {
         setMessage('Transfer canceled.')
@@ -405,96 +230,6 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
   async function handlePathSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     await loadDirectory(pathDraft)
-  }
-
-  async function uploadFiles(files: File[]) {
-    if (files.length === 0) {
-      return
-    }
-
-    setBusy(true)
-    try {
-      const uploadItems = await resolveUploadTargets(
-        files.map((file) => ({ file, name: file.name })),
-        (name) => currentPath === '/' ? `/${name}` : `${currentPath}/${name}`,
-      )
-      if (uploadItems.length === 0) {
-        setMessage('Upload skipped.')
-        return
-      }
-
-      const transferItems = queueBatchTransfers({
-        items: uploadItems,
-        prefix: 'upload',
-        enqueueTransfer,
-        parent: (items) => ({
-          fileName: itemCountLabel(items.length),
-          remotePath: currentPath,
-          direction: 'upload',
-          purpose: 'upload',
-          state: 'queued',
-          transferredBytes: 0,
-          totalBytes: items.reduce((sum, item) => sum + item.file.size, 0),
-          message: `Queued ${items.length} files for upload`,
-        }),
-        child: (item) => ({
-          fileName: item.targetName,
-          remotePath: currentPath === '/' ? `/${item.targetName}` : `${currentPath}/${item.targetName}`,
-          direction: 'upload',
-          purpose: 'upload',
-          state: 'queued',
-          transferredBytes: 0,
-          totalBytes: item.file.size,
-          message: 'Queued for upload',
-        }),
-      })
-
-      for (const { item, transferId } of transferItems) {
-        const bytes = Array.from(new Uint8Array(await item.file.arrayBuffer()))
-        await uploadRemoteFile(session, currentPath, item.targetName, bytes, transferId, item.conflictAction)
-      }
-      setMessage(`Uploaded ${uploadItems.length} file${uploadItems.length > 1 ? 's' : ''} to ${currentPath}`)
-      await loadDirectory(currentPath)
-    } catch (error) {
-      if (isTransferCanceledError(error)) {
-        setMessage('Transfer canceled.')
-        setBusy(false)
-        return
-      }
-      logOpenXTermError('file-browser.upload-file', error, {
-        ...fileBrowserErrorContext(session, 'upload', currentPath),
-        files: files.map((file) => ({ name: file.name, size: file.size })),
-      })
-      setMessage(error instanceof Error ? error.message : 'Unable to upload file.')
-      setBusy(false)
-    }
-  }
-
-  async function handleUploadChange(event: ChangeEvent<HTMLInputElement>) {
-    const fileList = event.target.files
-    if (!fileList || fileList.length === 0) {
-      return
-    }
-
-    try {
-      await uploadFiles(Array.from(fileList))
-    } finally {
-      event.target.value = ''
-      setBusy(false)
-    }
-  }
-
-  async function handleFileDrop(event: DragEvent<HTMLDivElement>) {
-    event.preventDefault()
-    setDropActive(false)
-
-    const droppedFiles = Array.from(event.dataTransfer.files ?? []).filter((file) => file.size >= 0)
-    if (droppedFiles.length === 0) {
-      return
-    }
-
-    await uploadFiles(droppedFiles)
-    setBusy(false)
   }
 
   return (

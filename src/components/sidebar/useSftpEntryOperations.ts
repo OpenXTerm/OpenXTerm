@@ -3,15 +3,14 @@ import type { FormEvent } from 'react'
 import {
   createRemoteDirectory,
   deleteRemoteEntry,
-  downloadRemoteEntry,
   renameRemoteEntry,
 } from '../../lib/bridge'
 import { logOpenXTermError } from '../../lib/errorLog'
 import type { FileConflictResolution } from '../../lib/fileConflict'
-import { queueBatchTransfers } from '../../lib/transferBatch'
 import { isTransferCanceledError } from '../../lib/transferQueue'
+import { runRemoteEntryDownloads } from '../../lib/sftpTransfers'
 import type { RemoteFileEntry, SessionDefinition, TransferProgressPayload } from '../../types/domain'
-import { itemCountLabel, sidebarSftpErrorContext } from './sftpUtils'
+import { sidebarSftpErrorContext } from './sftpUtils'
 
 type DownloadTargetResolution = {
   targetName: string
@@ -180,7 +179,6 @@ export function useSftpEntryOperations({
     const session = selectedSession
     setLoading(true)
     try {
-      let lastResult = ''
       let applyToAll: FileConflictResolution | null = null
       const downloadItems: Array<{
         entry: RemoteFileEntry
@@ -205,44 +203,16 @@ export function useSftpEntryOperations({
         return
       }
 
-      const knownTotalBytes = downloadItems.every((item) => item.entry.kind === 'file' && typeof item.entry.sizeBytes === 'number')
-        ? downloadItems.reduce((sum, item) => sum + (item.entry.sizeBytes ?? 0), 0)
-        : undefined
-      const transferItems = queueBatchTransfers({
-        items: downloadItems,
-        prefix: 'download',
+      const result = await runRemoteEntryDownloads({
+        currentPath,
         enqueueTransfer,
-        parent: (items) => ({
-          fileName: itemCountLabel(items.length),
-          remotePath: currentPath,
-          direction: 'download',
-          purpose: 'download',
-          state: 'queued',
-          transferredBytes: 0,
-          totalBytes: knownTotalBytes,
-          message: `Queued ${items.length} items for download`,
-        }),
-        child: (item) => ({
-          fileName: item.targetName,
-          remotePath: item.entry.path,
-          direction: 'download',
-          purpose: 'download',
-          state: 'queued',
-          transferredBytes: 0,
-          totalBytes: item.entry.kind === 'file' ? item.entry.sizeBytes : undefined,
-          message: item.entry.kind === 'folder' ? 'Queued folder download' : 'Queued for download',
-        }),
+        items: downloadItems,
+        session,
       })
-
-      for (const { item, transferId } of transferItems) {
-        const { entry } = item
-        const result = await downloadRemoteEntry(session, entry.path, entry.kind, transferId, item.targetName, item.conflictAction)
-        lastResult = `${result.fileName} -> ${result.savedTo}`
-      }
       setMessage(
         downloadItems.length === 1
-          ? `Downloaded ${lastResult}`
-          : `Downloaded ${downloadItems.length} item${downloadItems.length > 1 ? 's' : ''}`,
+          ? `Downloaded ${result.lastResult}`
+          : `Downloaded ${result.downloadedCount} item${result.downloadedCount > 1 ? 's' : ''}`,
       )
     } catch (error) {
       if (isTransferCanceledError(error)) {

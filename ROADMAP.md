@@ -52,6 +52,8 @@ OpenXTerm is independent software. It is not affiliated with, endorsed by, or co
 - Extracted workspace file browser table state/sorting/resizing into `src/components/workspace/useFileTableControls.ts`.
 - Extracted workspace file browser native drag-out pointer handling into `src/components/workspace/useFileNativeDragOut.ts`.
 - Extracted workspace file browser selection, path-to-copy, and context-menu lifecycle into `src/components/workspace/useFileBrowserSelection.ts`.
+- Extracted shared SFTP upload/download orchestration into `src/lib/sftpTransfers.ts` so sidebar SFTP and workspace file browser share batch transfer setup and bridge calls.
+- Extracted workspace file browser upload/drop handling into `src/components/workspace/useFileBrowserUploads.ts` and path/clipboard helpers into `src/components/workspace/fileBrowserUtils.ts`.
 - Tightened transfer queue localStorage parsing by replacing fallback `as` casts with an explicit typed return.
 - Started the backend transfer split by moving transfer progress event emission and transfer-window reveal logic into `src-tauri/src/transfer/progress.rs`.
 - Continued the backend transfer split by moving transfer retry/cancel runtime state into `src-tauri/src/transfer/state.rs`.
@@ -68,8 +70,8 @@ OpenXTerm is independent software. It is not affiliated with, endorsed by, or co
 
 - Frontend SFTP consolidation:
   - finish reducing `Sidebar.tsx` to orchestration only; current pass reduced it below 500 lines, with section wiring and selected-session state still intentionally local;
-  - continue reducing `FileBrowserView.tsx`; current pass reduced it below 700 lines and shares conflict/properties/table/native-drag/selection hooks, but upload/download orchestration is still local;
-  - extract shared SFTP upload/download orchestration only after another smoke pass for drag-in, drag-out, batch downloads, conflict overwrite/skip/rename, retry, and cancel.
+  - continue reducing `FileBrowserView.tsx`; current pass reduced it below 400 lines and shares conflict/properties/table/native-drag/selection/upload/drop plus upload/download orchestration;
+  - keep folder-upload orchestration separate until remote folder download/upload hardening gets its own smoke pass.
 - Backend transfer layer:
   - continue splitting `src-tauri/src/transfer/mod.rs`; progress event emission, transfer-window reveal logic, retry/cancel state, path helpers, metadata formatting, FTP helpers, non-transfer-loop SFTP helpers, and remote entry CRUD are extracted, while upload/download loops and shared lifecycle helpers still live in the root module;
   - avoid behavior rewrites until each extracted path has manual upload/download/retry/cancel smoke coverage.
