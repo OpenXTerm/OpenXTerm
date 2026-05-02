@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     io::{self, Read, Write},
-    net::{Shutdown, TcpStream, ToSocketAddrs},
+    net::{Shutdown, TcpStream},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
@@ -12,7 +12,7 @@ use std::{
 
 use tauri::AppHandle;
 
-use crate::models::SessionDefinition;
+use crate::{models::SessionDefinition, proxy::connect_tcp_stream};
 
 use super::{
     emit_output, finalize_terminal, handle_password_prompt, push_recent_terminal_output,
@@ -26,7 +26,6 @@ const TELNET_WONT: u8 = 252;
 const TELNET_WILL: u8 = 251;
 const TELNET_SB: u8 = 250;
 const TELNET_SE: u8 = 240;
-const TELNET_CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 
 pub(super) struct PendingTelnetWriter;
 
@@ -184,30 +183,7 @@ fn spawn_telnet_reader(
 }
 
 fn connect_telnet_stream(session: &SessionDefinition) -> Result<TcpStream, String> {
-    let endpoint = (session.host.as_str(), session.port);
-    let addresses = endpoint.to_socket_addrs().map_err(|error| {
-        format!(
-            "failed to resolve {}:{}: {error}",
-            session.host, session.port
-        )
-    })?;
-
-    let mut last_error = None;
-    for address in addresses {
-        match TcpStream::connect_timeout(&address, TELNET_CONNECT_TIMEOUT) {
-            Ok(stream) => return Ok(stream),
-            Err(error) => last_error = Some(error),
-        }
-    }
-
-    Err(format!(
-        "failed to connect to {}:{}: {}",
-        session.host,
-        session.port,
-        last_error
-            .map(|error| error.to_string())
-            .unwrap_or_else(|| "no resolved addresses".into())
-    ))
+    connect_tcp_stream(session)
 }
 
 fn process_telnet_bytes(buffer: &[u8]) -> (Vec<u8>, Vec<u8>, Vec<u8>) {

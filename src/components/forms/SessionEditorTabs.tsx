@@ -473,6 +473,66 @@ export function SessionEditorConnectionTab({
           File sessions open directly in the navigator view. Use SFTP for secure file access and FTP for older endpoints.
         </p>
       )}
+
+      <div className="session-editor-inline-heading">Network proxy</div>
+      <div className="session-editor-grid">
+        <label className="editor-field">
+          <span>Proxy type</span>
+          <select
+            value={draft.proxyType}
+            onChange={(event) => updateDraft({ proxyType: event.target.value as SessionDraft['proxyType'] })}
+          >
+            <option value="none">Direct connection</option>
+            <option value="http">HTTP CONNECT</option>
+            <option value="socks5">SOCKS5</option>
+          </select>
+        </label>
+
+        {draft.proxyType !== 'none' && (
+          <>
+            <label className="editor-field editor-field-wide">
+              <span>Proxy host</span>
+              <input
+                placeholder="127.0.0.1"
+                value={draft.proxyHost}
+                onChange={(event) => updateDraft({ proxyHost: event.target.value })}
+              />
+            </label>
+
+            <label className="editor-field editor-field-compact">
+              <span>Proxy port</span>
+              <input
+                min={1}
+                max={65535}
+                type="number"
+                value={draft.proxyPort}
+                onChange={(event) => updateDraft({ proxyPort: Number(event.target.value) })}
+              />
+            </label>
+
+            <label className="editor-field">
+              <span>Proxy username</span>
+              <input
+                value={draft.proxyUsername}
+                onChange={(event) => updateDraft({ proxyUsername: event.target.value })}
+              />
+            </label>
+
+            <label className="editor-field">
+              <span>Proxy password</span>
+              <input
+                type="password"
+                value={draft.proxyPassword}
+                onChange={(event) => updateDraft({ proxyPassword: event.target.value })}
+              />
+            </label>
+          </>
+        )}
+      </div>
+
+      <p className="editor-hint">
+        Proxy settings apply to SSH, linked SFTP, standalone SFTP, Telnet, and FTP for this session.
+      </p>
     </section>
   )
 }

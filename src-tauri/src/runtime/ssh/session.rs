@@ -4,7 +4,7 @@ use libssh_rs::{
     Channel as LibsshChannel, Session as LibsshSession, Sftp as LibsshSftp, SshOption,
 };
 
-use crate::models::SessionDefinition;
+use crate::{models::SessionDefinition, proxy::configure_libssh_proxy_socket};
 
 use super::super::x11::X11ForwardConfig;
 use super::super::{expand_tilde, shell_quote};
@@ -182,6 +182,7 @@ fn connect_embedded_ssh_session_with_username(
         .map_err(|error| {
             format!("failed to configure embedded SSH global known_hosts path: {error}")
         })?;
+    configure_libssh_proxy_socket(&ssh, session)?;
     ssh.connect().map_err(|error| {
         humanize_ssh_error_message(
             &format!("embedded SSH {context} connect failed: {error}"),

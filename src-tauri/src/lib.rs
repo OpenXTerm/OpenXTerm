@@ -3,6 +3,7 @@ mod drag;
 mod models;
 mod platform;
 mod probe;
+mod proxy;
 mod runtime;
 mod storage;
 mod transfer;

@@ -1,6 +1,9 @@
 use std::{path::Path, path::PathBuf, process::Command};
 
-use crate::models::{RemoteDirectorySnapshot, RemoteFileEntry, SessionDefinition};
+use crate::{
+    models::{RemoteDirectorySnapshot, RemoteFileEntry, SessionDefinition},
+    proxy::configure_curl_proxy_args,
+};
 
 use super::{
     metadata::{format_size, parse_access_permissions},
@@ -80,6 +83,7 @@ fn run_ftp_command(
 ) -> Result<Vec<u8>, String> {
     let mut command = Command::new("curl");
     command.args(["--silent", "--show-error", "--disable-epsv"]);
+    configure_curl_proxy_args(&mut command, session)?;
     if let Some(quote) = quote {
         command.arg("--quote").arg(quote);
     }

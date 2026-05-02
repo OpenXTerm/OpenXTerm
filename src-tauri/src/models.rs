@@ -14,6 +14,16 @@ pub struct SessionDefinition {
     pub auth_type: String,
     pub password: Option<String>,
     pub key_path: Option<String>,
+    #[serde(default = "default_proxy_type")]
+    pub proxy_type: String,
+    #[serde(default)]
+    pub proxy_host: Option<String>,
+    #[serde(default)]
+    pub proxy_port: Option<u16>,
+    #[serde(default)]
+    pub proxy_username: Option<String>,
+    #[serde(default)]
+    pub proxy_password: Option<String>,
     #[serde(default)]
     pub x11_forwarding: bool,
     #[serde(default = "default_x11_trusted")]
@@ -43,6 +53,10 @@ pub struct SessionDefinition {
 
 fn default_x11_trusted() -> bool {
     true
+}
+
+fn default_proxy_type() -> String {
+    "none".into()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

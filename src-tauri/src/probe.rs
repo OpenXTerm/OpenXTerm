@@ -2,7 +2,10 @@ use std::io::Read;
 
 use libssh_rs::{FileType, Session, SshOption};
 
-use crate::models::{LibsshProbePayload, RemoteFileEntry, SessionDefinition};
+use crate::{
+    models::{LibsshProbePayload, RemoteFileEntry, SessionDefinition},
+    proxy::configure_libssh_proxy_socket,
+};
 
 const DEFAULT_PROBE_COMMAND: &str =
     "printf 'user='; id -un; printf '\\nhost='; hostname; printf '\\npwd='; pwd";
@@ -61,6 +64,7 @@ fn connect(session: &SessionDefinition, username: &str) -> Result<Session, Strin
         .map_err(|error| format!("failed to configure libssh port: {error}"))?;
     ssh.set_option(SshOption::User(Some(username.to_string())))
         .map_err(|error| format!("failed to configure libssh username: {error}"))?;
+    configure_libssh_proxy_socket(&ssh, session)?;
     ssh.connect()
         .map_err(|error| format!("libssh connect failed: {error}"))?;
 

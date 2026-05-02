@@ -164,6 +164,9 @@ These must be handled before calling OpenXTerm stable.
   - linked SFTP should not ask for the same password again in the normal active SSH flow.
   - Windows fallback behavior must clearly explain when saved password/key/agent auth is required.
   - errors must be understandable.
+- Per-session proxy support:
+  - SSH/SFTP, Telnet, and FTP should work through direct, HTTP CONNECT, and SOCKS5 paths where the target network requires it.
+  - proxy errors should clearly identify whether DNS, proxy auth, proxy connect, or target connect failed.
 - Packaging:
   - macOS signed and notarized build.
   - Linux AppImage and/or `.deb`.

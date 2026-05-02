@@ -1,6 +1,7 @@
 export type SidebarSection = 'sessions' | 'sftp' | 'tools' | 'macros'
 export type SessionKind = 'local' | 'ssh' | 'telnet' | 'serial' | 'sftp' | 'ftp'
 export type AuthType = 'password' | 'key' | 'none'
+export type ProxyType = 'none' | 'http' | 'socks5'
 
 export interface SessionDefinition {
   id: string
@@ -13,6 +14,11 @@ export interface SessionDefinition {
   authType: AuthType
   password?: string
   keyPath?: string
+  proxyType?: ProxyType
+  proxyHost?: string
+  proxyPort?: number
+  proxyUsername?: string
+  proxyPassword?: string
   x11Forwarding?: boolean
   x11Trusted?: boolean
   x11Display?: string
@@ -151,6 +157,11 @@ export interface SessionDraft {
   authType: AuthType
   password: string
   keyPath: string
+  proxyType: ProxyType
+  proxyHost: string
+  proxyPort: number
+  proxyUsername: string
+  proxyPassword: string
   x11Forwarding: boolean
   x11Trusted: boolean
   x11Display: string
