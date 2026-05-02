@@ -58,7 +58,7 @@ Completed May 2, 2026 on macOS with Finder drag-in/drag-out against Linux SSH/SF
 
 Run these first when validating the current branch:
 
-1. Re-run the SFTP transfer smoke pass after any transfer, drag, or file-browser refactor.
+1. Re-run the SFTP transfer smoke pass after any transfer, drag, or file-browser behavior change.
 2. Test the same transfer matrix on Windows and Linux desktop builds.
 3. Test remote folder download with a nested directory and mixed file sizes.
 4. Test permission denied and no-space-left failures on the remote side.
@@ -109,7 +109,7 @@ Record each pass in a small note with:
 | Create folder | Folder appears after refresh/list reload. | PASS |
 | Upload single file | Transfer window appears and file appears remotely. | PASS |
 | Upload multiple files | One batch transfer is shown. | PASS |
-| Upload existing name | Existing file is skipped; no silent overwrite. | PASS |
+| Upload existing name | Conflict handling appears or applies the selected action; no silent overwrite. | PASS |
 | Drag file from Finder into empty remote folder | Drop-zone accepts file. | PASS |
 | Drag remote file out to Finder | Transfer window appears and file exports without flickering to waiting state. | PASS |
 | Download file | File is saved locally and transfer completes. | PASS |

@@ -11,8 +11,8 @@
   flex-wrap: wrap;
   gap: 5px;
   padding: 6px 10px;
-  border-bottom: 1px solid #262e32;
-  background: #15191c;
+  border-bottom: 1px solid var(--color-border-toolbar);
+  background: var(--color-surface-toolbar);
 }
 
 .file-grid {
@@ -115,7 +115,7 @@
 }
 
 .file-drop-overlay span {
-  color: #9bcdb6;
+  color: var(--color-drop-copy);
   font-size: 12px;
 }
 
@@ -147,7 +147,7 @@
   overflow: hidden;
   border: 1px solid #354046;
   border-radius: 10px;
-  background: #161b1e;
+  background: var(--color-surface-raised-strong);
   box-shadow: 0 28px 80px rgba(0, 0, 0, 0.56);
 }
 
@@ -155,7 +155,7 @@
   height: 100vh;
   min-height: 100vh;
   overflow: hidden;
-  background: #161b1e;
+  background: var(--color-surface-raised-strong);
 }
 
 .properties-window-page .remote-properties-modal {
@@ -182,7 +182,7 @@
   min-height: 42px;
   padding: 0 10px 0 16px;
   border-bottom: 1px solid #2a3337;
-  background: linear-gradient(180deg, #20262a 0%, #171d20 100%);
+  background: linear-gradient(180deg, #20262a 0%, var(--color-surface-row-hover) 100%);
 }
 
 .remote-properties-window-titlebar h2 {
@@ -206,8 +206,8 @@
 }
 
 .remote-properties-window-titlebar button:hover:not(:disabled) {
-  border-color: #673037;
-  background: #4d1f26;
+  border-color: var(--color-border-danger);
+  background: var(--color-surface-danger);
   color: #fff2f2;
 }
 
@@ -260,8 +260,8 @@
 .remote-properties-name input:focus,
 .remote-properties-mode-line input:focus,
 .remote-properties-octal input:focus {
-  outline: 2px solid rgba(84, 204, 153, 0.24);
-  border-color: #428768;
+  outline: var(--focus-accent-outline);
+  border-color: var(--color-border-focus);
 }
 
 .remote-properties-section {
@@ -368,7 +368,7 @@
 }
 
 .remote-properties-error {
-  color: #ff9b9b;
+  color: var(--color-danger-text);
 }
 
 .compact-modal-backdrop {

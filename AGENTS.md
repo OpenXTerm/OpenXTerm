@@ -63,21 +63,37 @@ CI/CD workflow:
 - [`src/state/openXTermStoreHelpers.ts`](src/state/openXTermStoreHelpers.ts): pure store helpers for sorting, folder paths, status mapping, tab seeding, and transfer ordering
 - [`src/state/openXTermStoreTransfers.ts`](src/state/openXTermStoreTransfers.ts): store transfer enqueue, progress aggregation, flush scheduling, and transfer-window side effects
 - [`src/state/openXTermStoreListeners.ts`](src/state/openXTermStoreListeners.ts): one-time terminal/status/transfer event listener registration for the store
+- [`src/state/openXTermStoreDomain.ts`](src/state/openXTermStoreDomain.ts): session, folder, import, and macro domain actions
+- [`src/state/openXTermStoreTerminalActions.ts`](src/state/openXTermStoreTerminalActions.ts): macro execution, terminal input, and terminal resize actions
+- [`src/state/openXTermStoreTabActions.ts`](src/state/openXTermStoreTabActions.ts): tab selection, tab close, session launch, restart, and linked-SFTP tab actions
 - [`src/components/forms/SessionEditorModal.tsx`](src/components/forms/SessionEditorModal.tsx): compact tabbed session editor shell and save/close composition
 - [`src/components/forms/SessionEditorTabs.tsx`](src/components/forms/SessionEditorTabs.tsx): session editor tab panels for general, connection, terminal, and advanced settings
 - [`src/components/forms/sessionEditorHelpers.ts`](src/components/forms/sessionEditorHelpers.ts): pure session-editor draft/default/preset helpers
 - [`src/components/forms/sessionEditorHooks.ts`](src/components/forms/sessionEditorHooks.ts): session-editor system-font loading and local X11 support inspection hooks
 - [`src/components/forms/FontFamilyPicker.tsx`](src/components/forms/FontFamilyPicker.tsx): searchable system-font picker for per-session terminal fonts
 - [`src/components/forms/AppLockOverlay.tsx`](src/components/forms/AppLockOverlay.tsx): lock screen for system auth / Touch ID / PIN flows
-- [`src/components/sidebar/Sidebar.tsx`](src/components/sidebar/Sidebar.tsx): sessions tree, session-folder drag/drop, SFTP sidebar, tools, macros
+- [`src/components/sidebar/Sidebar.tsx`](src/components/sidebar/Sidebar.tsx): sidebar composition shell for sessions, SFTP, tools, and macros
+- [`src/components/sidebar/SessionsSection.tsx`](src/components/sidebar/SessionsSection.tsx): session tree UI, folder actions, and session launch/edit controls
+- [`src/components/sidebar/SftpSection.tsx`](src/components/sidebar/SftpSection.tsx): linked SFTP sidebar composition
+- [`src/components/sidebar/SftpDirectoryList.tsx`](src/components/sidebar/SftpDirectoryList.tsx): SFTP table/list rendering, row selection, sorting, and context-menu wiring
+- [`src/components/sidebar/useSessionTreeDrag.ts`](src/components/sidebar/useSessionTreeDrag.ts): pointer-based session/folder drag state
+- [`src/components/sidebar/useSftpSelection.ts`](src/components/sidebar/useSftpSelection.ts): SFTP sidebar selection and context-menu state
+- [`src/components/sidebar/useSftpTableControls.ts`](src/components/sidebar/useSftpTableControls.ts): SFTP sidebar column sorting and resizing state
+- [`src/components/sidebar/useSftpEntryOperations.ts`](src/components/sidebar/useSftpEntryOperations.ts): SFTP create, rename, delete, path-submit, and download operations
+- [`src/components/sidebar/useSftpUploads.ts`](src/components/sidebar/useSftpUploads.ts): SFTP upload input, drag-in, and native file-drop handling
+- [`src/components/sidebar/useSftpNativeDragOut.ts`](src/components/sidebar/useSftpNativeDragOut.ts): SFTP native drag-out pointer handling
+- [`src/components/sidebar/useSftpFollowTerminal.ts`](src/components/sidebar/useSftpFollowTerminal.ts): follow-remote-terminal directory synchronization
 - [`src/components/status/StatusBar.tsx`](src/components/status/StatusBar.tsx): live lower rail, CPU history graph, lock button
 - [`src/components/workspace/Workspace.tsx`](src/components/workspace/Workspace.tsx): active tab rendering
 - [`src/components/workspace/TerminalSurface.tsx`](src/components/workspace/TerminalSurface.tsx): xterm host, stopped-session UX, per-session appearance application
-- [`src/components/workspace/FileBrowserView.tsx`](src/components/workspace/FileBrowserView.tsx): remote directory UI, upload/download/drag flows
+- [`src/components/workspace/FileBrowserView.tsx`](src/components/workspace/FileBrowserView.tsx): remote file-browser container and directory-operation composition
 - [`src/components/workspace/FileTable.tsx`](src/components/workspace/FileTable.tsx): remote file table rendering, column headers, selection, sorting UI, and row context-menu wiring
 - [`src/components/workspace/fileTableModel.ts`](src/components/workspace/fileTableModel.ts): file table sort types and column width constants
 - [`src/components/workspace/fileBrowserUtils.ts`](src/components/workspace/fileBrowserUtils.ts): file-browser path, clipboard, and error-context helpers
+- [`src/components/workspace/useFileTableControls.ts`](src/components/workspace/useFileTableControls.ts): workspace file-table sorting and column sizing
+- [`src/components/workspace/useFileBrowserSelection.ts`](src/components/workspace/useFileBrowserSelection.ts): workspace file selection, copy path, and context-menu lifecycle
 - [`src/components/workspace/useFileBrowserUploads.ts`](src/components/workspace/useFileBrowserUploads.ts): file-browser upload input, browser drop, and Tauri native drop handling
+- [`src/components/workspace/useFileNativeDragOut.ts`](src/components/workspace/useFileNativeDragOut.ts): workspace native drag-out pointer handling
 - [`src/hooks/useSftpConflictResolver.ts`](src/hooks/useSftpConflictResolver.ts): shared SFTP upload/download conflict resolution
 - [`src/hooks/useRemotePropertiesWindow.ts`](src/hooks/useRemotePropertiesWindow.ts): shared remote properties OS-window/fallback modal handling
 - [`src/lib/bridge.ts`](src/lib/bridge.ts): Tauri invoke/listen boundary
@@ -87,7 +103,8 @@ CI/CD workflow:
 - [`src/lib/sftpTransfers.ts`](src/lib/sftpTransfers.ts): shared SFTP upload/download orchestration and transfer queue wiring
 - [`src/lib/mobaxtermImport.ts`](src/lib/mobaxtermImport.ts): `.mxtsessions` parser
 - [`src/lib/transferBatch.ts`](src/lib/transferBatch.ts): batch transfer aggregation
-- [`src/index.css`](src/index.css): main app styling, including session editor and font picker layout
+- [`src/index.css`](src/index.css): ordered CSS import entrypoint
+- [`src/styles/`](src/styles): focused app styles for base tokens, sidebar, workspace, files, status bar, transfers, and session editor
 
 ### Backend
 
@@ -104,7 +121,15 @@ CI/CD workflow:
 - [`src-tauri/src/runtime/status_scripts.rs`](src-tauri/src/runtime/status_scripts.rs): embedded local/remote status probe scripts
 - [`src-tauri/src/runtime/telnet.rs`](src-tauri/src/runtime/telnet.rs): Telnet connector, reader, protocol negotiation, and writer
 - [`src-tauri/src/runtime/x11.rs`](src-tauri/src/runtime/x11.rs): X11 forwarding proxy, local auth lookup, and runtime diagnostics
-- [`src-tauri/src/transfer/mod.rs`](src-tauri/src/transfer/mod.rs): remote file ops, SFTP/FTP transfer progress, and cancel
+- [`src-tauri/src/transfer/mod.rs`](src-tauri/src/transfer/mod.rs): transfer command orchestration and protocol dispatch
+- [`src-tauri/src/transfer/lifecycle.rs`](src-tauri/src/transfer/lifecycle.rs): shared transfer queued/running/completed/error emission plus cancel/retry cleanup
+- [`src-tauri/src/transfer/progress.rs`](src-tauri/src/transfer/progress.rs): transfer progress event emission and transfer-window reveal logic
+- [`src-tauri/src/transfer/state.rs`](src-tauri/src/transfer/state.rs): transfer cancel/retry runtime state
+- [`src-tauri/src/transfer/entries.rs`](src-tauri/src/transfer/entries.rs): remote entry list/create/delete/rename/properties/chmod commands
+- [`src-tauri/src/transfer/sftp.rs`](src-tauri/src/transfer/sftp.rs): SFTP helper operations and metadata/conflict checks
+- [`src-tauri/src/transfer/ftp.rs`](src-tauri/src/transfer/ftp.rs): FTP/curl upload and download helpers
+- [`src-tauri/src/transfer/paths.rs`](src-tauri/src/transfer/paths.rs): transfer path/name/local-size helpers
+- [`src-tauri/src/transfer/metadata.rs`](src-tauri/src/transfer/metadata.rs): remote metadata formatting helpers
 - [`src-tauri/src/drag/mod.rs`](src-tauri/src/drag/mod.rs): native drag bridge (macOS file-promise drag, Windows IDataObject drag)
 - [`src-tauri/src/drag/macos.m`](src-tauri/src/drag/macos.m): macOS AppKit drag implementation
 - [`src-tauri/src/platform/auth.rs`](src-tauri/src/platform/auth.rs): platform authentication for app lock
@@ -113,6 +138,7 @@ CI/CD workflow:
 - [`src-tauri/src/platform/menu.rs`](src-tauri/src/platform/menu.rs): native menu integration and topbar action routing
 - [`src-tauri/src/platform/x11.rs`](src-tauri/src/platform/x11.rs): local X11 / XQuartz / X server detection helpers
 - [`src-tauri/src/probe.rs`](src-tauri/src/probe.rs): embedded `libssh-rs` probe for backend evaluation
+- [`src-tauri/src/proxy.rs`](src-tauri/src/proxy.rs): per-session HTTP CONNECT / SOCKS5 proxy helpers for libssh, Telnet, and FTP/curl paths
 - [`src-tauri/src/storage.rs`](src-tauri/src/storage.rs): persistence
 - [`src-tauri/src/models.rs`](src-tauri/src/models.rs): serde models mirrored from TS
 
@@ -458,6 +484,9 @@ Start with:
 Start with:
 
 - [`src/components/sidebar/Sidebar.tsx`](src/components/sidebar/Sidebar.tsx)
+- [`src/components/sidebar/SessionsSection.tsx`](src/components/sidebar/SessionsSection.tsx)
+- [`src/components/sidebar/useSessionTreeDrag.ts`](src/components/sidebar/useSessionTreeDrag.ts)
+- [`src/state/openXTermStoreDomain.ts`](src/state/openXTermStoreDomain.ts)
 - [`src/state/useOpenXTermStore.ts`](src/state/useOpenXTermStore.ts)
 
 ### Change terminal UX
@@ -480,6 +509,7 @@ Start with:
 - [`src/components/forms/sessionEditorHooks.ts`](src/components/forms/sessionEditorHooks.ts)
 - [`src/components/forms/sessionEditorHelpers.ts`](src/components/forms/sessionEditorHelpers.ts)
 - [`src/index.css`](src/index.css)
+- [`src/styles/session-editor.css`](src/styles/session-editor.css)
 - [`src/lib/bridge.ts`](src/lib/bridge.ts)
 - [`src-tauri/src/platform/fonts.rs`](src-tauri/src/platform/fonts.rs)
 
@@ -497,9 +527,24 @@ Start with:
 Start with:
 
 - [`src/components/workspace/FileBrowserView.tsx`](src/components/workspace/FileBrowserView.tsx)
+- [`src/components/workspace/FileTable.tsx`](src/components/workspace/FileTable.tsx)
+- [`src/components/workspace/useFileBrowserUploads.ts`](src/components/workspace/useFileBrowserUploads.ts)
+- [`src/components/workspace/useFileNativeDragOut.ts`](src/components/workspace/useFileNativeDragOut.ts)
 - [`src/components/sidebar/Sidebar.tsx`](src/components/sidebar/Sidebar.tsx)
+- [`src/components/sidebar/SftpSection.tsx`](src/components/sidebar/SftpSection.tsx)
+- [`src/components/sidebar/SftpDirectoryList.tsx`](src/components/sidebar/SftpDirectoryList.tsx)
+- [`src/components/sidebar/useSftpEntryOperations.ts`](src/components/sidebar/useSftpEntryOperations.ts)
+- [`src/components/sidebar/useSftpUploads.ts`](src/components/sidebar/useSftpUploads.ts)
+- [`src/components/sidebar/useSftpNativeDragOut.ts`](src/components/sidebar/useSftpNativeDragOut.ts)
+- [`src/lib/sftpTransfers.ts`](src/lib/sftpTransfers.ts)
 - [`src/lib/transferBatch.ts`](src/lib/transferBatch.ts)
 - [`src-tauri/src/transfer/mod.rs`](src-tauri/src/transfer/mod.rs)
+- [`src-tauri/src/transfer/lifecycle.rs`](src-tauri/src/transfer/lifecycle.rs)
+- [`src-tauri/src/transfer/progress.rs`](src-tauri/src/transfer/progress.rs)
+- [`src-tauri/src/transfer/state.rs`](src-tauri/src/transfer/state.rs)
+- [`src-tauri/src/transfer/entries.rs`](src-tauri/src/transfer/entries.rs)
+- [`src-tauri/src/transfer/sftp.rs`](src-tauri/src/transfer/sftp.rs)
+- [`src-tauri/src/transfer/ftp.rs`](src-tauri/src/transfer/ftp.rs)
 - [`src-tauri/src/drag/mod.rs`](src-tauri/src/drag/mod.rs)
 
 ## Verification Checklist

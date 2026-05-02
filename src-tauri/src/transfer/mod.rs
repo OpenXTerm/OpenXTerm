@@ -9,6 +9,7 @@ use std::{
 
 mod entries;
 mod ftp;
+mod lifecycle;
 mod metadata;
 mod paths;
 mod progress;
@@ -17,6 +18,7 @@ mod state;
 
 use ftp::{run_ftp_download, run_ftp_upload};
 use libssh_rs::{OpenFlags, Sftp, SftpFile};
+use lifecycle::TransferLifecycle;
 use metadata::is_directory;
 use paths::{
     download_target_path, drag_cache_path, join_remote_path, local_directory_total_size,
@@ -27,8 +29,7 @@ use sftp::{
     ensure_sftp_directory_allowed, ensure_sftp_write_allowed, open_sftp, sftp_directory_total_size,
 };
 use state::{
-    clear_transfer_cancel, clear_transfer_retry, remember_transfer_retry,
-    stop_if_transfer_cancelled, transfer_retryable, TransferRetryOperation,
+    remember_transfer_retry, stop_if_transfer_cancelled, transfer_retryable, TransferRetryOperation,
 };
 use tauri::AppHandle;
 
@@ -161,7 +162,7 @@ fn emit_retry_started(app: &AppHandle, transfer_id: &str, operation: &TransferRe
                 0,
                 None,
                 TRANSFER_RETRY_MESSAGE,
-                Some(local_path.clone()),
+                Some(local_path.as_str()),
             );
         }
         TransferRetryOperation::DownloadRemoteEntry {
@@ -215,25 +216,21 @@ pub fn upload_remote_file(
     let total_bytes = bytes.len() as u64;
     let conflict_action = conflict_action.unwrap_or_else(|| "error".into());
     let transfer_id = transfer_id.unwrap_or_else(|| generate_transfer_id("upload"));
-    clear_transfer_cancel(&transfer_id);
-
-    emit_transfer(
+    let lifecycle = TransferLifecycle::new(
         app,
         &transfer_id,
         &file_name,
         &remote_path,
         "upload",
         "upload",
-        "queued",
-        0,
-        Some(total_bytes),
-        "Queued for upload",
         None,
     );
+    lifecycle.reset_cancel();
+    lifecycle.queued(Some(total_bytes), "Queued for upload");
 
     let result = match session.kind.as_str() {
         "sftp" => {
-            stop_if_transfer_cancelled(&transfer_id)?;
+            lifecycle.check_cancel()?;
             let sftp = open_sftp(session)?;
             ensure_sftp_write_allowed(&sftp, &remote_path, &conflict_action)?;
             let mut file = sftp
@@ -245,48 +242,24 @@ pub fn upload_remote_file(
                 .map_err(|error| format!("failed to create remote file: {error}"))?;
             let mut transferred = 0u64;
             for chunk in bytes.chunks(TRANSFER_CHUNK_SIZE) {
-                stop_if_transfer_cancelled(&transfer_id)?;
+                lifecycle.check_cancel()?;
                 write_sftp_chunk_with_timeout(&mut file, chunk, &remote_path, &transfer_id)?;
                 transferred += chunk.len() as u64;
-                emit_transfer(
-                    app,
-                    &transfer_id,
-                    &file_name,
-                    &remote_path,
-                    "upload",
-                    "upload",
-                    "running",
-                    transferred,
-                    Some(total_bytes),
-                    "Uploading to remote host",
-                    None,
-                );
+                lifecycle.running(transferred, Some(total_bytes), "Uploading to remote host");
             }
             Ok(())
         }
         "ftp" => {
-            stop_if_transfer_cancelled(&transfer_id)?;
+            lifecycle.check_cancel()?;
             let temp_path = temp_upload_path(&file_name);
             fs::write(&temp_path, &bytes).map_err(|error| {
                 format!("failed to stage upload {}: {error}", temp_path.display())
             })?;
-            emit_transfer(
-                app,
-                &transfer_id,
-                &file_name,
-                &remote_path,
-                "upload",
-                "upload",
-                "running",
-                0,
-                Some(total_bytes),
-                "Uploading to remote host",
-                None,
-            );
+            lifecycle.running(0, Some(total_bytes), "Uploading to remote host");
 
             let result = run_ftp_upload(session, &remote_path, &temp_path);
             let _ = fs::remove_file(&temp_path);
-            stop_if_transfer_cancelled(&transfer_id)?;
+            lifecycle.check_cancel()?;
             result
         }
         _ => Err(format!("{} does not support upload", session.kind)),
@@ -294,21 +267,7 @@ pub fn upload_remote_file(
 
     match result {
         Ok(()) => {
-            clear_transfer_retry(&transfer_id);
-            emit_transfer(
-                app,
-                &transfer_id,
-                &file_name,
-                &remote_path,
-                "upload",
-                "upload",
-                "completed",
-                total_bytes,
-                Some(total_bytes),
-                "Upload complete",
-                None,
-            );
-            clear_transfer_cancel(&transfer_id);
+            lifecycle.completed(total_bytes, Some(total_bytes), "Upload complete");
             Ok(())
         }
         Err(error) => {
@@ -322,20 +281,7 @@ pub fn upload_remote_file(
                     conflict_action: conflict_action.clone(),
                 },
             );
-            emit_transfer(
-                app,
-                &transfer_id,
-                &file_name,
-                &remote_path,
-                "upload",
-                "upload",
-                "error",
-                0,
-                Some(total_bytes),
-                &error,
-                None,
-            );
-            clear_transfer_cancel(&transfer_id);
+            lifecycle.failed(0, Some(total_bytes), &error);
             Err(error)
         }
     }
@@ -371,35 +317,33 @@ pub fn upload_local_file(
     let remote_path = join_remote_path(remote_dir, &file_name);
     let conflict_action = conflict_action.unwrap_or_else(|| "error".into());
     let transfer_id = transfer_id.unwrap_or_else(|| generate_transfer_id("upload"));
-    clear_transfer_cancel(&transfer_id);
-    remember_transfer_retry(
-        &transfer_id,
-        TransferRetryOperation::UploadLocalFile {
-            session: session.clone(),
-            remote_dir: remote_dir.to_string(),
-            local_path: local_path.display().to_string(),
-            remote_name: Some(file_name.clone()),
-            conflict_action: conflict_action.clone(),
-        },
-    );
-
-    emit_transfer(
+    let local_path_label = local_path.display().to_string();
+    let lifecycle = TransferLifecycle::new(
         app,
         &transfer_id,
         &file_name,
         &remote_path,
         "upload",
         "upload",
-        "queued",
-        0,
-        Some(total_bytes),
-        "Queued for upload",
-        Some(local_path.display().to_string()),
+        Some(&local_path_label),
     );
+    lifecycle.reset_cancel();
+    remember_transfer_retry(
+        &transfer_id,
+        TransferRetryOperation::UploadLocalFile {
+            session: session.clone(),
+            remote_dir: remote_dir.to_string(),
+            local_path: local_path_label.clone(),
+            remote_name: Some(file_name.clone()),
+            conflict_action: conflict_action.clone(),
+        },
+    );
+
+    lifecycle.queued(Some(total_bytes), "Queued for upload");
 
     let result = match session.kind.as_str() {
         "sftp" => {
-            stop_if_transfer_cancelled(&transfer_id)?;
+            lifecycle.check_cancel()?;
             let sftp = open_sftp(session)?;
             let mut transferred = 0u64;
             if metadata.is_dir() {
@@ -430,65 +374,26 @@ pub fn upload_local_file(
             Ok(())
         }
         "ftp" => {
-            stop_if_transfer_cancelled(&transfer_id)?;
+            lifecycle.check_cancel()?;
             if metadata.is_dir() {
-                return Err("FTP folder upload is not implemented yet".into());
+                Err("FTP folder upload is not implemented yet".into())
+            } else {
+                lifecycle.running(0, Some(total_bytes), "Uploading to remote host");
+                let result = run_ftp_upload(session, &remote_path, &local_path);
+                lifecycle.check_cancel()?;
+                result
             }
-
-            emit_transfer(
-                app,
-                &transfer_id,
-                &file_name,
-                &remote_path,
-                "upload",
-                "upload",
-                "running",
-                0,
-                Some(total_bytes),
-                "Uploading to remote host",
-                Some(local_path.display().to_string()),
-            );
-            let result = run_ftp_upload(session, &remote_path, &local_path);
-            stop_if_transfer_cancelled(&transfer_id)?;
-            result
         }
         _ => Err(format!("{} does not support upload", session.kind)),
     };
 
     match result {
         Ok(()) => {
-            clear_transfer_retry(&transfer_id);
-            emit_transfer(
-                app,
-                &transfer_id,
-                &file_name,
-                &remote_path,
-                "upload",
-                "upload",
-                "completed",
-                total_bytes,
-                Some(total_bytes),
-                "Upload complete",
-                Some(local_path.display().to_string()),
-            );
-            clear_transfer_cancel(&transfer_id);
+            lifecycle.completed(total_bytes, Some(total_bytes), "Upload complete");
             Ok(())
         }
         Err(error) => {
-            emit_transfer(
-                app,
-                &transfer_id,
-                &file_name,
-                &remote_path,
-                "upload",
-                "upload",
-                "error",
-                0,
-                Some(total_bytes),
-                &error,
-                Some(local_path.display().to_string()),
-            );
-            clear_transfer_cancel(&transfer_id);
+            lifecycle.failed(0, Some(total_bytes), &error);
             Err(error)
         }
     }
@@ -574,6 +479,7 @@ fn upload_sftp_file_with_progress(
         )
         .map_err(|error| format!("failed to create remote file {remote_path}: {error}"))?;
     let mut buffer = vec![0u8; TRANSFER_CHUNK_SIZE];
+    let local_path_label = local_path.display().to_string();
 
     loop {
         stop_if_transfer_cancelled(transfer_id)?;
@@ -597,7 +503,7 @@ fn upload_sftp_file_with_progress(
             *transferred,
             Some(total_bytes),
             "Uploading to remote host",
-            Some(local_path.display().to_string()),
+            Some(&local_path_label),
         );
     }
 
@@ -766,34 +672,34 @@ pub fn download_remote_entry_to_path(
     }
 
     let transfer_id = transfer_id.unwrap_or_else(|| generate_transfer_id("download"));
-    clear_transfer_cancel(&transfer_id);
     let local_path = save_path.display().to_string();
     let conflict_action = conflict_action.unwrap_or_else(|| "error".into());
-
-    emit_transfer(
+    let lifecycle = TransferLifecycle::new(
         app,
         &transfer_id,
-        &file_name,
+        file_name,
         remote_path,
         "download",
         purpose,
-        "queued",
-        0,
+        Some(local_path.as_str()),
+    );
+    lifecycle.reset_cancel();
+
+    lifecycle.queued(
         None,
         if purpose == "drag-export" {
             "Preparing local drag folder"
         } else {
             "Queued folder download"
         },
-        Some(local_path.clone()),
     );
 
     let result = match session.kind.as_str() {
         "sftp" => {
-            stop_if_transfer_cancelled(&transfer_id)?;
+            lifecycle.check_cancel()?;
             let sftp = open_sftp(session)?;
             let total_bytes = sftp_directory_total_size(&sftp, remote_path)?;
-            stop_if_transfer_cancelled(&transfer_id)?;
+            lifecycle.check_cancel()?;
             ensure_local_write_allowed(save_path, &conflict_action)?;
             fs::create_dir_all(save_path)
                 .map_err(|error| format!("failed to create {}: {error}", save_path.display()))?;
@@ -819,15 +725,7 @@ pub fn download_remote_entry_to_path(
 
     match result {
         Ok(total_bytes) => {
-            clear_transfer_retry(&transfer_id);
-            emit_transfer(
-                app,
-                &transfer_id,
-                &file_name,
-                remote_path,
-                "download",
-                purpose,
-                "completed",
+            lifecycle.completed(
                 total_bytes,
                 Some(total_bytes),
                 if purpose == "drag-export" {
@@ -835,9 +733,7 @@ pub fn download_remote_entry_to_path(
                 } else {
                     "Folder download complete"
                 },
-                Some(local_path.clone()),
             );
-            clear_transfer_cancel(&transfer_id);
             Ok(FileDownloadResult {
                 file_name: file_name.to_string(),
                 saved_to: local_path,
@@ -845,20 +741,7 @@ pub fn download_remote_entry_to_path(
         }
         Err(error) => {
             let _ = fs::remove_dir_all(save_path);
-            emit_transfer(
-                app,
-                &transfer_id,
-                &file_name,
-                remote_path,
-                "download",
-                purpose,
-                "error",
-                0,
-                None,
-                &error,
-                Some(local_path),
-            );
-            clear_transfer_cancel(&transfer_id);
+            lifecycle.failed(0, None, &error);
             Err(error)
         }
     }
@@ -875,31 +758,31 @@ pub fn download_remote_file_to_path(
     conflict_action: Option<String>,
 ) -> Result<FileDownloadResult, String> {
     let transfer_id = transfer_id.unwrap_or_else(|| generate_transfer_id("download"));
-    clear_transfer_cancel(&transfer_id);
     let local_path = save_path.display().to_string();
     let conflict_action = conflict_action.unwrap_or_else(|| "error".into());
-
-    emit_transfer(
+    let lifecycle = TransferLifecycle::new(
         app,
         &transfer_id,
-        &file_name,
+        file_name,
         remote_path,
         "download",
         purpose,
-        "queued",
-        0,
+        Some(local_path.as_str()),
+    );
+    lifecycle.reset_cancel();
+
+    lifecycle.queued(
         None,
         if purpose == "drag-export" {
             "Preparing local drag copy"
         } else {
             "Queued for download"
         },
-        Some(local_path.clone()),
     );
 
     let result = match session.kind.as_str() {
         "sftp" => {
-            stop_if_transfer_cancelled(&transfer_id)?;
+            lifecycle.check_cancel()?;
             let sftp = open_sftp(session)?;
             let total_bytes = sftp
                 .metadata(remote_path)
@@ -915,7 +798,7 @@ pub fn download_remote_file_to_path(
             let mut buffer = vec![0u8; TRANSFER_CHUNK_SIZE];
 
             loop {
-                stop_if_transfer_cancelled(&transfer_id)?;
+                lifecycle.check_cancel()?;
                 let read = remote_file
                     .read(&mut buffer)
                     .map_err(|error| format!("failed to read remote file: {error}"))?;
@@ -927,14 +810,7 @@ pub fn download_remote_file_to_path(
                     .write_all(&buffer[..read])
                     .map_err(|error| format!("failed to write {}: {error}", save_path.display()))?;
                 transferred += read as u64;
-                emit_transfer(
-                    app,
-                    &transfer_id,
-                    &file_name,
-                    remote_path,
-                    "download",
-                    purpose,
-                    "running",
+                lifecycle.running(
                     transferred,
                     total_bytes,
                     if purpose == "drag-export" {
@@ -942,22 +818,14 @@ pub fn download_remote_file_to_path(
                     } else {
                         "Downloading from remote host"
                     },
-                    Some(local_path.clone()),
                 );
             }
             Ok(total_bytes.unwrap_or(transferred))
         }
         "ftp" => {
-            stop_if_transfer_cancelled(&transfer_id)?;
+            lifecycle.check_cancel()?;
             ensure_local_write_allowed(save_path, &conflict_action)?;
-            emit_transfer(
-                app,
-                &transfer_id,
-                &file_name,
-                remote_path,
-                "download",
-                purpose,
-                "running",
+            lifecycle.running(
                 0,
                 None,
                 if purpose == "drag-export" {
@@ -965,10 +833,9 @@ pub fn download_remote_file_to_path(
                 } else {
                     "Downloading from remote host"
                 },
-                Some(local_path.clone()),
             );
             run_ftp_download(session, remote_path, save_path)?;
-            stop_if_transfer_cancelled(&transfer_id)?;
+            lifecycle.check_cancel()?;
             let bytes = fs::metadata(save_path)
                 .ok()
                 .map(|meta| meta.len())
@@ -980,15 +847,7 @@ pub fn download_remote_file_to_path(
 
     match result {
         Ok(total_bytes) => {
-            clear_transfer_retry(&transfer_id);
-            emit_transfer(
-                app,
-                &transfer_id,
-                &file_name,
-                remote_path,
-                "download",
-                purpose,
-                "completed",
+            lifecycle.completed(
                 total_bytes,
                 Some(total_bytes),
                 if purpose == "drag-export" {
@@ -996,9 +855,7 @@ pub fn download_remote_file_to_path(
                 } else {
                     "Download complete"
                 },
-                Some(local_path.clone()),
             );
-            clear_transfer_cancel(&transfer_id);
             Ok(FileDownloadResult {
                 file_name: file_name.to_string(),
                 saved_to: local_path,
@@ -1006,20 +863,7 @@ pub fn download_remote_file_to_path(
         }
         Err(error) => {
             let _ = fs::remove_file(save_path);
-            emit_transfer(
-                app,
-                &transfer_id,
-                &file_name,
-                remote_path,
-                "download",
-                purpose,
-                "error",
-                0,
-                None,
-                &error,
-                Some(local_path),
-            );
-            clear_transfer_cancel(&transfer_id);
+            lifecycle.failed(0, None, &error);
             Err(error)
         }
     }
@@ -1085,6 +929,7 @@ fn download_sftp_directory_recursive(
         let mut local_file = File::create(&local_path)
             .map_err(|error| format!("failed to write {}: {error}", local_path.display()))?;
         let mut buffer = vec![0u8; TRANSFER_CHUNK_SIZE];
+        let local_path_label = local_path.display().to_string();
 
         loop {
             stop_if_transfer_cancelled(transfer_id)?;
@@ -1114,7 +959,7 @@ fn download_sftp_directory_recursive(
                 } else {
                     "Downloading folder from remote host"
                 },
-                Some(local_path.display().to_string()),
+                Some(&local_path_label),
             );
         }
     }
@@ -1133,7 +978,7 @@ fn emit_transfer(
     transferred_bytes: u64,
     total_bytes: Option<u64>,
     message: &str,
-    local_path: Option<String>,
+    local_path: Option<&str>,
 ) {
     progress::emit_transfer(
         app,

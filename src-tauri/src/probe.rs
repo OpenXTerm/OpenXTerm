@@ -29,8 +29,8 @@ pub fn run_probe(
     let remote_path = normalize_remote_path(remote_path);
 
     let mut notes = vec![
-        "Spike only: live terminal SSH tabs already run on the embedded libssh-rs runtime.".to_string(),
-        "This probe now serves as a backend comparison and helper-migration test path while status/SFTP are still finishing their move off older helper code.".to_string(),
+        "Probe only: live terminal SSH tabs already run on the embedded libssh-rs runtime.".to_string(),
+        "This probe serves as a backend comparison and diagnostics path for the embedded SSH/SFTP runtime.".to_string(),
     ];
 
     let mut probe = connect(session, &username)?;

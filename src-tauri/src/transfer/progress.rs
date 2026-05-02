@@ -14,7 +14,7 @@ pub(super) struct TransferProgressEvent<'a> {
     pub transferred_bytes: u64,
     pub total_bytes: Option<u64>,
     pub message: &'a str,
-    pub local_path: Option<String>,
+    pub local_path: Option<&'a str>,
     pub retryable: Option<bool>,
 }
 
@@ -31,7 +31,7 @@ pub(super) fn emit_transfer(app: &AppHandle, event: TransferProgressEvent<'_>) {
             transferred_bytes: event.transferred_bytes,
             total_bytes: event.total_bytes,
             message: event.message.to_string(),
-            local_path: event.local_path,
+            local_path: event.local_path.map(ToOwned::to_owned),
             retryable: event.retryable,
         },
     );

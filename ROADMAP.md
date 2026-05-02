@@ -16,12 +16,13 @@ OpenXTerm is independent software. It is not affiliated with, endorsed by, or co
 
 ### Highest Priority Next
 
-- Refactor the largest reliability-sensitive modules in small reviewed steps:
-  - finish the remaining frontend SFTP consolidation by extracting shared upload/download, selection, and table helpers from `src/components/sidebar/Sidebar.tsx` and `src/components/workspace/FileBrowserView.tsx`;
-  - split `src/state/useOpenXTermStore.ts` into UI/domain/transfer slices while preserving existing selectors and persistence behavior;
-  - extract shared transfer lifecycle helpers from `src-tauri/src/transfer/mod.rs` with manual SFTP upload/download/retry/cancel smoke tests after each step.
+- Move from refactor cleanup to release hardening:
+  - add platform credential storage for saved secrets;
+  - harden packaging/signing/notarization and release secrets;
+  - write public install, security, troubleshooting, and X11 guides;
+  - expand real-device QA across macOS, Linux, and Windows.
 
-### Recent Refactor Progress
+### Completed Refactor Audit Work
 
 - Split large sidebar UI sections out of `src/components/sidebar/Sidebar.tsx` into focused sidebar components.
 - Extracted session-tree drag/drop state into `src/components/sidebar/useSessionTreeDrag.ts`.
@@ -67,27 +68,27 @@ OpenXTerm is independent software. It is not affiliated with, endorsed by, or co
 - Hardened transfer reliability after the May 2 smoke pass: stable transfer windows, drag-in, native drag-out, batch progress, cancel, retry, and network-interruption handling all passed.
 - Improved terminal input reliability by routing clipboard paste through a backend clipboard read and writing multi-byte SSH input sequences as complete buffers.
 - Tightened SSH runtime auth metadata handling with shared temp-dir/file cleanup helpers and tests for temp-path plus Unix `0600` username metadata.
+- Expanded shared CSS tokens for panel surfaces, controls, borders, semantic colors, shadows, and focus states while trimming small duplicate workspace selectors.
+- Trimmed avoidable Rust string clones in transfer progress emission and embedded SSH interactive login setup while preserving thread/Arc ownership clones.
+- Introduced a shared Rust transfer lifecycle helper for queued/running/completed/error emission plus cancel/retry cleanup in upload/download paths.
 
-### Codebase Refactor Backlog
+### Closed Refactor Audit Items
 
-- Frontend SFTP consolidation:
-  - finish reducing `Sidebar.tsx` to orchestration only; current pass reduced it below 500 lines, with section wiring and selected-session state still intentionally local;
-  - continue reducing `FileBrowserView.tsx`; current pass reduced it below 400 lines and shares conflict/properties/table/native-drag/selection/upload/drop plus upload/download orchestration;
-  - keep folder-upload orchestration separate until remote folder download/upload hardening gets its own smoke pass.
-- Backend transfer layer:
-  - continue splitting `src-tauri/src/transfer/mod.rs`; progress event emission, transfer-window reveal logic, retry/cancel state, path helpers, metadata formatting, FTP helpers, non-transfer-loop SFTP helpers, and remote entry CRUD are extracted, while upload/download loops and shared lifecycle helpers still live in the root module;
-  - avoid behavior rewrites until each extracted path has manual upload/download/retry/cancel smoke coverage.
-- Store architecture:
-  - continue splitting `src/state/useOpenXTermStore.ts` only when new concerns appear; transfer/listener/domain/terminal/tab actions are extracted and the root store is now mostly bootstrap/preferences/composition;
-  - preserve persisted state shape and public selectors during the first pass.
-- Session editor:
-  - keep `src/components/forms/SessionEditorModal.tsx` as a compact composition shell; tab panels, defaults/presets, system-font loading, X11 support inspection, and font picking are now extracted, so remaining work should focus on validation polish and future settings expansion.
-- Styling:
-  - continue reducing focused `src/styles/*.css` files by grouping component styles and expanding shared color/spacing variables before theme work.
-- Runtime and parsing cleanup:
-  - keep X11 diagnostic string matching data-driven rather than long inline condition chains;
-  - continue adding lightweight runtime guards for persisted JSON/localStorage boundaries when new storage surfaces appear;
-  - SSH runtime auth metadata now uses process temp paths plus user-only username files; continue removing similar dead metadata paths and platform-specific temp-path assumptions when found.
+The documentation/code audit items from the May 2026 cleanup pass are closed. Future work in these areas should be treated as normal product evolution, not as unfinished audit debt.
+
+- `AGENTS.md`, architecture docs, and roadmap paths were brought in line with the current `drag/`, `transfer/`, `platform/`, `runtime/`, and `probe.rs` layout.
+- Already-implemented SFTP features were moved to Done, including chmod, follow remote terminal, retry, conflict handling, and transfer-window polish.
+- SSH runtime auth metadata now documents and enforces the intended split: usernames can live in user-only temp metadata, while passwords stay process-memory only.
+- `Sidebar.tsx` was reduced to a composition shell with sessions, SFTP, tools, macros, drag, upload, selection, table, import, and follow-terminal behavior extracted.
+- Shared SFTP upload/download orchestration now lives outside sidebar/workspace containers.
+- `FileBrowserView.tsx` was reduced to a file-browser container with table, selection, upload/drop, native drag, properties, and conflict handling extracted.
+- `SessionEditorModal.tsx` was reduced to a compact editor shell with tab panels, helpers, hooks, and font picking extracted.
+- `useOpenXTermStore.ts` was split into typed store helpers, transfer state/actions, listener registration, domain actions, terminal actions, and tab actions.
+- X11 failure detection is data-driven instead of a long inline condition chain.
+- Transfer queue and remote properties storage boundaries now use explicit runtime guards instead of blind `as` casts.
+- `src/index.css` is now an ordered import entrypoint for focused `src/styles/*.css` files, with expanded shared color tokens.
+- Avoidable Rust string clones in transfer progress and embedded SSH interactive login setup were trimmed without changing ownership-sensitive thread/Arc clones.
+- `src-tauri/src/transfer/mod.rs` now uses extracted progress, retry/cancel state, path, metadata, FTP, SFTP, entry CRUD, and lifecycle modules.
 
 ### Done
 

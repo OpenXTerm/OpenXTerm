@@ -14,20 +14,48 @@
   --color-accent-surface-muted: #18302a;
   --color-accent-border: #2d6a56;
   --color-surface: #101416;
+  --color-surface-deep: #0c1011;
+  --color-surface-app: #0f1214;
+  --color-surface-rail: #0a0d0f;
+  --color-surface-shell: #111517;
   --color-surface-raised: #121719;
+  --color-surface-raised-strong: #161b1e;
   --color-surface-muted: #181d20;
   --color-surface-subtle: #1b2124;
   --color-surface-input: #12171a;
+  --color-surface-toolbar: #15191c;
+  --color-surface-titlebar: #14181b;
+  --color-surface-row-hover: #171d20;
+  --color-surface-selected: #173025;
+  --color-surface-success: #123027;
+  --color-surface-warning: #1b1812;
+  --color-surface-danger: #4d1f26;
   --color-border-strong: #334046;
   --color-border-muted: #2d383d;
   --color-border-subtle: #232b2f;
+  --color-border-panel-muted: #2b3438;
+  --color-border-toolbar: #262e32;
   --color-border-success: #4aa57d;
+  --color-border-danger: #673037;
+  --color-border-warning: #5c4a2f;
+  --color-border-focus: #428768;
+  --color-control-bg: #101315;
+  --color-control-text: #eef1f2;
   --color-text-strong: #eef2f3;
   --color-text-soft: #d9e0e3;
   --color-text-form: #dfe4e6;
   --color-text-dim: #8fa2a9;
   --color-text-muted-strong: #8ea0a6;
   --color-text-subtle: #7b8b90;
+  --color-text-inverted: #1c2329;
+  --color-link: #8ec7ff;
+  --color-folder: #f0c94f;
+  --color-warning: #ffd25a;
+  --color-danger-text: #ff9b9b;
+  --color-danger-text-muted: #f3a3a3;
+  --color-info: #80bdf0;
+  --color-info-soft: #78baf3;
+  --color-drop-copy: #9bcdb6;
   --color-green-active: #143128;
   --color-green-active-border: #2f7f62;
   --color-panel-border: #2e3b40;
@@ -37,6 +65,9 @@
   --color-table-text: #d6dde0;
   --color-menu-hover-border: #2c5f4f;
   --color-menu-hover: #17352c;
+  --shadow-context-menu: 0 14px 34px rgba(0, 0, 0, 0.34);
+  --shadow-floating-panel: 0 18px 40px rgba(0, 0, 0, 0.34);
+  --focus-accent-outline: 2px solid rgba(84, 204, 153, 0.24);
   background: var(--color-bg);
   color: var(--color-text);
 }
@@ -153,7 +184,7 @@ button {
   border: 1px solid var(--color-border);
   border-radius: 10px;
   background: rgba(9, 18, 20, 0.98);
-  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.34);
+  box-shadow: var(--shadow-floating-panel);
   z-index: 120;
 }
 
@@ -212,7 +243,7 @@ button {
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr);
   min-height: 0;
-  background: #0f1214;
+  background: var(--color-surface-app);
 }
 
 .sidebar-resizer {

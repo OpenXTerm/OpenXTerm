@@ -126,15 +126,13 @@ impl AppRuntime {
         {
             controller.prompt_for_password(session.username.trim().to_string());
         } else {
+            let password_override = session.password.clone();
             set_ssh_runtime_auth(
                 &tab_id,
                 Some(session.username.trim().to_string()),
-                session.password.clone(),
+                password_override.clone(),
             );
-            controller.begin_connect(
-                session.username.trim().to_string(),
-                session.password.clone(),
-            );
+            controller.begin_connect(session.username.trim().to_string(), password_override);
         }
 
         Ok(true)
@@ -247,11 +245,7 @@ impl EmbeddedSshController {
         ) {
             Ok((channel, x11_warning)) => {
                 let shared_channel = Arc::new(Mutex::new(channel));
-                set_ssh_runtime_auth(
-                    &self.tab_id,
-                    Some(username.clone()),
-                    password_override.clone(),
-                );
+                set_ssh_runtime_auth(&self.tab_id, Some(username), password_override);
                 if let Ok(mut state) = self.state.lock() {
                     *state = EmbeddedSshState::Running {
                         channel: shared_channel.clone(),
@@ -365,23 +359,21 @@ impl EmbeddedSshController {
                                 .filter(|value| !value.is_empty())
                                 .is_none()
                         {
+                            let prompt = format!("{username}@{}'s password: ", self.session.host);
                             set_ssh_runtime_auth(&self.tab_id, Some(username.clone()), None);
                             *state = EmbeddedSshState::AwaitingPassword {
-                                username: username.clone(),
+                                username,
                                 buffer: String::new(),
                             };
-                            emit_output(
-                                &self.app,
-                                &self.tab_id,
-                                &format!("{username}@{}'s password: ", self.session.host),
-                            );
+                            emit_output(&self.app, &self.tab_id, &prompt);
                         } else {
+                            let password_override = self.session.password.clone();
                             set_ssh_runtime_auth(
                                 &self.tab_id,
                                 Some(username.clone()),
-                                self.session.password.clone(),
+                                password_override.clone(),
                             );
-                            trigger = Some((username, self.session.password.clone()));
+                            trigger = Some((username, password_override));
                         }
                     }
                     8 | 127 => {

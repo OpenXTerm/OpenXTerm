@@ -1,18 +1,18 @@
-# libssh-rs Spike
+# libssh-rs Embedded SSH Runtime
 
-This note captures the first embedded-SSH spike for OpenXTerm.
+This note captures the embedded-SSH migration path for OpenXTerm. It started as a spike, but the production SSH terminal, status helper, and linked SFTP flows now use the embedded `libssh-rs` backend.
 
 ## Goal
 
-Capture the staged migration away from system OpenSSH and document what remains while helper, status, and file flows finish converging on native backends.
+Document the staged migration away from system OpenSSH and the remaining hardening areas for the native backend.
 
-Current production behavior after this pass:
+Current production behavior:
 
 - terminal SSH tabs -> embedded `libssh-rs`
 - status probe -> embedded helper SSH session
 - linked SFTP -> embedded helper SSH/SFTP session
 
-The spike started on the helper side first:
+The original spike started on the helper side first:
 
 - native connect + auth
 - PTY-capable exec channel
@@ -43,12 +43,12 @@ It currently proves that we can:
 - open an SFTP subsystem
 - list a remote directory and map entries into OpenXTerm-style `RemoteFileEntry`
 
-### Debug command
+### Probe command
 
 - backend command: `run_libssh_probe`
 - frontend bridge helper: [`runLibsshProbe()`](../../src/lib/bridge.ts)
 
-The command intentionally is not wired into the main UI yet. It remains a probe path for manual/dev validation and backend comparison while helper flows are cleaned up.
+The command intentionally is not wired into the main UI. It remains a probe path for manual/dev validation and backend comparison.
 
 ## Probe Shape
 
@@ -86,10 +86,10 @@ The answer is now “yes, for terminal tabs and helper flows”:
 
 ## Recommended Next Step
 
-If we continue this path, the most sensible next migration target is:
+The migration itself is complete enough for normal development. The useful next work is hardening:
 
 1. harden status and linked SFTP against more real-world auth/server edge cases
 2. harden native X11 forwarding with real-world XQuartz/Xorg/Windows X server testing
 3. evaluate whether a shared helper/session pool abstraction would simplify reconnect behavior
 
-That keeps the blast radius controlled while turning the migration into boring, reliable product behavior.
+That keeps the blast radius controlled while turning the embedded backend into boring, reliable product behavior.

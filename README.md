@@ -62,6 +62,7 @@ Current focus areas:
 - Multiple simultaneous tabs for the same saved session.
 - Embedded `libssh-rs` SSH runtime for live SSH terminal tabs.
 - Linked SFTP discovery from active SSH tabs.
+- Per-session proxy support for SSH/SFTP, Telnet, and FTP through direct, HTTP CONNECT, and SOCKS5 paths.
 - Remote file listing, folder creation, rename, delete, upload, download, and native drag-out.
 - Batch transfer aggregation for multi-file operations.
 - Per-session terminal appearance: font family, font size, foreground, and background.

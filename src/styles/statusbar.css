@@ -8,8 +8,8 @@
   gap: 4px;
   padding: 4px 7px;
   min-height: 28px;
-  border-top: 1px solid #2b3438;
-  background: #0c1011;
+  border-top: 1px solid var(--color-border-panel-muted);
+  background: var(--color-surface-deep);
   overflow: auto hidden;
 }
 
@@ -55,7 +55,7 @@
 }
 
 .status-chip-static {
-  color: #ffd25a;
+  color: var(--color-warning);
 }
 
 .status-chip-button {
