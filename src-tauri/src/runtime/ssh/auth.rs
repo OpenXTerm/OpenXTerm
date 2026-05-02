@@ -3,7 +3,7 @@ use std::{
     fs::{self, OpenOptions},
     hash::{DefaultHasher, Hash, Hasher},
     io::Write,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Mutex, OnceLock},
 };
 
@@ -61,24 +61,41 @@ pub(in crate::runtime) fn clear_ssh_runtime_auth(tab_id: &str) {
 fn ssh_runtime_metadata_stem_for_tab(tab_id: &str) -> PathBuf {
     let mut hasher = DefaultHasher::new();
     tab_id.hash(&mut hasher);
-    std::env::temp_dir()
-        .join(SSH_RUNTIME_METADATA_DIR)
-        .join(format!("{:016x}", hasher.finish()))
+    ssh_runtime_metadata_dir().join(format!("{:016x}", hasher.finish()))
 }
 
 pub(in crate::runtime) fn ssh_runtime_username_path_for_tab(tab_id: &str) -> PathBuf {
     ssh_runtime_metadata_stem_for_tab(tab_id).with_extension("user")
 }
 
+fn ssh_runtime_metadata_dir() -> PathBuf {
+    std::env::temp_dir().join(SSH_RUNTIME_METADATA_DIR)
+}
+
+fn prepare_ssh_runtime_metadata_dir(path: &Path) -> Result<(), String> {
+    fs::create_dir_all(path).map_err(|error| {
+        format!(
+            "failed to prepare SSH runtime metadata directory {}: {error}",
+            path.display()
+        )
+    })
+}
+
+fn remove_ssh_runtime_username_file(path: &Path) -> Result<(), String> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!(
+            "failed to remove stale SSH login metadata {}: {error}",
+            path.display()
+        )),
+    }
+}
+
 fn write_ssh_runtime_username(tab_id: &str, username: &str) -> Result<(), String> {
     let username_path = ssh_runtime_username_path_for_tab(tab_id);
     if let Some(parent) = username_path.parent() {
-        fs::create_dir_all(parent).map_err(|error| {
-            format!(
-                "failed to prepare SSH runtime metadata directory {}: {error}",
-                parent.display()
-            )
-        })?;
+        prepare_ssh_runtime_metadata_dir(parent)?;
     }
 
     let mut options = OpenOptions::new();
@@ -106,26 +123,50 @@ fn write_ssh_runtime_username(tab_id: &str, username: &str) -> Result<(), String
 pub(in crate::runtime) fn prepare_ssh_runtime_metadata(tab_id: &str) -> Result<(), String> {
     let username_path = ssh_runtime_username_path_for_tab(tab_id);
     if let Some(parent) = username_path.parent() {
-        fs::create_dir_all(parent).map_err(|error| {
-            format!(
-                "failed to prepare SSH runtime metadata directory {}: {error}",
-                parent.display()
-            )
-        })?;
+        prepare_ssh_runtime_metadata_dir(parent)?;
     }
-
-    if username_path.exists() {
-        fs::remove_file(&username_path).map_err(|error| {
-            format!(
-                "failed to remove stale SSH login metadata {}: {error}",
-                username_path.display()
-            )
-        })?;
-    }
+    remove_ssh_runtime_username_file(&username_path)?;
 
     Ok(())
 }
 
 pub(in crate::runtime) fn cleanup_ssh_runtime_metadata(tab_id: &str) {
-    let _ = fs::remove_file(ssh_runtime_username_path_for_tab(tab_id));
+    let _ = remove_ssh_runtime_username_file(&ssh_runtime_username_path_for_tab(tab_id));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn runtime_username_path_uses_process_temp_dir() {
+        let path = ssh_runtime_username_path_for_tab("tab-runtime-auth-path-test");
+
+        assert!(path.starts_with(std::env::temp_dir()));
+        assert_eq!(
+            path.extension().and_then(|value| value.to_str()),
+            Some("user")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn written_username_metadata_is_user_only() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tab_id = "tab-runtime-auth-permissions-test";
+        prepare_ssh_runtime_metadata(tab_id).expect("metadata cleanup should work");
+        write_ssh_runtime_username(tab_id, "alice").expect("metadata write should work");
+
+        let path = ssh_runtime_username_path_for_tab(tab_id);
+        let mode = fs::metadata(&path)
+            .expect("metadata should exist")
+            .permissions()
+            .mode()
+            & 0o777;
+
+        cleanup_ssh_runtime_metadata(tab_id);
+
+        assert_eq!(mode, 0o600);
+    }
 }

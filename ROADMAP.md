@@ -66,6 +66,7 @@ OpenXTerm is independent software. It is not affiliated with, endorsed by, or co
 - Added per-session proxy support for SSH/SFTP, Telnet, and FTP through direct, HTTP CONNECT, and SOCKS5 paths.
 - Hardened transfer reliability after the May 2 smoke pass: stable transfer windows, drag-in, native drag-out, batch progress, cancel, retry, and network-interruption handling all passed.
 - Improved terminal input reliability by routing clipboard paste through a backend clipboard read and writing multi-byte SSH input sequences as complete buffers.
+- Tightened SSH runtime auth metadata handling with shared temp-dir/file cleanup helpers and tests for temp-path plus Unix `0600` username metadata.
 
 ### Codebase Refactor Backlog
 
@@ -86,7 +87,7 @@ OpenXTerm is independent software. It is not affiliated with, endorsed by, or co
 - Runtime and parsing cleanup:
   - keep X11 diagnostic string matching data-driven rather than long inline condition chains;
   - continue adding lightweight runtime guards for persisted JSON/localStorage boundaries when new storage surfaces appear;
-  - continue removing dead runtime metadata paths and platform-specific temp-path assumptions when found.
+  - SSH runtime auth metadata now uses process temp paths plus user-only username files; continue removing similar dead metadata paths and platform-specific temp-path assumptions when found.
 
 ### Done
 
