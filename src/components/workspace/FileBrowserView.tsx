@@ -1,13 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ChangeEvent,
-  type DragEvent,
-  type FormEvent,
-} from 'react'
+import { useCallback, useEffect, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent } from 'react'
 import { ArrowDownToLine, ArrowUp, Copy, Eye, FolderPlus, Info, LoaderCircle, RefreshCw, Trash2, Upload } from 'lucide-react'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
 
@@ -25,22 +16,17 @@ import { localPathBaseName } from '../../lib/localPath'
 import { queueBatchTransfers } from '../../lib/transferBatch'
 import { isTransferCanceledError } from '../../lib/transferQueue'
 import { useSftpConflictResolver } from '../../hooks/useSftpConflictResolver'
-import type { RemoteDirectorySnapshot, RemoteFileEntry, SessionDefinition } from '../../types/domain'
+import type { RemoteDirectorySnapshot, SessionDefinition } from '../../types/domain'
 import { useOpenXTermStore } from '../../state/useOpenXTermStore'
 import { RemoteEntryPropertiesModal } from './RemoteEntryPropertiesModal'
 import { FileConflictModal } from './FileConflictModal'
 import { FileTable } from './FileTable'
+import { useFileBrowserSelection } from './useFileBrowserSelection'
 import { useFileNativeDragOut } from './useFileNativeDragOut'
 import { useFileTableControls } from './useFileTableControls'
 
 interface FileBrowserViewProps {
   session: SessionDefinition
-}
-
-interface FileContextMenuState {
-  entry: RemoteFileEntry
-  x: number
-  y: number
 }
 
 function parentPathOf(path: string) {
@@ -113,12 +99,10 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
   const enqueueTransfer = useOpenXTermStore((state) => state.enqueueTransfer)
   const [snapshot, setSnapshot] = useState<RemoteDirectorySnapshot | null>(null)
   const [currentPath, setCurrentPath] = useState('/')
-  const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [dropActive, setDropActive] = useState(false)
   const [pathDraft, setPathDraft] = useState('/')
-  const [contextMenu, setContextMenu] = useState<FileContextMenuState | null>(null)
   const {
     fileTableStyle,
     handleColumnResizeStart,
@@ -128,12 +112,22 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
     sortState,
     visibleEntries,
   } = useFileTableControls(snapshot)
-
-  const selectedEntry = useMemo(
-    () => visibleEntries.find((entry) => entry.path === selectedPath) ?? null,
-    [selectedPath, visibleEntries],
-  )
-  const pathToCopy = selectedEntry?.path ?? snapshot?.path ?? currentPath
+  const {
+    closeContextMenu,
+    contextMenu,
+    openContextMenu,
+    pathToCopy,
+    resetSelection,
+    selectEntry,
+    selectedEntry,
+    selectedPath,
+    setSelectedEntryPaths,
+    setSelectedPath,
+  } = useFileBrowserSelection({
+    currentPath,
+    snapshot,
+    visibleEntries,
+  })
   const {
     conflictRequest,
     resolveConflict: handleConflictResolve,
@@ -157,7 +151,7 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
       })
       setCurrentPath(nextSnapshot.path)
       setPathDraft(nextSnapshot.path)
-      setSelectedPath(null)
+      resetSelection()
       setMessage(`Loaded ${nextSnapshot.path}`)
     } catch (error) {
       logOpenXTermError('file-browser.load-directory', error, fileBrowserErrorContext(session, 'load', normalizedPath))
@@ -165,10 +159,7 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
     } finally {
       setBusy(false)
     }
-  }, [session])
-  const setSelectedEntryPaths = useCallback((paths: string[]) => {
-    setSelectedPath(paths[0] ?? null)
-  }, [])
+  }, [resetSelection, session])
   const {
     closeProperties,
     handlePropertiesApplied,
@@ -176,7 +167,7 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
     propertiesEntry,
   } = useRemotePropertiesWindow({
     clearSelectionOnStorageResult: false,
-    closeContextMenu: () => setContextMenu(null),
+    closeContextMenu,
     currentPath,
     errorContext: fileBrowserErrorContext,
     errorScope: 'file-browser.properties-result',
@@ -191,46 +182,13 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
     setSnapshot(null)
     setCurrentPath('/')
     setPathDraft('/')
-    setSelectedPath(null)
+    resetSelection()
     void loadDirectory('/')
-  }, [loadDirectory, session.id])
-
-  useEffect(() => {
-    if (!selectedPath) {
-      return
-    }
-
-    const stillVisible = visibleEntries.some((entry) => entry.path === selectedPath)
-    if (!stillVisible) {
-      setSelectedPath(null)
-    }
-  }, [selectedPath, visibleEntries])
+  }, [loadDirectory, resetSelection, session.id])
 
   useEffect(() => {
     setPathDraft(currentPath)
   }, [currentPath])
-
-  useEffect(() => {
-    if (!contextMenu) {
-      return
-    }
-
-    const closeContextMenu = () => setContextMenu(null)
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setContextMenu(null)
-      }
-    }
-
-    window.addEventListener('click', closeContextMenu)
-    window.addEventListener('contextmenu', closeContextMenu)
-    window.addEventListener('keydown', handleKeyDown)
-    return () => {
-      window.removeEventListener('click', closeContextMenu)
-      window.removeEventListener('contextmenu', closeContextMenu)
-      window.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [contextMenu])
 
   useEffect(() => {
     if (!('__TAURI_INTERNALS__' in window)) {
@@ -635,12 +593,9 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
             style={fileTableStyle}
             onColumnResizeStart={handleColumnResizeStart}
             onNativeDragPointerDown={handleNativeDragPointerDown}
-            onOpenContextMenu={(entry, x, y) => {
-              setSelectedPath(entry.path)
-              setContextMenu({ entry, x, y })
-            }}
+            onOpenContextMenu={openContextMenu}
             onOpenDirectory={(entry) => void loadDirectory(entry.path)}
-            onSelectEntry={(entry) => setSelectedPath(entry.path)}
+            onSelectEntry={selectEntry}
             onSortColumn={handleSortColumn}
           />
           {dropActive && (
