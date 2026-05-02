@@ -13,7 +13,7 @@ It is not only a checklist. It records what currently works, what still needs ma
 
 ## Current Snapshot
 
-Last broad manual pass: April 24, 2026.
+Last broad manual pass: May 2, 2026.
 
 | Area | Status | Notes |
 | --- | --- | --- |
@@ -25,27 +25,44 @@ Last broad manual pass: April 24, 2026.
 | Linked SFTP password reuse while SSH tab is alive | PASS | Helper SFTP can reuse interactively entered credentials while the tab is alive. |
 | SFTP list/create folder/upload/download/delete | PASS | Manually tested after the SFTP polish pass. |
 | SFTP drag-in from Finder | PASS | Works for non-empty and empty remote folders after drop-zone layout fix. |
-| SFTP transfer window | NEEDS RETEST | Recent changes restored separate transfer window, added cancel, and auto-close after 2 seconds. |
-| SFTP rename/context menu | NEEDS RETEST | Added after the last confirmed SFTP pass. |
-| SFTP follow remote terminal | NEEDS RETEST | Enable `follow remote terminal`, run `pwd`/`cd` in the linked SSH tab, and confirm the SFTP sidebar follows the shell directory. |
-| SFTP upload/download conflict handling | NEEDS RETEST | Existing names should prompt for overwrite, skip, or rename; batch conflicts should honor apply-to-all. |
-| Transfer cancel | NEEDS RETEST | Backend cancellation exists, but must be tested with large files/folders. |
-| Transfer retry | NEEDS RETEST | Failed upload/download rows should expose `Retry` and restart from the same transfer window. |
+| SFTP transfer window | PASS | Broad smoke pass confirmed separate transfer window, auto-close, stable progress, drag-in/drag-out visibility, cancel, retry, and disconnect handling. |
+| SFTP rename/context menu | PASS | Context menu and rename/delete/download flows passed the latest SFTP smoke pass. |
+| SFTP follow remote terminal | PASS | Follow-remote-terminal behavior passed the latest SFTP smoke pass. |
+| SFTP upload/download conflict handling | PASS | Existing-name handling passed the latest SFTP smoke pass; no silent overwrite in the checked path. |
+| Transfer cancel | PASS | Large transfer cancellation passed; canceled transfers stay neutral and do not log as operational errors. |
+| Transfer retry | PASS | Failed transfer retry passed from the transfer window. |
 | X11 basic forwarding | PASS | `$DISPLAY` can appear and basic X11 forwarding can work with a local X server. |
 | X11 GLX/heavy apps | RISK | `glxgears`/Chromium depend heavily on XQuartz/local GLX support. |
 | Cross-platform Windows/Linux SFTP/status | RISK | Needs more real-machine passes. |
+
+## Latest SFTP Transfer Smoke Pass
+
+Completed May 2, 2026 on macOS with Finder drag-in/drag-out against Linux SSH/SFTP targets.
+
+| Check | Result |
+| --- | --- |
+| Large upload opens transfer window | PASS |
+| Create remote folder | PASS |
+| Upload single file | PASS |
+| Upload several files as one batch | PASS |
+| Existing-name conflict does not silently overwrite | PASS |
+| Transfer window auto-closes after completion | PASS |
+| Retry failed transfer | PASS |
+| Transfer progress does not flicker back to waiting/details state | PASS |
+| Network interruption during upload fails clearly and does not hang | PASS |
+| Finder drag-in upload | PASS |
+| Native drag-out export | PASS |
+| SFTP context menu / entry actions | PASS |
 
 ## Test Next
 
 Run these first when validating the current branch:
 
-1. Upload a large file and confirm the transfer window appears immediately.
-2. Click `Cancel` during upload and confirm the upload stops with a clear canceled/error state.
-3. Upload several files and confirm the transfer window shows one batch progress item.
-4. Upload a file whose name already exists and confirm it is skipped, not overwritten.
-5. Right-click an SFTP entry and test `Rename`, `Delete`, and `Download`.
-6. Confirm the transfer window closes automatically about 2 seconds after completion.
-7. Force a transfer failure, then click `Retry` and confirm it restarts and completes.
+1. Re-run the SFTP transfer smoke pass after any transfer, drag, or file-browser refactor.
+2. Test the same transfer matrix on Windows and Linux desktop builds.
+3. Test remote folder download with a nested directory and mixed file sizes.
+4. Test permission denied and no-space-left failures on the remote side.
+5. Re-test linked SFTP auth reuse after closing the originating SSH tab.
 
 ## Baseline Setup
 
@@ -90,16 +107,17 @@ Record each pass in a small note with:
 | Connect SSH | Linked SFTP appears in sidebar. | PASS |
 | Open SFTP sidebar | Remote directory loads. | PASS |
 | Create folder | Folder appears after refresh/list reload. | PASS |
-| Upload single file | Transfer window appears and file appears remotely. | NEEDS RETEST |
-| Upload multiple files | One batch transfer is shown. | NEEDS RETEST |
-| Upload existing name | Existing file is skipped; no silent overwrite. | NEEDS RETEST |
+| Upload single file | Transfer window appears and file appears remotely. | PASS |
+| Upload multiple files | One batch transfer is shown. | PASS |
+| Upload existing name | Existing file is skipped; no silent overwrite. | PASS |
 | Drag file from Finder into empty remote folder | Drop-zone accepts file. | PASS |
+| Drag remote file out to Finder | Transfer window appears and file exports without flickering to waiting state. | PASS |
 | Download file | File is saved locally and transfer completes. | PASS |
 | Delete file/folder | Entry disappears after reload. | PASS |
-| Right-click context menu | Menu opens with Rename/Delete/Download. | NEEDS RETEST |
-| Rename file/folder | Entry is renamed remotely and list refreshes. | NEEDS RETEST |
-| Cancel large upload/download | Backend stops transfer and UI shows canceled/error state. | NEEDS RETEST |
-| Retry failed upload/download | Failed row offers `Retry`; retry returns to queued/running and can complete. | NEEDS RETEST |
+| Right-click context menu | Menu opens with Rename/Delete/Download. | PASS |
+| Rename file/folder | Entry is renamed remotely and list refreshes. | PASS |
+| Cancel large upload/download | Backend stops transfer and UI shows canceled state. | PASS |
+| Retry failed upload/download | Failed row offers `Retry`; retry returns to queued/running and can complete. | PASS |
 
 ## X11 2D Apps
 
@@ -139,4 +157,4 @@ On macOS/XQuartz, treat `GLXBadContext` as a local XQuartz/GLX capability issue 
 | Large UTF-8 output | No panic and no broken terminal input. | PASS |
 | SSH auth failure | Auth guidance appears only for real auth failures, not for `apt permission denied`. | PASS |
 | X11 forwarding failure | Diagnostic explains local display/remote sshd/xauth state. | PASS |
-| Network interruption during transfer | Transfer should fail clearly and not leave UI stuck. | NEEDS RETEST |
+| Network interruption during transfer | Transfer fails clearly and does not leave UI stuck. | PASS |

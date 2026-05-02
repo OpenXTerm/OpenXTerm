@@ -60,6 +60,9 @@ OpenXTerm is independent software. It is not affiliated with, endorsed by, or co
 - Continued the backend transfer split by moving FTP/curl helpers into `src-tauri/src/transfer/ftp.rs`.
 - Continued the backend transfer split by moving SFTP open/list/delete/conflict/size helpers into `src-tauri/src/transfer/sftp.rs`.
 - Continued the backend transfer split by moving remote entry CRUD/inspect commands into `src-tauri/src/transfer/entries.rs`.
+- Added per-session proxy support for SSH/SFTP, Telnet, and FTP through direct, HTTP CONNECT, and SOCKS5 paths.
+- Hardened transfer reliability after the May 2 smoke pass: stable transfer windows, drag-in, native drag-out, batch progress, cancel, retry, and network-interruption handling all passed.
+- Improved terminal input reliability by routing clipboard paste through a backend clipboard read and writing multi-byte SSH input sequences as complete buffers.
 
 ### Codebase Refactor Backlog
 
@@ -110,6 +113,9 @@ OpenXTerm is independent software. It is not affiliated with, endorsed by, or co
 - Copy remote path from the file browser.
 - Hidden files toggle in the file browser.
 - Native desktop drag-out from remote file browser.
+- Transfer window for upload, download, retry, cancel, and native drag-out export flows.
+- Clear transfer failure handling for interrupted SFTP uploads, including stalled-write detection instead of indefinite hangs.
+- Per-session proxy support for SSH/SFTP, Telnet, and FTP through direct, HTTP CONNECT, and SOCKS5 paths.
 - MobaXterm `.mxtsessions` import for common session types.
 - Per-session terminal font, font size, foreground color, and background color.
 - System font enumeration for the terminal editor.
@@ -144,7 +150,7 @@ OpenXTerm is independent software. It is not affiliated with, endorsed by, or co
 
 - Secrets are not yet stored through platform credential stores.
 - SFTP authentication reuse needs more real-world hardening, especially on Windows where helper connections still cannot recover a password after the originating SSH tab closes.
-- File transfer edge cases still need hardening around disconnects, permissions, and low disk space.
+- File transfer edge cases still need hardening around remote permission failures, no-space-left conditions, and nested folder downloads.
 - Packaging/signing/notarization is not release-ready.
 - GitHub Releases are currently expected to ship unsigned / unnotarized artifacts until signing secrets and release hardening are added.
 - Storage migrations need versioning before stable release.
@@ -164,9 +170,6 @@ These must be handled before calling OpenXTerm stable.
   - linked SFTP should not ask for the same password again in the normal active SSH flow.
   - Windows fallback behavior must clearly explain when saved password/key/agent auth is required.
   - errors must be understandable.
-- Per-session proxy support:
-  - SSH/SFTP, Telnet, and FTP should work through direct, HTTP CONNECT, and SOCKS5 paths where the target network requires it.
-  - proxy errors should clearly identify whether DNS, proxy auth, proxy connect, or target connect failed.
 - Packaging:
   - macOS signed and notarized build.
   - Linux AppImage and/or `.deb`.
@@ -253,18 +256,18 @@ Goal: SFTP should cover common daily file-management tasks.
 - Linked SFTP can follow the active remote terminal directory.
 - Overwrite/skip/rename conflict handling.
 - Retry failed transfer from the transfer window.
+- Stable transfer-window progress for upload, download, batch transfers, drag-in, native drag-out, retry, cancel, and interrupted-network failures.
 - Chmod support.
 
 ### In Progress
 
 - Linked SFTP auth reuse and Windows fallback clarity.
-- Transfer progress polish.
 
 ### TODO
 
 - Clickable breadcrumb navigation.
 - Remote folder download hardening.
-- Better permission/no-space/disconnect errors.
+- Better permission/no-space errors.
 - Better Windows auth guidance when terminal password entry cannot be reused.
 
 ## v0.4 Alpha: Sessions And Productivity
