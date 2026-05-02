@@ -43,11 +43,14 @@ OpenXTerm is independent software. It is not affiliated with, endorsed by, or co
 - Continued the Zustand store split by moving transfer enqueue/progress aggregation/flush side effects into `openXTermStoreTransfers.ts`.
 - Added a dedicated `canceled` transfer state so user-canceled transfers are neutral, auto-close cleanly, and do not appear as operational errors.
 - Continued the Zustand store split by moving terminal/status/transfer listener registration into `openXTermStoreListeners.ts`.
+- Extracted sidebar SFTP native drag-out pointer handling into `src/components/sidebar/useSftpNativeDragOut.ts`.
+- Extracted sidebar SFTP create, rename, delete, path-submit, and download actions into `src/components/sidebar/useSftpEntryOperations.ts`.
+- Extracted sidebar SFTP upload, folder upload, browser drag-in, and native Tauri file drop handling into `src/components/sidebar/useSftpUploads.ts`.
 
 ### Codebase Refactor Backlog
 
 - Frontend SFTP consolidation:
-  - finish reducing `Sidebar.tsx` to orchestration only; current pass reduced it to roughly 1.1k lines, but upload/download/delete/create/rename/native drag wiring still lives there;
+  - finish reducing `Sidebar.tsx` to orchestration only; current pass reduced it below 500 lines, with section wiring and selected-session state still intentionally local;
   - continue reducing `FileBrowserView.tsx`; current pass reduced it below 1k lines and shares conflict/properties hooks, but table controls, selection, and upload/download orchestration are still local;
   - extract shared SFTP upload/download orchestration only after another smoke pass for drag-in, drag-out, batch downloads, conflict overwrite/skip/rename, retry, and cancel.
 - Backend transfer layer:
