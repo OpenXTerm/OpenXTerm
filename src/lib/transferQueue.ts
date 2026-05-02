@@ -46,11 +46,11 @@ function isTransferProgressRecord(value: unknown): value is Record<string, Trans
     && Object.entries(value).every(([key, item]) => isTransferProgressPayload(item) && key === item.transferId)
 }
 
-export function readTransferQueueSnapshot() {
+export function readTransferQueueSnapshot(): Record<string, TransferProgressPayload> {
   try {
     const raw = localStorage.getItem(TRANSFER_QUEUE_STORAGE_KEY)
     if (!raw) {
-      return {} as Record<string, TransferProgressPayload>
+      return {}
     }
 
     const parsed: unknown = JSON.parse(raw)
@@ -62,7 +62,7 @@ export function readTransferQueueSnapshot() {
       Object.entries(parsed).map(([transferId, item]) => [transferId, normalizeTransferProgressPayload(item)]),
     )
   } catch {
-    return {} as Record<string, TransferProgressPayload>
+    return {}
   }
 }
 
