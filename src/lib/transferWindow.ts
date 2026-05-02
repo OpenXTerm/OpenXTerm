@@ -23,7 +23,7 @@ export function requestTransferWindow(item: TransferProgressPayload) {
     return
   }
 
-  if (item.state === 'completed' || item.state === 'error') {
+  if (item.state === 'completed' || item.state === 'canceled' || item.state === 'error') {
     return
   }
 

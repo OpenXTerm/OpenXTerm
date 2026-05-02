@@ -120,6 +120,7 @@ export function aggregateBatchProgress(payload: TransferProgressPayload) {
   const expectedItems = parent?.itemCount ?? parsed.total
   const completedChildren = children.filter((item) => item.state === 'completed')
   const errorChild = children.find((item) => item.state === 'error')
+  const canceledChild = children.find((item) => item.state === 'canceled')
   const allKnownChildrenReported = childMap.size >= expectedItems
   const allCompleted = allKnownChildrenReported && completedChildren.length === expectedItems
   const hasRunningChild = children.some((item) => item.state === 'running')
@@ -148,17 +149,21 @@ export function aggregateBatchProgress(payload: TransferProgressPayload) {
   const itemWord = expectedItems === 1 ? 'item' : 'items'
   const state = errorChild
     ? 'error'
-    : allCompleted
-      ? 'completed'
-      : hasRunningChild || hasStartedChild || parentWasActive
-        ? 'running'
-        : 'queued'
+    : canceledChild
+      ? 'canceled'
+      : allCompleted
+        ? 'completed'
+        : hasRunningChild || hasStartedChild || parentWasActive
+          ? 'running'
+          : 'queued'
 
   const message = errorChild
     ? errorChild.message
-    : state === 'completed'
-      ? `${expectedItems} ${itemWord} complete`
-      : `${completedChildren.length}/${expectedItems} ${itemWord}; ${currentChild.message}`
+    : canceledChild
+      ? 'Canceled'
+      : state === 'completed'
+        ? `${expectedItems} ${itemWord} complete`
+        : `${completedChildren.length}/${expectedItems} ${itemWord}; ${currentChild.message}`
 
   const aggregate = {
     transferId: parsed.parentId,

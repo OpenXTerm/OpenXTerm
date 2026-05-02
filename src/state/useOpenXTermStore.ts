@@ -1,9 +1,5 @@
 import { create } from 'zustand'
 
-import {
-  aggregateBatchProgress,
-  rememberBatchTransfer,
-} from '../lib/transferBatch'
 import { logOpenXTermError } from '../lib/errorLog'
 import { parseMobaXtermSessionsFile } from '../lib/mobaxtermImport'
 import {
@@ -11,11 +7,6 @@ import {
   deleteMacro,
   deleteSession,
   deleteSessionFolder,
-  listenTransferProgress,
-  listenSessionStatus,
-  listenTerminalCwd,
-  listenTerminalExit,
-  listenTerminalOutput,
   resizeTerminalSession,
   saveMacro,
   savePreferences,
@@ -36,16 +27,12 @@ import {
   normalizeSessionFolderPath,
   toTerminalChunks,
 } from '../lib/sessionUtils'
-import { mergeTransferProgress, writeTransferQueueSnapshot } from '../lib/transferQueue'
-import { requestTransferWindow } from '../lib/transferWindow'
 import type {
   MacroDefinition,
   SessionDefinition,
   SessionFolderDefinition,
-  TransferProgressPayload,
 } from '../types/domain'
 import {
-  appendCpuHistory,
   buildLinkedSftpSession,
   buildSessionImportFingerprint,
   clampSidebarWidth,
@@ -53,25 +40,22 @@ import {
   isFolderPathInSubtree,
   isLiveTerminalKind,
   joinSessionFolderPath,
-  mapStatusPayload,
   nextSessionTabOrdinal,
   replaceFolderPathPrefix,
   seedTerminalTabState,
   sortMacros,
   sortSessionFolders,
   sortSessions,
-  sortTransfers,
   summarizeImportedSessions,
 } from './openXTermStoreHelpers'
+import {
+  clearCompletedTransferItems,
+  enqueueTransferItem,
+} from './openXTermStoreTransfers'
+import { ensureTransportListeners } from './openXTermStoreListeners'
 import type { OpenXTermState, StoreSetter } from './openXTermStoreTypes'
 
 export type { SessionImportSummary } from './openXTermStoreTypes'
-
-let transportListenersReady: Promise<void> | null = null
-let transferFlushScheduled = false
-const pendingTransferPayloads = new Map<string, TransferProgressPayload>()
-const loggedSessionStatusErrors = new Map<string, string>()
-const loggedTransferErrors = new Map<string, string>()
 
 async function startTerminalTransport(tabId: string, session: SessionDefinition) {
   if (session.kind === 'local') {
@@ -112,154 +96,6 @@ function applyTerminalLaunchError(
       },
     },
   }))
-}
-
-function scheduleTransferFlush(set: StoreSetter, payload: TransferProgressPayload) {
-  const pendingPayload = pendingTransferPayloads.get(payload.transferId)
-  pendingTransferPayloads.set(payload.transferId, mergeTransferProgress(pendingPayload, payload))
-
-  if (transferFlushScheduled) {
-    return
-  }
-
-  transferFlushScheduled = true
-  window.requestAnimationFrame(() => {
-    transferFlushScheduled = false
-    const payloads = [...pendingTransferPayloads.values()]
-    pendingTransferPayloads.clear()
-
-    set((state) => {
-      let changed = false
-      const nextTransfers = { ...state.transferItems }
-
-      for (const item of payloads) {
-        const mergedTransfer = mergeTransferProgress(nextTransfers[item.transferId], item)
-        if (nextTransfers[item.transferId] !== mergedTransfer) {
-          nextTransfers[item.transferId] = mergedTransfer
-          changed = true
-        }
-      }
-
-      if (!changed) {
-        return state
-      }
-
-      const transferItems = sortTransfers(nextTransfers)
-      writeTransferQueueSnapshot(transferItems)
-      return {
-        transferItems,
-        transferModalDismissed: false,
-      }
-    })
-  })
-}
-
-function ensureTransportListeners(set: StoreSetter) {
-  if (transportListenersReady) {
-    return transportListenersReady
-  }
-
-  transportListenersReady = (async () => {
-    await listenTerminalOutput((payload) => {
-      set((state) => ({
-        terminalFeeds: {
-          ...state.terminalFeeds,
-          [payload.tabId]: [...(state.terminalFeeds[payload.tabId] ?? []), payload.chunk],
-        },
-        terminalStoppedByTabId: {
-          ...state.terminalStoppedByTabId,
-          [payload.tabId]: false,
-        },
-      }))
-    })
-
-    await listenTerminalCwd((payload) => {
-      set((state) => ({
-        terminalCwdByTabId: {
-          ...state.terminalCwdByTabId,
-          [payload.tabId]: payload.path,
-        },
-      }))
-    })
-
-    await listenTerminalExit((payload) => {
-      set((state) => ({
-        terminalFeeds: {
-          ...state.terminalFeeds,
-          [payload.tabId]: [
-            ...(state.terminalFeeds[payload.tabId] ?? []),
-            `\r\n[connection closed] ${payload.reason}\r\n`,
-          ],
-        },
-        terminalStoppedByTabId: {
-          ...state.terminalStoppedByTabId,
-          [payload.tabId]: true,
-        },
-        sessionStatusByTabId: {
-          ...state.sessionStatusByTabId,
-          [payload.tabId]: {
-            ...(state.sessionStatusByTabId[payload.tabId] ?? defaultOfflineStatus()),
-            mode: 'offline',
-          },
-        },
-      }))
-    })
-
-    await listenSessionStatus((payload) => {
-      const nextStatus = mapStatusPayload(payload)
-      if (nextStatus.mode === 'error') {
-        const signature = `${nextStatus.remoteOs}|${nextStatus.host}|${nextStatus.user}`
-        if (loggedSessionStatusErrors.get(payload.tabId) !== signature) {
-          loggedSessionStatusErrors.set(payload.tabId, signature)
-          logOpenXTermError('session.status', nextStatus.remoteOs, {
-            tabId: payload.tabId,
-            host: nextStatus.host,
-            user: nextStatus.user,
-          })
-        }
-      } else {
-        loggedSessionStatusErrors.delete(payload.tabId)
-      }
-      set((state) => ({
-        sessionStatusByTabId: {
-          ...state.sessionStatusByTabId,
-          [payload.tabId]: nextStatus,
-        },
-        sessionCpuHistoryByTabId: {
-          ...state.sessionCpuHistoryByTabId,
-          [payload.tabId]: appendCpuHistory(state.sessionCpuHistoryByTabId[payload.tabId], nextStatus.cpuLoad),
-        },
-      }))
-    })
-
-    await listenTransferProgress((payload) => {
-      const aggregatePayload = aggregateBatchProgress(payload)
-      const transferPayload = aggregatePayload ?? payload
-      if (transferPayload.state === 'error') {
-        const signature = `${transferPayload.message}|${transferPayload.remotePath}|${transferPayload.localPath ?? ''}`
-        if (loggedTransferErrors.get(transferPayload.transferId) !== signature) {
-          loggedTransferErrors.set(transferPayload.transferId, signature)
-          logOpenXTermError('transfer.progress', transferPayload.message, {
-            transferId: transferPayload.transferId,
-            fileName: transferPayload.fileName,
-            remotePath: transferPayload.remotePath,
-            localPath: transferPayload.localPath,
-            direction: transferPayload.direction,
-            purpose: transferPayload.purpose,
-          })
-        }
-      } else if (transferPayload.state === 'completed') {
-        loggedTransferErrors.delete(transferPayload.transferId)
-      }
-      if (aggregatePayload) {
-        scheduleTransferFlush(set, payload)
-      }
-      scheduleTransferFlush(set, transferPayload)
-      requestTransferWindow(transferPayload)
-    })
-  })()
-
-  return transportListenersReady
 }
 
 export const useOpenXTermStore = create<OpenXTermState>((set, get) => ({
@@ -322,40 +158,13 @@ export const useOpenXTermStore = create<OpenXTermState>((set, get) => ({
     set({ preferences: nextPreferences })
   },
   enqueueTransfer(item) {
-    rememberBatchTransfer(item)
-    set((state) => {
-      const mergedTransfer = mergeTransferProgress(state.transferItems[item.transferId], item)
-      if (state.transferItems[item.transferId] === mergedTransfer) {
-        requestTransferWindow(mergedTransfer)
-        return state
-      }
-
-      const transferItems = sortTransfers({
-        ...state.transferItems,
-        [item.transferId]: mergedTransfer,
-      })
-      writeTransferQueueSnapshot(transferItems)
-      requestTransferWindow(mergedTransfer)
-      return {
-        transferItems,
-        transferModalDismissed: false,
-      }
-    })
+    enqueueTransferItem(set, item)
   },
   dismissTransferModal() {
     set({ transferModalDismissed: true })
   },
   clearCompletedTransfers() {
-    set((state) => {
-      const transferItems = Object.fromEntries(
-        Object.entries(state.transferItems).filter(([, item]) => item.state === 'queued' || item.state === 'running'),
-      )
-      writeTransferQueueSnapshot(transferItems)
-      return {
-        transferItems,
-        transferModalDismissed: false,
-      }
-    })
+    clearCompletedTransferItems(set)
   },
   selectTab(tabId) {
     set({ activeTabId: tabId })

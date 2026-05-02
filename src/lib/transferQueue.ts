@@ -6,6 +6,7 @@ const transferStateRank: Record<TransferProgressPayload['state'], number> = {
   queued: 0,
   running: 1,
   completed: 2,
+  canceled: 2,
   error: 2,
 }
 
@@ -25,7 +26,13 @@ function isTransferProgressPayload(value: unknown): value is TransferProgressPay
     && typeof value.remotePath === 'string'
     && (value.direction === 'download' || value.direction === 'upload')
     && (value.purpose === 'drag-export' || value.purpose === 'download' || value.purpose === 'upload')
-    && (value.state === 'queued' || value.state === 'running' || value.state === 'completed' || value.state === 'error')
+    && (
+      value.state === 'queued'
+      || value.state === 'running'
+      || value.state === 'completed'
+      || value.state === 'canceled'
+      || value.state === 'error'
+    )
     && typeof value.transferredBytes === 'number'
     && (value.totalBytes === undefined || typeof value.totalBytes === 'number')
     && typeof value.message === 'string'
@@ -47,7 +54,13 @@ export function readTransferQueueSnapshot() {
     }
 
     const parsed: unknown = JSON.parse(raw)
-    return isTransferProgressRecord(parsed) ? parsed : {}
+    if (!isTransferProgressRecord(parsed)) {
+      return {}
+    }
+
+    return Object.fromEntries(
+      Object.entries(parsed).map(([transferId, item]) => [transferId, normalizeTransferProgressPayload(item)]),
+    )
   } catch {
     return {} as Record<string, TransferProgressPayload>
   }
@@ -55,6 +68,25 @@ export function readTransferQueueSnapshot() {
 
 export function writeTransferQueueSnapshot(items: Record<string, TransferProgressPayload>) {
   localStorage.setItem(TRANSFER_QUEUE_STORAGE_KEY, JSON.stringify(items))
+}
+
+export function normalizeTransferProgressPayload(item: TransferProgressPayload): TransferProgressPayload {
+  if (item.state === 'error' && item.message === 'Transfer canceled' && item.retryable !== true) {
+    return {
+      ...item,
+      state: 'canceled',
+      message: 'Canceled',
+      retryable: false,
+    }
+  }
+
+  return item
+}
+
+export function isTransferCanceledError(error: unknown) {
+  return error instanceof Error
+    ? error.message === 'Transfer canceled'
+    : String(error) === 'Transfer canceled'
 }
 
 function sameTransferProgress(left: TransferProgressPayload, right: TransferProgressPayload) {
@@ -76,6 +108,8 @@ export function mergeTransferProgress(
   existing: TransferProgressPayload | undefined,
   incoming: TransferProgressPayload,
 ) {
+  incoming = normalizeTransferProgressPayload(incoming)
+
   if (!existing) {
     return incoming
   }
@@ -86,6 +120,7 @@ export function mergeTransferProgress(
     incomingIsOlderState
     || (incoming.state === 'queued' && existing.state !== 'queued')
     || (existing.state === 'error' && incoming.state !== 'error')
+    || (existing.state === 'canceled' && incoming.state !== 'canceled')
   )
   const totalBytes = typeof existing.totalBytes === 'number' && typeof incoming.totalBytes === 'number'
     ? Math.max(existing.totalBytes, incoming.totalBytes)

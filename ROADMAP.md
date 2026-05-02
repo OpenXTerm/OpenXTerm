@@ -38,6 +38,9 @@ OpenXTerm is independent software. It is not affiliated with, endorsed by, or co
 - Split the session editor tab panels into focused components so `SessionEditorModal.tsx` now owns state/effects/form composition instead of all tab JSX.
 - Split workspace file table rendering out of `FileBrowserView.tsx` while keeping transfer and directory-operation state in the container.
 - Started the Zustand store split by extracting public store types and pure helper logic from `useOpenXTermStore.ts`.
+- Continued the Zustand store split by moving transfer enqueue/progress aggregation/flush side effects into `openXTermStoreTransfers.ts`.
+- Added a dedicated `canceled` transfer state so user-canceled transfers are neutral, auto-close cleanly, and do not appear as operational errors.
+- Continued the Zustand store split by moving terminal/status/transfer listener registration into `openXTermStoreListeners.ts`.
 
 ### Codebase Refactor Backlog
 

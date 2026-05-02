@@ -3,7 +3,13 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 
 import { cancelTransfer, listenTransferProgress, retryTransfer } from '../../lib/bridge'
 import { aggregateBatchProgress, hydrateBatchTransfers } from '../../lib/transferBatch'
-import { TRANSFER_RETRY_MESSAGE, mergeTransferProgress, readTransferQueueSnapshot, writeTransferQueueSnapshot } from '../../lib/transferQueue'
+import {
+  TRANSFER_RETRY_MESSAGE,
+  mergeTransferProgress,
+  normalizeTransferProgressPayload,
+  readTransferQueueSnapshot,
+  writeTransferQueueSnapshot,
+} from '../../lib/transferQueue'
 import type { TransferProgressPayload } from '../../types/domain'
 import { TransferProgressModal } from './TransferProgressModal'
 
@@ -76,8 +82,9 @@ export function TransferWindowPage() {
         return
       }
 
-      const aggregatePayload = aggregateBatchProgress(payload)
-      const transferPayloads = aggregatePayload ? [payload, aggregatePayload] : [payload]
+      const normalizedPayload = normalizeTransferProgressPayload(payload)
+      const aggregatePayload = aggregateBatchProgress(normalizedPayload)
+      const transferPayloads = aggregatePayload ? [normalizedPayload, aggregatePayload] : [normalizedPayload]
       for (const transferPayload of transferPayloads) {
         const pendingItem = pendingItemsRef.current.get(transferPayload.transferId)
         pendingItemsRef.current.set(transferPayload.transferId, mergeTransferProgress(pendingItem, transferPayload))
@@ -114,13 +121,14 @@ export function TransferWindowPage() {
         return true
       }
 
-      return item.transferId.startsWith(`${transferId}::item::`) && item.state === 'error'
+      return item.transferId.startsWith(`${transferId}::item::`) && (item.state === 'error' || item.state === 'canceled')
     })
   }, [items, transferId])
-  const allItemsCompleted = orderedItems.length > 0 && orderedItems.every((item) => item.state === 'completed')
+  const allItemsFinished = orderedItems.length > 0
+    && orderedItems.every((item) => item.state === 'completed' || item.state === 'canceled')
 
   useEffect(() => {
-    if (!allItemsCompleted) {
+    if (!allItemsFinished) {
       return
     }
 
@@ -129,7 +137,7 @@ export function TransferWindowPage() {
     }, 2000)
 
     return () => window.clearTimeout(closeTimer)
-  }, [allItemsCompleted])
+  }, [allItemsFinished])
 
   function handleCancelTransfer(item: TransferProgressPayload) {
     void cancelTransfer(item.transferId)
@@ -138,8 +146,9 @@ export function TransferWindowPage() {
         ...current,
         [item.transferId]: mergeTransferProgress(current[item.transferId], {
           ...item,
-          state: 'error',
+          state: 'canceled',
           message: 'Cancel requested',
+          retryable: false,
         }),
       }
       writeTransferQueueSnapshot(next)

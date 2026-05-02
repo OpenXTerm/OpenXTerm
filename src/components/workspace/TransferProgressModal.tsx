@@ -1,4 +1,4 @@
-import { ArrowDownToLine, ArrowUpToLine, CheckCircle2, LoaderCircle, RotateCcw, XCircle } from 'lucide-react'
+import { ArrowDownToLine, ArrowUpToLine, Ban, CheckCircle2, LoaderCircle, RotateCcw, XCircle } from 'lucide-react'
 
 import type { TransferProgressPayload } from '../../types/domain'
 
@@ -24,6 +24,10 @@ function StateIcon({ item }: { item: TransferProgressPayload }) {
     return <CheckCircle2 size={16} />
   }
 
+  if (item.state === 'canceled') {
+    return <Ban size={16} />
+  }
+
   if (item.state === 'error') {
     return <XCircle size={16} />
   }
@@ -37,6 +41,14 @@ function progressPercent(item: TransferProgressPayload) {
   }
 
   return item.state === 'completed' ? 100 : null
+}
+
+function progressLabel(item: TransferProgressPayload, percent: number | null) {
+  if (item.state === 'canceled') {
+    return 'Canceled'
+  }
+
+  return percent === null ? 'Waiting for size…' : `${percent}%`
 }
 
 export function TransferProgressModal({ items, open, embedded = false, onCancel, onRetry, onClose }: TransferProgressModalProps) {
@@ -89,9 +101,7 @@ export function TransferProgressModal({ items, open, embedded = false, onCancel,
                     />
                   </div>
                   <span>
-                    {percent === null
-                      ? 'Waiting for size…'
-                      : `${percent}%`}
+                    {progressLabel(item, percent)}
                   </span>
                 </div>
                 {item.localPath && (

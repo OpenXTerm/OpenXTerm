@@ -30,6 +30,7 @@ import {
   queueBatchTransfers,
   rememberBatchTransfer,
 } from '../../lib/transferBatch'
+import { isTransferCanceledError } from '../../lib/transferQueue'
 import { useRemotePropertiesWindow } from '../../hooks/useRemotePropertiesWindow'
 import { useSftpConflictResolver } from '../../hooks/useSftpConflictResolver'
 import { useOpenXTermStore } from '../../state/useOpenXTermStore'
@@ -412,6 +413,10 @@ export function Sidebar({
           setSftpMessage(`Uploaded ${uploadItems.length} item${uploadItems.length > 1 ? 's' : ''} to ${currentSftpPath}`)
           await loadSelectedSftpDirectory(currentSftpPath)
         } catch (error) {
+          if (isTransferCanceledError(error)) {
+            setSftpMessage('Transfer canceled.')
+            return
+          }
           logOpenXTermError('sidebar.sftp.drop-upload', error, {
             ...sidebarSftpErrorContext(selectedSftpSession, 'drop-upload', currentSftpPath),
             droppedPaths,
@@ -484,6 +489,10 @@ export function Sidebar({
       setSftpMessage(`Uploaded ${uploadItems.length} file${uploadItems.length > 1 ? 's' : ''} to ${currentSftpPath}`)
       await loadSelectedSftpDirectory(currentSftpPath)
     } catch (error) {
+      if (isTransferCanceledError(error)) {
+        setSftpMessage('Transfer canceled.')
+        return
+      }
       logOpenXTermError(`sidebar.sftp.${source}`, error, {
         ...sidebarSftpErrorContext(selectedSftpSession, source, currentSftpPath),
         files: uploadItems.map((item) => ({ name: item.file.name, targetName: item.targetName, size: item.file.size })),
@@ -630,6 +639,10 @@ export function Sidebar({
       setSftpMessage(`Uploaded folder contents to ${currentSftpPath}`)
       await loadSelectedSftpDirectory(currentSftpPath)
     } catch (error) {
+      if (isTransferCanceledError(error)) {
+        setSftpMessage('Transfer canceled.')
+        return
+      }
       logOpenXTermError('sidebar.sftp.upload-folder', error, {
         ...sidebarSftpErrorContext(selectedSftpSession, 'upload-folder', currentSftpPath),
         files: Array.from(fileList).map((file) => ({
@@ -809,6 +822,10 @@ export function Sidebar({
           : `Downloaded ${downloadItems.length} item${downloadItems.length > 1 ? 's' : ''}`,
       )
     } catch (error) {
+      if (isTransferCanceledError(error)) {
+        setSftpMessage('Transfer canceled.')
+        return
+      }
       logOpenXTermError('sidebar.sftp.download-entry', error, {
         ...sidebarSftpErrorContext(selectedSftpSession, 'download', currentSftpPath),
         entries: entries.map((entry) => ({ path: entry.path, kind: entry.kind })),

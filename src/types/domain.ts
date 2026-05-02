@@ -236,7 +236,7 @@ export interface MenuActionPayload {
 
 export type TransferDirection = 'download' | 'upload'
 export type TransferPurpose = 'drag-export' | 'download' | 'upload'
-export type TransferState = 'queued' | 'running' | 'completed' | 'error'
+export type TransferState = 'queued' | 'running' | 'completed' | 'canceled' | 'error'
 
 export interface TransferProgressPayload {
   transferId: string

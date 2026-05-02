@@ -26,6 +26,7 @@ import { logOpenXTermError } from '../../lib/errorLog'
 import { useRemotePropertiesWindow } from '../../hooks/useRemotePropertiesWindow'
 import { localPathBaseName } from '../../lib/localPath'
 import { queueBatchTransfers } from '../../lib/transferBatch'
+import { isTransferCanceledError } from '../../lib/transferQueue'
 import { useSftpConflictResolver } from '../../hooks/useSftpConflictResolver'
 import type { RemoteDirectorySnapshot, RemoteFileEntry, SessionDefinition } from '../../types/domain'
 import { useOpenXTermStore } from '../../state/useOpenXTermStore'
@@ -422,6 +423,10 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
           setMessage(`Uploaded ${uploadItems.length} item${uploadItems.length > 1 ? 's' : ''} to ${currentPath}`)
           await loadDirectory(currentPath)
         } catch (error) {
+          if (isTransferCanceledError(error)) {
+            setMessage('Transfer canceled.')
+            return
+          }
           logOpenXTermError('file-browser.drop-upload', error, {
             ...fileBrowserErrorContext(session, 'drop-upload', currentPath),
             droppedPaths,
@@ -517,6 +522,10 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
       const result = await downloadRemoteFile(session, selectedEntry.path, transferId, target.targetName, target.conflictAction)
       setMessage(`Downloaded ${result.fileName} -> ${result.savedTo}`)
     } catch (error) {
+      if (isTransferCanceledError(error)) {
+        setMessage('Transfer canceled.')
+        return
+      }
       logOpenXTermError('file-browser.download-file', error, fileBrowserErrorContext(session, 'download', selectedEntry.path))
       setMessage(error instanceof Error ? error.message : 'Unable to download remote file.')
     } finally {
@@ -588,6 +597,11 @@ export function FileBrowserView({ session }: FileBrowserViewProps) {
       setMessage(`Uploaded ${uploadItems.length} file${uploadItems.length > 1 ? 's' : ''} to ${currentPath}`)
       await loadDirectory(currentPath)
     } catch (error) {
+      if (isTransferCanceledError(error)) {
+        setMessage('Transfer canceled.')
+        setBusy(false)
+        return
+      }
       logOpenXTermError('file-browser.upload-file', error, {
         ...fileBrowserErrorContext(session, 'upload', currentPath),
         files: files.map((file) => ({ name: file.name, size: file.size })),
