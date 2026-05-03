@@ -38,6 +38,16 @@ pub fn install_macos_menu<R: Runtime>(_app: &AppHandle<R>) -> tauri::Result<()> 
             .text("lock-app", "Lock OpenXTerm")
             .build()?;
 
+        let edit_menu = SubmenuBuilder::new(app, "Edit")
+            .undo()
+            .redo()
+            .separator()
+            .cut()
+            .copy()
+            .paste()
+            .select_all()
+            .build()?;
+
         let sessions_menu = SubmenuBuilder::new(app, "Sessions")
             .text("show-sessions", "Show Sessions")
             .text("show-sftp", "Show SFTP")
@@ -74,6 +84,7 @@ pub fn install_macos_menu<R: Runtime>(_app: &AppHandle<R>) -> tauri::Result<()> 
         let menu = MenuBuilder::new(app)
             .item(&app_menu)
             .item(&terminal_menu)
+            .item(&edit_menu)
             .item(&sessions_menu)
             .item(&view_menu)
             .item(&tools_menu)

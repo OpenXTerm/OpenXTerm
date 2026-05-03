@@ -6,6 +6,8 @@ use std::{
 
 use tauri::{AppHandle, Manager};
 
+use super::errors::describe_local_io_error;
+
 pub(super) fn parent_remote_path(path: &str) -> String {
     let mut parts = path
         .split('/')
@@ -59,8 +61,9 @@ pub(super) fn download_target_path(app: &AppHandle, file_name: &str) -> Result<P
         .download_dir()
         .map_err(|error| format!("failed to resolve downloads directory: {error}"))?
         .join("OpenXTerm");
-    fs::create_dir_all(&downloads_dir)
-        .map_err(|error| format!("failed to create {}: {error}", downloads_dir.display()))?;
+    fs::create_dir_all(&downloads_dir).map_err(|error| {
+        describe_local_io_error("create downloads directory", &downloads_dir, &error)
+    })?;
     Ok(downloads_dir.join(file_name))
 }
 
@@ -132,13 +135,14 @@ pub(super) fn temp_upload_path(file_name: &str) -> PathBuf {
 pub(super) fn local_directory_total_size(path: &Path) -> Result<u64, String> {
     let mut total = 0u64;
     let entries = fs::read_dir(path)
-        .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+        .map_err(|error| describe_local_io_error("read local directory", path, &error))?;
 
     for entry in entries {
-        let entry = entry.map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+        let entry =
+            entry.map_err(|error| describe_local_io_error("read local directory", path, &error))?;
         let metadata = entry
             .metadata()
-            .map_err(|error| format!("failed to read {}: {error}", entry.path().display()))?;
+            .map_err(|error| describe_local_io_error("read local path", &entry.path(), &error))?;
 
         if metadata.is_dir() {
             total += local_directory_total_size(&entry.path())?;

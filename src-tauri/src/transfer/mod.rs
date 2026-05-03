@@ -8,6 +8,7 @@ use std::{
 };
 
 mod entries;
+mod errors;
 mod ftp;
 mod lifecycle;
 mod metadata;
@@ -16,6 +17,7 @@ mod progress;
 mod sftp;
 mod state;
 
+use errors::{describe_local_io_error, describe_remote_error};
 use ftp::{run_ftp_download, run_ftp_upload};
 use libssh_rs::{OpenFlags, Sftp, SftpFile};
 use lifecycle::TransferLifecycle;
@@ -26,7 +28,8 @@ use paths::{
 };
 use progress::TransferProgressEvent;
 use sftp::{
-    ensure_sftp_directory_allowed, ensure_sftp_write_allowed, open_sftp, sftp_directory_total_size,
+    create_sftp_directory_if_needed, ensure_sftp_directory_allowed, ensure_sftp_write_allowed,
+    open_sftp, sftp_directory_total_size,
 };
 use state::{
     remember_transfer_retry, stop_if_transfer_cancelled, transfer_retryable, TransferRetryOperation,
@@ -239,7 +242,9 @@ pub fn upload_remote_file(
                     OpenFlags::CREATE | OpenFlags::WRITE_ONLY | OpenFlags::TRUNCATE,
                     0o644,
                 )
-                .map_err(|error| format!("failed to create remote file: {error}"))?;
+                .map_err(|error| {
+                    describe_remote_error("create remote file", &remote_path, error)
+                })?;
             let mut transferred = 0u64;
             for chunk in bytes.chunks(TRANSFER_CHUNK_SIZE) {
                 lifecycle.check_cancel()?;
@@ -252,9 +257,8 @@ pub fn upload_remote_file(
         "ftp" => {
             lifecycle.check_cancel()?;
             let temp_path = temp_upload_path(&file_name);
-            fs::write(&temp_path, &bytes).map_err(|error| {
-                format!("failed to stage upload {}: {error}", temp_path.display())
-            })?;
+            fs::write(&temp_path, &bytes)
+                .map_err(|error| describe_local_io_error("stage upload", &temp_path, &error))?;
             lifecycle.running(0, Some(total_bytes), "Uploading to remote host");
 
             let result = run_ftp_upload(session, &remote_path, &temp_path);
@@ -308,7 +312,7 @@ pub fn upload_local_file(
         .map(sanitize_transfer_name)
         .unwrap_or(local_file_name);
     let metadata = fs::metadata(&local_path)
-        .map_err(|error| format!("failed to read {}: {error}", local_path.display()))?;
+        .map_err(|error| describe_local_io_error("read local path", &local_path, &error))?;
     let total_bytes = if metadata.is_dir() {
         local_directory_total_size(&local_path)?
     } else {
@@ -412,19 +416,19 @@ fn upload_sftp_directory_recursive(
 ) -> Result<(), String> {
     stop_if_transfer_cancelled(transfer_id)?;
     ensure_sftp_directory_allowed(sftp, remote_dir, conflict_action)?;
-    let _ = sftp.create_dir(remote_dir, 0o755);
+    create_sftp_directory_if_needed(sftp, remote_dir)?;
 
     let entries = fs::read_dir(local_dir)
-        .map_err(|error| format!("failed to read {}: {error}", local_dir.display()))?;
+        .map_err(|error| describe_local_io_error("read local directory", local_dir, &error))?;
     for entry in entries {
         stop_if_transfer_cancelled(transfer_id)?;
-        let entry =
-            entry.map_err(|error| format!("failed to read {}: {error}", local_dir.display()))?;
+        let entry = entry
+            .map_err(|error| describe_local_io_error("read local directory", local_dir, &error))?;
         let local_path = entry.path();
         let remote_path = join_remote_path(remote_dir, &entry.file_name().to_string_lossy());
         let metadata = entry
             .metadata()
-            .map_err(|error| format!("failed to read {}: {error}", local_path.display()))?;
+            .map_err(|error| describe_local_io_error("read local path", &local_path, &error))?;
 
         if metadata.is_dir() {
             upload_sftp_directory_recursive(
@@ -469,7 +473,7 @@ fn upload_sftp_file_with_progress(
 ) -> Result<(), String> {
     stop_if_transfer_cancelled(transfer_id)?;
     let mut source = File::open(local_path)
-        .map_err(|error| format!("failed to open {}: {error}", local_path.display()))?;
+        .map_err(|error| describe_local_io_error("open local file", local_path, &error))?;
     ensure_sftp_write_allowed(sftp, remote_path, conflict_action)?;
     let mut target = sftp
         .open(
@@ -477,7 +481,7 @@ fn upload_sftp_file_with_progress(
             OpenFlags::CREATE | OpenFlags::WRITE_ONLY | OpenFlags::TRUNCATE,
             0o644,
         )
-        .map_err(|error| format!("failed to create remote file {remote_path}: {error}"))?;
+        .map_err(|error| describe_remote_error("create remote file", remote_path, error))?;
     let mut buffer = vec![0u8; TRANSFER_CHUNK_SIZE];
     let local_path_label = local_path.display().to_string();
 
@@ -485,7 +489,7 @@ fn upload_sftp_file_with_progress(
         stop_if_transfer_cancelled(transfer_id)?;
         let read = source
             .read(&mut buffer)
-            .map_err(|error| format!("failed to read {}: {error}", local_path.display()))?;
+            .map_err(|error| describe_local_io_error("read local file", local_path, &error))?;
         if read == 0 {
             break;
         }
@@ -526,7 +530,7 @@ fn write_sftp_chunk_with_timeout(
             Ok(0) => {
                 if last_progress.elapsed() >= SFTP_WRITE_STALL_TIMEOUT {
                     return Err(format!(
-                        "failed to upload remote file {remote_path}: write stalled for {} seconds",
+                        "Cannot upload remote file {remote_path}: no write progress for {} seconds. Check the network connection and remote disk/quota, then retry.",
                         SFTP_WRITE_STALL_TIMEOUT.as_secs()
                     ));
                 }
@@ -539,15 +543,17 @@ fn write_sftp_chunk_with_timeout(
             Err(error) if is_sftp_write_would_block(&error) => {
                 if last_progress.elapsed() >= SFTP_WRITE_STALL_TIMEOUT {
                     return Err(format!(
-                        "failed to upload remote file {remote_path}: write stalled for {} seconds",
+                        "Cannot upload remote file {remote_path}: no write progress for {} seconds. Check the network connection and remote disk/quota, then retry.",
                         SFTP_WRITE_STALL_TIMEOUT.as_secs()
                     ));
                 }
                 thread::sleep(SFTP_WRITE_RETRY_SLEEP);
             }
             Err(error) => {
-                return Err(format!(
-                    "failed to upload remote file {remote_path}: {error}"
+                return Err(describe_remote_error(
+                    "upload remote file",
+                    remote_path,
+                    error,
                 ));
             }
         }
@@ -632,7 +638,7 @@ pub fn prepare_remote_drag_file(
     let save_path = drag_cache_path(&file_name);
     if let Some(parent) = save_path.parent() {
         fs::create_dir_all(parent)
-            .map_err(|error| format!("failed to create {}: {error}", parent.display()))?;
+            .map_err(|error| describe_local_io_error("create local directory", parent, &error))?;
     }
 
     download_remote_file_to_path(
@@ -694,6 +700,7 @@ pub fn download_remote_entry_to_path(
         },
     );
 
+    let target_existed_before = save_path.exists();
     let result = match session.kind.as_str() {
         "sftp" => {
             lifecycle.check_cancel()?;
@@ -701,8 +708,9 @@ pub fn download_remote_entry_to_path(
             let total_bytes = sftp_directory_total_size(&sftp, remote_path)?;
             lifecycle.check_cancel()?;
             ensure_local_write_allowed(save_path, &conflict_action)?;
-            fs::create_dir_all(save_path)
-                .map_err(|error| format!("failed to create {}: {error}", save_path.display()))?;
+            fs::create_dir_all(save_path).map_err(|error| {
+                describe_local_io_error("create local directory", save_path, &error)
+            })?;
 
             let mut transferred = 0u64;
             download_sftp_directory_recursive(
@@ -740,7 +748,9 @@ pub fn download_remote_entry_to_path(
             })
         }
         Err(error) => {
-            let _ = fs::remove_dir_all(save_path);
+            if !target_existed_before {
+                let _ = fs::remove_dir_all(save_path);
+            }
             lifecycle.failed(0, None, &error);
             Err(error)
         }
@@ -780,6 +790,7 @@ pub fn download_remote_file_to_path(
         },
     );
 
+    let target_existed_before = save_path.exists();
     let result = match session.kind.as_str() {
         "sftp" => {
             lifecycle.check_cancel()?;
@@ -791,24 +802,24 @@ pub fn download_remote_file_to_path(
             ensure_local_write_allowed(save_path, &conflict_action)?;
             let mut remote_file = sftp
                 .open(remote_path, OpenFlags::READ_ONLY, 0)
-                .map_err(|error| format!("failed to open remote file: {error}"))?;
+                .map_err(|error| describe_remote_error("open remote file", remote_path, error))?;
             let mut local_file = File::create(save_path)
-                .map_err(|error| format!("failed to write {}: {error}", save_path.display()))?;
+                .map_err(|error| describe_local_io_error("create local file", save_path, &error))?;
             let mut transferred = 0u64;
             let mut buffer = vec![0u8; TRANSFER_CHUNK_SIZE];
 
             loop {
                 lifecycle.check_cancel()?;
-                let read = remote_file
-                    .read(&mut buffer)
-                    .map_err(|error| format!("failed to read remote file: {error}"))?;
+                let read = remote_file.read(&mut buffer).map_err(|error| {
+                    describe_remote_error("read remote file", remote_path, error)
+                })?;
                 if read == 0 {
                     break;
                 }
 
-                local_file
-                    .write_all(&buffer[..read])
-                    .map_err(|error| format!("failed to write {}: {error}", save_path.display()))?;
+                local_file.write_all(&buffer[..read]).map_err(|error| {
+                    describe_local_io_error("write local file", save_path, &error)
+                })?;
                 transferred += read as u64;
                 lifecycle.running(
                     transferred,
@@ -862,7 +873,9 @@ pub fn download_remote_file_to_path(
             })
         }
         Err(error) => {
-            let _ = fs::remove_file(save_path);
+            if !target_existed_before {
+                let _ = fs::remove_file(save_path);
+            }
             lifecycle.failed(0, None, &error);
             Err(error)
         }
@@ -885,7 +898,7 @@ fn download_sftp_directory_recursive(
     stop_if_transfer_cancelled(transfer_id)?;
     let entries = sftp
         .read_dir(remote_dir)
-        .map_err(|error| format!("failed to list remote directory {remote_dir}: {error}"))?;
+        .map_err(|error| describe_remote_error("list remote directory", remote_dir, error))?;
 
     for entry in entries {
         stop_if_transfer_cancelled(transfer_id)?;
@@ -901,8 +914,9 @@ fn download_sftp_directory_recursive(
         let local_path = local_dir.join(name);
 
         if is_directory(entry.file_type()) {
-            fs::create_dir_all(&local_path)
-                .map_err(|error| format!("failed to create {}: {error}", local_path.display()))?;
+            fs::create_dir_all(&local_path).map_err(|error| {
+                describe_local_io_error("create local directory", &local_path, &error)
+            })?;
             download_sftp_directory_recursive(
                 app,
                 sftp,
@@ -919,15 +933,16 @@ fn download_sftp_directory_recursive(
         }
 
         if let Some(parent) = local_path.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|error| format!("failed to create {}: {error}", parent.display()))?;
+            fs::create_dir_all(parent).map_err(|error| {
+                describe_local_io_error("create local directory", parent, &error)
+            })?;
         }
 
         let mut remote_file = sftp
             .open(&remote_path, OpenFlags::READ_ONLY, 0)
-            .map_err(|error| format!("failed to open remote file {remote_path}: {error}"))?;
+            .map_err(|error| describe_remote_error("open remote file", &remote_path, error))?;
         let mut local_file = File::create(&local_path)
-            .map_err(|error| format!("failed to write {}: {error}", local_path.display()))?;
+            .map_err(|error| describe_local_io_error("create local file", &local_path, &error))?;
         let mut buffer = vec![0u8; TRANSFER_CHUNK_SIZE];
         let local_path_label = local_path.display().to_string();
 
@@ -935,14 +950,14 @@ fn download_sftp_directory_recursive(
             stop_if_transfer_cancelled(transfer_id)?;
             let read = remote_file
                 .read(&mut buffer)
-                .map_err(|error| format!("failed to read remote file {remote_path}: {error}"))?;
+                .map_err(|error| describe_remote_error("read remote file", &remote_path, error))?;
             if read == 0 {
                 break;
             }
 
-            local_file
-                .write_all(&buffer[..read])
-                .map_err(|error| format!("failed to write {}: {error}", local_path.display()))?;
+            local_file.write_all(&buffer[..read]).map_err(|error| {
+                describe_local_io_error("write local file", &local_path, &error)
+            })?;
             *transferred += read as u64;
             emit_transfer(
                 app,

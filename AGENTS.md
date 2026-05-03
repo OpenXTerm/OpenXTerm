@@ -126,6 +126,7 @@ CI/CD workflow:
 - [`src-tauri/src/transfer/lifecycle.rs`](src-tauri/src/transfer/lifecycle.rs): shared transfer queued/running/completed/error emission plus cancel/retry cleanup
 - [`src-tauri/src/transfer/progress.rs`](src-tauri/src/transfer/progress.rs): transfer progress event emission and transfer-window reveal logic
 - [`src-tauri/src/transfer/state.rs`](src-tauri/src/transfer/state.rs): transfer cancel/retry runtime state
+- [`src-tauri/src/transfer/errors.rs`](src-tauri/src/transfer/errors.rs): shared local/SFTP transfer error classification for permission, no-space, connection, missing-path, and unsupported-operation failures
 - [`src-tauri/src/transfer/entries.rs`](src-tauri/src/transfer/entries.rs): remote entry list/create/delete/rename/properties/chmod commands
 - [`src-tauri/src/transfer/sftp.rs`](src-tauri/src/transfer/sftp.rs): SFTP helper operations and metadata/conflict checks
 - [`src-tauri/src/transfer/ftp.rs`](src-tauri/src/transfer/ftp.rs): FTP/curl upload and download helpers
@@ -543,6 +544,7 @@ Start with:
 - [`src-tauri/src/transfer/lifecycle.rs`](src-tauri/src/transfer/lifecycle.rs)
 - [`src-tauri/src/transfer/progress.rs`](src-tauri/src/transfer/progress.rs)
 - [`src-tauri/src/transfer/state.rs`](src-tauri/src/transfer/state.rs)
+- [`src-tauri/src/transfer/errors.rs`](src-tauri/src/transfer/errors.rs)
 - [`src-tauri/src/transfer/entries.rs`](src-tauri/src/transfer/entries.rs)
 - [`src-tauri/src/transfer/sftp.rs`](src-tauri/src/transfer/sftp.rs)
 - [`src-tauri/src/transfer/ftp.rs`](src-tauri/src/transfer/ftp.rs)

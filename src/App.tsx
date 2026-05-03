@@ -7,6 +7,7 @@ import { SessionEditorModal } from './components/forms/SessionEditorModal'
 import { AppSettingsModal } from './components/forms/AppSettingsModal'
 import { AppLockOverlay } from './components/forms/AppLockOverlay'
 import { TopBar } from './components/layout/TopBar'
+import { installEditablePasteShortcut } from './lib/editablePaste'
 import { getSystemAuthSupport, listenMenuAction, requestSystemUnlock } from './lib/bridge'
 import { StatusBar } from './components/status/StatusBar'
 import { Sidebar } from './components/sidebar/Sidebar'
@@ -78,6 +79,8 @@ export function App() {
   useEffect(() => {
     void initialize()
   }, [initialize])
+
+  useEffect(() => installEditablePasteShortcut(), [])
 
   useEffect(() => {
     if (!initialized) {

@@ -71,6 +71,7 @@ OpenXTerm is independent software. It is not affiliated with, endorsed by, or co
 - Expanded shared CSS tokens for panel surfaces, controls, borders, semantic colors, shadows, and focus states while trimming small duplicate workspace selectors.
 - Trimmed avoidable Rust string clones in transfer progress emission and embedded SSH interactive login setup while preserving thread/Arc ownership clones.
 - Introduced a shared Rust transfer lifecycle helper for queued/running/completed/error emission plus cancel/retry cleanup in upload/download paths.
+- Hardened SFTP/file-transfer failure handling with shared permission/no-space/connection/not-found error classification, explicit remote directory creation errors, and safer cleanup for failed local file/folder downloads.
 
 ### Closed Refactor Audit Items
 
@@ -155,7 +156,6 @@ The documentation/code audit items from the May 2026 cleanup pass are closed. Fu
 
 - Secrets are not yet stored through platform credential stores.
 - SFTP authentication reuse needs more real-world hardening, especially on Windows where helper connections still cannot recover a password after the originating SSH tab closes.
-- File transfer edge cases still need hardening around remote permission failures, no-space-left conditions, and nested folder downloads.
 - Packaging/signing/notarization is not release-ready.
 - GitHub Releases are currently expected to ship unsigned / unnotarized artifacts until signing secrets and release hardening are added.
 - Storage migrations need versioning before stable release.
@@ -263,6 +263,8 @@ Goal: SFTP should cover common daily file-management tasks.
 - Retry failed transfer from the transfer window.
 - Stable transfer-window progress for upload, download, batch transfers, drag-in, native drag-out, retry, cancel, and interrupted-network failures.
 - Chmod support.
+- Remote folder download hardening.
+- Better permission/no-space errors.
 
 ### In Progress
 
@@ -271,8 +273,6 @@ Goal: SFTP should cover common daily file-management tasks.
 ### TODO
 
 - Clickable breadcrumb navigation.
-- Remote folder download hardening.
-- Better permission/no-space errors.
 - Better Windows auth guidance when terminal password entry cannot be reused.
 
 ## v0.4 Alpha: Sessions And Productivity

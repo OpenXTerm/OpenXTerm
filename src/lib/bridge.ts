@@ -380,7 +380,7 @@ export async function readClipboardText() {
     return invoke<string>('read_clipboard_text')
   }
 
-  return ''
+  return navigator.clipboard?.readText?.() ?? ''
 }
 
 export async function stopTerminalSession(tabId: string) {

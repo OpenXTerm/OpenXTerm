@@ -3,6 +3,7 @@ use tauri::AppHandle;
 use crate::models::{DownloadTargetInspection, RemoteDirectorySnapshot, SessionDefinition};
 
 use super::{
+    errors::describe_remote_error,
     ftp::{list_ftp_directory, run_ftp_quote, run_ftp_rename},
     paths::{
         download_target_path, join_remote_path, normalize_remote_path, parent_remote_path,
@@ -32,8 +33,9 @@ pub fn create_remote_directory(
     match session.kind.as_str() {
         "sftp" => {
             let sftp = open_sftp(session)?;
-            sftp.create_dir(&remote_path, 0o755)
-                .map_err(|error| format!("failed to create remote directory: {error}"))?;
+            sftp.create_dir(&remote_path, 0o755).map_err(|error| {
+                describe_remote_error("create remote directory", &remote_path, error)
+            })?;
             Ok(())
         }
         "ftp" => run_ftp_quote(session, &format!("MKD {remote_path}")),
@@ -56,7 +58,7 @@ pub fn delete_remote_entry(
                 delete_sftp_directory_recursive(&sftp, path)?;
             } else {
                 sftp.remove_file(path)
-                    .map_err(|error| format!("failed to remove remote file: {error}"))?;
+                    .map_err(|error| describe_remote_error("remove remote file", path, error))?;
             }
             Ok(())
         }
@@ -94,7 +96,7 @@ pub fn rename_remote_entry(
         "sftp" => {
             let sftp = open_sftp(session)?;
             sftp.rename(path, &next_path)
-                .map_err(|error| format!("failed to rename remote entry: {error}"))
+                .map_err(|error| describe_remote_error("rename remote entry", path, error))
         }
         "ftp" => run_ftp_rename(session, path, &next_path),
         _ => Err(format!("{} does not support remote rename", session.kind)),
@@ -114,7 +116,7 @@ pub fn update_remote_entry_permissions(
         "sftp" => {
             let sftp = open_sftp(session)?;
             sftp.chmod(path, permissions)
-                .map_err(|error| format!("failed to update remote permissions: {error}"))
+                .map_err(|error| describe_remote_error("update remote permissions", path, error))
         }
         "ftp" => Err("FTP permissions editing is not supported yet".into()),
         _ => Err(format!(
