@@ -21,7 +21,7 @@ git commit -m "Release v0.2.0"
 git tag -a v0.2.0 -m "OpenXTerm v0.2.0"
 ```
 
-4. GitHub Actions checks out that tag, builds all release bundles, generates release notes from the previous version tag, and publishes a GitHub Release.
+4. GitHub Actions checks out that tag, builds the currently enabled release bundles, generates release notes from the previous version tag, and publishes a GitHub Release.
 
 The local helper is still available if a version must be changed outside CI:
 
@@ -31,11 +31,13 @@ npm run version:set -- 0.2.0
 
 ## Release Assets
 
-The release job uploads the native Tauri bundle outputs plus extra portable Windows archives:
+The release job uploads the native Tauri bundle outputs from enabled matrix targets plus extra portable Windows archives:
 
 - macOS: `.dmg` bundles from Tauri
 - Windows: Tauri installer bundles plus `openxterm-windows-*-portable.zip`
 - Linux: Tauri Linux bundles such as AppImage / Debian package outputs, depending on the bundler output for that runner
+
+The configured build matrix includes Linux X64, Linux ARM64, Windows X64, Windows ARM64, macOS ARM64, and macOS X64. For the current CI/CD test pass only Linux X64, Windows X64, and macOS ARM64 are enabled; disabled targets remain in the workflow with `enabled: false`.
 
 ## Release Notes
 

@@ -43,8 +43,9 @@ cargo build --manifest-path src-tauri/Cargo.toml
 
 CI/CD workflow:
 
-- [`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml) runs verification plus a five-platform bundle matrix only through manual `workflow_dispatch`
-- matrix targets currently are Linux X64, Windows X64, Windows ARM64, macOS ARM64, and macOS X64
+- [`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml) runs verification plus a gated bundle matrix only through manual `workflow_dispatch`
+- configured bundle targets are Linux X64, Linux ARM64, Windows X64, Windows ARM64, macOS ARM64, and macOS X64
+- the current enabled CI/CD test-pass targets are Linux X64, Windows X64, and macOS ARM64; disabled targets remain in the matrix with `enabled: false`
 - manual runs require a `version` like `0.2.0` and a `release_type` of `release` or `prerelease`
 - CI bumps release version files with `npm run version:set -- <version>`, creates a release commit on `main`, then tags it as `v<version>`
 - if a release run fails after tag creation, rerunning the same version reuses that tag
@@ -458,7 +459,7 @@ This is the practical feature state as of April 25, 2026:
 - status bar is live and session-aware
 - non-macOS topbar menus are clickable dropdowns
 - frontend error-only console logging exists for status, transfers, terminal launch/input, and file-browser flows
-- GitHub Actions CI/CD exists for Linux X64, Windows X64, Windows ARM64, macOS ARM64, and macOS X64 and is manual-dispatch/version-input driven
+- GitHub Actions CI/CD is manual-dispatch/version-input driven; the matrix includes Linux X64, Linux ARM64, Windows X64, Windows ARM64, macOS ARM64, and macOS X64, with only Linux X64, Windows X64, and macOS ARM64 enabled for the current test pass
 
 Important caveats:
 

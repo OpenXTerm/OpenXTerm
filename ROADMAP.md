@@ -139,7 +139,7 @@ The documentation/code audit items from the May 2026 cleanup pass are closed. Fu
 - Agent documentation in `AGENTS.md`.
 - Public README refresh.
 - Contributing guide.
-- GitHub Actions CI/CD for Linux X64, Windows X64, Windows ARM64, macOS ARM64, and macOS X64.
+- GitHub Actions CI/CD matrix configured for Linux X64, Linux ARM64, Windows X64, Windows ARM64, macOS ARM64, and macOS X64, with Linux X64, Windows X64, and macOS ARM64 enabled for the current test pass.
 
 ### In Progress
 

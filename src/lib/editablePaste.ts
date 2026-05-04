@@ -92,13 +92,27 @@ function insertTextIntoFormControl(editable: HTMLInputElement | HTMLTextAreaElem
   const nextValue = `${value.slice(0, selectionStart)}${text}${value.slice(selectionEnd)}`
   const nextCursor = selectionStart + text.length
 
-  editable.value = nextValue
+  setNativeValue(editable, nextValue)
   editable.setSelectionRange(nextCursor, nextCursor)
   editable.dispatchEvent(new InputEvent('input', {
     bubbles: true,
     data: text,
     inputType: 'insertFromPaste',
   }))
+}
+
+function setNativeValue(editable: HTMLInputElement | HTMLTextAreaElement, value: string) {
+  const prototype = editable instanceof HTMLTextAreaElement
+    ? HTMLTextAreaElement.prototype
+    : HTMLInputElement.prototype
+  const valueSetter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set
+
+  if (valueSetter) {
+    valueSetter.call(editable, value)
+    return
+  }
+
+  editable.value = value
 }
 
 function insertTextIntoContentEditable(editable: HTMLElement, text: string) {

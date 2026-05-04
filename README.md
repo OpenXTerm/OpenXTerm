@@ -54,6 +54,7 @@ Current focus areas:
 | macOS ARM64 | CI bundle | Unsigned and unnotarized. |
 | macOS x64 | CI bundle | Unsigned and unnotarized. |
 | Linux x64 | CI bundle | Requires normal Tauri/WebKit runtime packages. |
+| Linux ARM64 | CI bundle target configured | Disabled for the current CI/CD test pass. |
 
 ## Features
 
@@ -73,7 +74,7 @@ Current focus areas:
 - Optional app lock through platform authentication where supported.
 - Embedded SSH X11 forwarding bridge and runtime diagnostics.
 - Error-only frontend console logging for operational failures.
-- GitHub Actions builds for Linux X64, Windows X64, Windows ARM64, macOS ARM64, and macOS X64.
+- GitHub Actions is configured for Linux X64, Linux ARM64, Windows X64, Windows ARM64, macOS ARM64, and macOS X64. The current CI/CD test pass enables only Linux X64, Windows X64, and macOS ARM64.
 
 ## Quick Start
 
@@ -148,13 +149,13 @@ Fresh contributors and coding agents should read [`AGENTS.md`](AGENTS.md). It do
 
 The GitHub Actions workflow lives at [`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml).
 
-It currently runs verification and bundle builds for:
+It currently runs verification and enables bundle builds for:
 
 - Linux X64
 - Windows X64
-- Windows ARM64
 - macOS ARM64
-- macOS X64
+
+The workflow matrix also contains disabled entries for Linux ARM64, Windows ARM64, and macOS X64 so those targets can be re-enabled by changing their `enabled` flag.
 
 CI/CD is manual-only: run the workflow from GitHub Actions with a release `version` and choose `release` or `prerelease`. The workflow creates the release commit and tag, publishes bundle assets, and generates release notes from the previous version tag. Current release assets are unsigned and unnotarized until signing secrets are added.
 
