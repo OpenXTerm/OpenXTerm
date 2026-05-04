@@ -1,6 +1,6 @@
 [package]
 name = "openxterm"
-version = "0.0.1"
+version = "0.0.2"
 description = "OpenXTerm desktop MVP"
 authors = ["OpenXTerm"]
 license = "MIT"
