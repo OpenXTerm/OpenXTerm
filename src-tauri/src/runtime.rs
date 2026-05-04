@@ -390,10 +390,13 @@ impl AppRuntime {
                             .map_err(|error| format!("failed to resize PTY: {error}"))
                     }),
                     stop: Box::new(move || {
-                        if let Ok(mut child) = child.lock() {
-                            let _ = child.kill();
-                            let _ = child.wait();
-                        }
+                        let child = child.clone();
+                        thread::spawn(move || {
+                            if let Ok(mut child) = child.lock() {
+                                let _ = child.kill();
+                                let _ = child.wait();
+                            }
+                        });
                     }),
                     stop_flag,
                 },
