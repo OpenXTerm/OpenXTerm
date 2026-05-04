@@ -35,6 +35,18 @@ async function startTerminalTransport(tabId: string, session: SessionDefinition)
   }
 }
 
+async function waitForTerminalTabPaint() {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  await new Promise<void>((resolve) => {
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => resolve())
+    })
+  })
+}
+
 function applyTerminalLaunchError(
   set: StoreSetter,
   tabId: string,
@@ -124,6 +136,7 @@ export function createTabActions(
       }))
 
       try {
+        await waitForTerminalTabPaint()
         await startTerminalTransport(tabId, session)
       } catch (error) {
         applyTerminalLaunchError(set, tabId, error)
@@ -148,6 +161,7 @@ export function createTabActions(
       }
 
       try {
+        await waitForTerminalTabPaint()
         await startTerminalTransport(tab.id, session)
       } catch (error) {
         applyTerminalLaunchError(set, tab.id, error)

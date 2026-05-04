@@ -132,6 +132,7 @@ impl AppRuntime {
                 Some(session.username.trim().to_string()),
                 password_override.clone(),
             );
+            emit_connecting_message(app, &tab_id, &session, session.username.trim());
             controller.begin_connect(session.username.trim().to_string(), password_override);
         }
 
@@ -419,6 +420,7 @@ impl EmbeddedSshController {
         }
 
         if let Some((username, password_override)) = trigger {
+            emit_connecting_message(&self.app, &self.tab_id, &self.session, &username);
             self.begin_connect(username, password_override);
         }
 
@@ -440,6 +442,22 @@ pub(in crate::runtime) fn lock_embedded_ssh_channel(
     channel: &Arc<Mutex<LibsshChannel>>,
 ) -> MutexGuard<'_, LibsshChannel> {
     channel.lock().unwrap_or_else(|poison| poison.into_inner())
+}
+
+fn emit_connecting_message(
+    app: &AppHandle,
+    tab_id: &str,
+    session: &SessionDefinition,
+    username: &str,
+) {
+    emit_output(
+        app,
+        tab_id,
+        &format!(
+            "\r\n[information] Connecting to {}:{} as {}...\r\n",
+            session.host, session.port, username
+        ),
+    );
 }
 
 fn spawn_embedded_ssh_reader(
