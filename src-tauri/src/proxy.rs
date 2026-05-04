@@ -16,6 +16,13 @@ use crate::models::SessionDefinition;
 const PROXY_CONNECT_TIMEOUT: Duration = Duration::from_secs(8);
 const PROXY_IO_TIMEOUT: Duration = Duration::from_secs(8);
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ProxyKind {
+    None,
+    HttpConnect,
+    Socks5,
+}
+
 pub fn connect_tcp_stream(session: &SessionDefinition) -> Result<TcpStream, String> {
     connect_tcp_stream_to(session, &session.host, session.port)
 }
@@ -24,17 +31,20 @@ pub fn configure_libssh_proxy_socket(
     ssh: &LibsshSession,
     session: &SessionDefinition,
 ) -> Result<(), String> {
-    if !proxy_enabled(session) {
-        return Ok(());
+    let proxy_kind = proxy_kind(session)?;
+    match proxy_kind {
+        ProxyKind::None => Ok(()),
+        ProxyKind::HttpConnect | ProxyKind::Socks5 => {
+            let stream =
+                connect_tcp_stream_to_kind(session, &session.host, session.port, proxy_kind)?;
+            #[cfg(unix)]
+            let socket = stream.into_raw_fd();
+            #[cfg(windows)]
+            let socket = stream.into_raw_socket();
+            ssh.set_option(SshOption::Socket(socket))
+                .map_err(|error| format!("failed to configure embedded SSH proxy socket: {error}"))
+        }
     }
-
-    let stream = connect_tcp_stream(session)?;
-    #[cfg(unix)]
-    let socket = stream.into_raw_fd();
-    #[cfg(windows)]
-    let socket = stream.into_raw_socket();
-    ssh.set_option(SshOption::Socket(socket))
-        .map_err(|error| format!("failed to configure embedded SSH proxy socket: {error}"))
 }
 
 pub fn connect_tcp_stream_to(
@@ -42,11 +52,19 @@ pub fn connect_tcp_stream_to(
     target_host: &str,
     target_port: u16,
 ) -> Result<TcpStream, String> {
-    match normalized_proxy_type(session).as_str() {
-        "none" | "" => connect_direct(target_host, target_port),
-        "http" | "https" | "http-connect" => connect_http_proxy(session, target_host, target_port),
-        "socks5" | "socks" => connect_socks5_proxy(session, target_host, target_port),
-        other => Err(format!("unsupported proxy type `{other}`")),
+    connect_tcp_stream_to_kind(session, target_host, target_port, proxy_kind(session)?)
+}
+
+fn connect_tcp_stream_to_kind(
+    session: &SessionDefinition,
+    target_host: &str,
+    target_port: u16,
+    proxy_kind: ProxyKind,
+) -> Result<TcpStream, String> {
+    match proxy_kind {
+        ProxyKind::None => connect_direct(target_host, target_port),
+        ProxyKind::HttpConnect => connect_http_proxy(session, target_host, target_port),
+        ProxyKind::Socks5 => connect_socks5_proxy(session, target_host, target_port),
     }
 }
 
@@ -54,30 +72,22 @@ pub fn configure_curl_proxy_args(
     command: &mut std::process::Command,
     session: &SessionDefinition,
 ) -> Result<(), String> {
-    let proxy_type = normalized_proxy_type(session);
-    if proxy_type == "none" || proxy_type.is_empty() {
-        return Ok(());
-    }
+    let proxy_kind = proxy_kind(session)?;
 
-    let proxy_host = normalized_proxy_host(session)
-        .ok_or_else(|| "proxy host is required when proxy is enabled".to_string())?;
-    let proxy_port = session
-        .proxy_port
-        .filter(|port| *port > 0)
-        .ok_or_else(|| "proxy port is required when proxy is enabled".to_string())?;
-
-    match proxy_type.as_str() {
-        "http" | "https" | "http-connect" => {
+    match proxy_kind {
+        ProxyKind::None => return Ok(()),
+        ProxyKind::HttpConnect => {
+            let (proxy_host, proxy_port) = proxy_endpoint(session)?;
             command
                 .arg("--proxy")
                 .arg(format!("http://{proxy_host}:{proxy_port}"));
         }
-        "socks5" | "socks" => {
+        ProxyKind::Socks5 => {
+            let (proxy_host, proxy_port) = proxy_endpoint(session)?;
             command
                 .arg("--proxy")
                 .arg(format!("socks5h://{proxy_host}:{proxy_port}"));
         }
-        _ => return Err(format!("unsupported proxy type `{proxy_type}`")),
     }
 
     if let Some(credentials) = proxy_credentials(session) {
@@ -246,12 +256,7 @@ fn authenticate_socks5(session: &SessionDefinition, stream: &mut TcpStream) -> R
 }
 
 fn connect_proxy_server(session: &SessionDefinition) -> Result<TcpStream, String> {
-    let host = normalized_proxy_host(session)
-        .ok_or_else(|| "proxy host is required when proxy is enabled".to_string())?;
-    let port = session
-        .proxy_port
-        .filter(|port| *port > 0)
-        .ok_or_else(|| "proxy port is required when proxy is enabled".to_string())?;
+    let (host, port) = proxy_endpoint(session)?;
     connect_direct(&host, port)
         .map_err(|error| format!("failed to connect to proxy {host}:{port}: {error}"))
 }
@@ -292,13 +297,31 @@ fn read_discard(stream: &mut TcpStream, len: usize) -> Result<(), String> {
         .map_err(|error| format!("failed to read SOCKS5 response bytes: {error}"))
 }
 
-fn normalized_proxy_type(session: &SessionDefinition) -> String {
-    session.proxy_type.trim().to_ascii_lowercase()
+fn proxy_kind(session: &SessionDefinition) -> Result<ProxyKind, String> {
+    match session.proxy_type.trim().to_ascii_lowercase().as_str() {
+        "" | "none" => Ok(ProxyKind::None),
+        "http" | "https" | "http-connect" => Ok(ProxyKind::HttpConnect),
+        "socks5" | "socks" => Ok(ProxyKind::Socks5),
+        other => Err(format!("unsupported proxy type `{other}`")),
+    }
 }
 
+#[cfg(test)]
 fn proxy_enabled(session: &SessionDefinition) -> bool {
-    let proxy_type = normalized_proxy_type(session);
-    !proxy_type.is_empty() && proxy_type != "none"
+    matches!(
+        proxy_kind(session),
+        Ok(ProxyKind::HttpConnect | ProxyKind::Socks5)
+    )
+}
+
+fn proxy_endpoint(session: &SessionDefinition) -> Result<(String, u16), String> {
+    let host = normalized_proxy_host(session)
+        .ok_or_else(|| "proxy host is required when proxy is enabled".to_string())?;
+    let port = session
+        .proxy_port
+        .filter(|port| *port > 0)
+        .ok_or_else(|| "proxy port is required when proxy is enabled".to_string())?;
+    Ok((host, port))
 }
 
 fn normalized_proxy_host(session: &SessionDefinition) -> Option<String> {
@@ -358,4 +381,84 @@ fn base64_encode(input: &[u8]) -> String {
         }
     }
     output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn session_with_proxy_type(proxy_type: &str) -> SessionDefinition {
+        SessionDefinition {
+            id: "test".into(),
+            name: "test".into(),
+            folder_path: None,
+            kind: "ssh".into(),
+            host: "example.com".into(),
+            port: 22,
+            username: "user".into(),
+            auth_type: "password".into(),
+            password: None,
+            key_path: None,
+            proxy_type: proxy_type.into(),
+            proxy_host: None,
+            proxy_port: None,
+            proxy_username: None,
+            proxy_password: None,
+            x11_forwarding: false,
+            x11_trusted: true,
+            x11_display: None,
+            terminal_font_family: None,
+            terminal_font_size: None,
+            terminal_foreground: None,
+            terminal_background: None,
+            linked_ssh_tab_id: None,
+            local_working_directory: None,
+            serial_port: None,
+            baud_rate: None,
+            parity: "none".into(),
+            stop_bits: 1,
+            data_bits: 8,
+            created_at: "2026-05-04T00:00:00Z".into(),
+            updated_at: "2026-05-04T00:00:00Z".into(),
+        }
+    }
+
+    #[test]
+    fn proxy_kind_maps_supported_aliases() {
+        for value in ["", "none", " NONE "] {
+            assert_eq!(
+                proxy_kind(&session_with_proxy_type(value)),
+                Ok(ProxyKind::None)
+            );
+        }
+
+        for value in ["http", "https", "http-connect", " HTTP "] {
+            assert_eq!(
+                proxy_kind(&session_with_proxy_type(value)),
+                Ok(ProxyKind::HttpConnect)
+            );
+        }
+
+        for value in ["socks5", "socks", " SOCKS5 "] {
+            assert_eq!(
+                proxy_kind(&session_with_proxy_type(value)),
+                Ok(ProxyKind::Socks5)
+            );
+        }
+    }
+
+    #[test]
+    fn proxy_kind_rejects_unknown_values() {
+        let error = proxy_kind(&session_with_proxy_type("tor")).expect_err("tor is unsupported");
+        assert_eq!(error, "unsupported proxy type `tor`");
+    }
+
+    #[test]
+    fn proxy_enabled_is_true_only_for_real_proxy_modes() {
+        assert!(!proxy_enabled(&session_with_proxy_type("")));
+        assert!(!proxy_enabled(&session_with_proxy_type("none")));
+        assert!(proxy_enabled(&session_with_proxy_type("http")));
+        assert!(proxy_enabled(&session_with_proxy_type("socks5")));
+        assert!(!proxy_enabled(&session_with_proxy_type("unknown")));
+    }
 }
