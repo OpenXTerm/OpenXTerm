@@ -6,20 +6,14 @@ import {
   uploadRemoteFile,
 } from '../../lib/bridge'
 import { logOpenXTermError } from '../../lib/errorLog'
-import { localPathBaseName } from '../../lib/localPath'
+import { useRemoteFileUploads, type ResolveUploadTargets } from '../../hooks/useRemoteFileUploads'
 import { queueBatchTransfers } from '../../lib/transferBatch'
 import { isTransferCanceledError } from '../../lib/transferQueue'
-import { runBrowserFileUploads, runLocalPathUploads } from '../../lib/sftpTransfers'
 import type { SessionDefinition, SidebarSection, TransferProgressPayload } from '../../types/domain'
 import {
   joinRemotePath,
   sidebarSftpErrorContext,
 } from './sftpUtils'
-
-type ResolveUploadTargets = <T extends { name: string }>(
-  items: T[],
-  targetPathForName: (name: string) => string,
-) => Promise<Array<T & { targetName: string, conflictAction: 'overwrite' | 'error' }>>
 
 interface UseSftpUploadsOptions {
   activeSection: SidebarSection
@@ -47,51 +41,21 @@ export function useSftpUploads({
   const sftpListRef = useRef<HTMLDivElement | null>(null)
   const lastNativeSftpDropAtRef = useRef(0)
   const [dropActive, setDropActive] = useState(false)
+  const targetPathForName = useCallback((name: string) => joinRemotePath(currentPath, name), [currentPath])
 
-  const uploadLocalPaths = useCallback(async (localPaths: string[], source: 'drop-upload') => {
-    if (localPaths.length === 0 || !selectedSession) {
-      return
-    }
-
-    const uploadItems = await resolveUploadTargets(
-      localPaths.map((localPath) => ({
-        localPath,
-        name: localPathBaseName(localPath),
-      })),
-      (name) => joinRemotePath(currentPath, name),
-    )
-    if (uploadItems.length === 0) {
-      setMessage('Upload skipped.')
-      return
-    }
-
-    setLoading(true)
-    const transferIds: string[] = []
-    try {
-      const result = await runLocalPathUploads({
-        currentPath,
-        enqueueTransfer,
-        items: uploadItems,
-        session: selectedSession,
-      })
-      transferIds.push(...result.transferIds)
-      setMessage(`Uploaded ${uploadItems.length} item${uploadItems.length > 1 ? 's' : ''} to ${currentPath}`)
-      await loadDirectory(currentPath)
-    } catch (error) {
-      if (isTransferCanceledError(error)) {
-        setMessage('Transfer canceled.')
-        return
-      }
-      logOpenXTermError(`sidebar.sftp.${source}`, error, {
-        ...sidebarSftpErrorContext(selectedSession, source, currentPath),
-        droppedPaths: localPaths,
-        transferIds,
-      })
-      setMessage(error instanceof Error ? error.message : 'Unable to upload dropped file.')
-    } finally {
-      setLoading(false)
-    }
-  }, [currentPath, enqueueTransfer, loadDirectory, resolveUploadTargets, selectedSession, setLoading, setMessage])
+  const { uploadBrowserFiles, uploadLocalPaths } = useRemoteFileUploads({
+    browserErrorLabel: (source) => `sidebar.sftp.${source}`,
+    buildErrorContext: sidebarSftpErrorContext,
+    currentPath,
+    enqueueTransfer,
+    localPathErrorLabel: (source) => `sidebar.sftp.${source}`,
+    loadDirectory,
+    resolveUploadTargets,
+    session: selectedSession,
+    setBusy: setLoading,
+    setMessage,
+    targetPathForName,
+  })
 
   useEffect(() => {
     if (!('__TAURI_INTERNALS__' in window)) {
@@ -149,45 +113,6 @@ export function useSftpUploads({
       unlisten?.()
     }
   }, [activeSection, selectedSession, uploadLocalPaths])
-
-  const uploadBrowserFiles = useCallback(async (files: File[], source: 'upload' | 'drop-upload') => {
-    if (files.length === 0 || !selectedSession) {
-      return
-    }
-
-    const uploadItems = await resolveUploadTargets(
-      files.map((file) => ({ file, name: file.name })),
-      (name) => joinRemotePath(currentPath, name),
-    )
-    if (uploadItems.length === 0) {
-      setMessage('Upload skipped.')
-      return
-    }
-
-    setLoading(true)
-    try {
-      await runBrowserFileUploads({
-        currentPath,
-        enqueueTransfer,
-        items: uploadItems,
-        session: selectedSession,
-      })
-      setMessage(`Uploaded ${uploadItems.length} file${uploadItems.length > 1 ? 's' : ''} to ${currentPath}`)
-      await loadDirectory(currentPath)
-    } catch (error) {
-      if (isTransferCanceledError(error)) {
-        setMessage('Transfer canceled.')
-        return
-      }
-      logOpenXTermError(`sidebar.sftp.${source}`, error, {
-        ...sidebarSftpErrorContext(selectedSession, source, currentPath),
-        files: uploadItems.map((item) => ({ name: item.file.name, targetName: item.targetName, size: item.file.size })),
-      })
-      setMessage(error instanceof Error ? error.message : 'Unable to upload file.')
-    } finally {
-      setLoading(false)
-    }
-  }, [currentPath, enqueueTransfer, loadDirectory, resolveUploadTargets, selectedSession, setLoading, setMessage])
 
   const handleUploadChange = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
     const fileList = event.target.files

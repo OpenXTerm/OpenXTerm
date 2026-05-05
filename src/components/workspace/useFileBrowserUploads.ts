@@ -1,17 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type DragEvent } from 'react'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
 
-import { logOpenXTermError } from '../../lib/errorLog'
-import { localPathBaseName } from '../../lib/localPath'
-import { isTransferCanceledError } from '../../lib/transferQueue'
-import { runBrowserFileUploads, runLocalPathUploads } from '../../lib/sftpTransfers'
+import { useRemoteFileUploads, type ResolveUploadTargets } from '../../hooks/useRemoteFileUploads'
 import type { SessionDefinition, TransferProgressPayload } from '../../types/domain'
 import { fileBrowserErrorContext } from './fileBrowserUtils'
-
-type ResolveUploadTargets = <T extends { name: string }>(
-  items: T[],
-  targetPathForName: (name: string) => string,
-) => Promise<Array<T & { targetName: string, conflictAction: 'overwrite' | 'error' }>>
 
 interface UseFileBrowserUploadsOptions {
   currentPath: string
@@ -35,87 +27,21 @@ export function useFileBrowserUploads({
   const uploadInputRef = useRef<HTMLInputElement | null>(null)
   const filePaneRef = useRef<HTMLDivElement | null>(null)
   const [dropActive, setDropActive] = useState(false)
+  const targetPathForName = useCallback((name: string) => currentPath === '/' ? `/${name}` : `${currentPath}/${name}`, [currentPath])
 
-  const uploadFiles = useCallback(async (files: File[]) => {
-    if (files.length === 0) {
-      return
-    }
-
-    setBusy(true)
-    try {
-      const uploadItems = await resolveUploadTargets(
-        files.map((file) => ({ file, name: file.name })),
-        (name) => currentPath === '/' ? `/${name}` : `${currentPath}/${name}`,
-      )
-      if (uploadItems.length === 0) {
-        setMessage('Upload skipped.')
-        return
-      }
-
-      await runBrowserFileUploads({
-        currentPath,
-        enqueueTransfer,
-        items: uploadItems,
-        session,
-      })
-      setMessage(`Uploaded ${uploadItems.length} file${uploadItems.length > 1 ? 's' : ''} to ${currentPath}`)
-      await loadDirectory(currentPath)
-    } catch (error) {
-      if (isTransferCanceledError(error)) {
-        setMessage('Transfer canceled.')
-        return
-      }
-      logOpenXTermError('file-browser.upload-file', error, {
-        ...fileBrowserErrorContext(session, 'upload', currentPath),
-        files: files.map((file) => ({ name: file.name, size: file.size })),
-      })
-      setMessage(error instanceof Error ? error.message : 'Unable to upload file.')
-    } finally {
-      setBusy(false)
-    }
-  }, [currentPath, enqueueTransfer, loadDirectory, resolveUploadTargets, session, setBusy, setMessage])
-
-  const uploadLocalPaths = useCallback(async (droppedPaths: string[]) => {
-    if (droppedPaths.length === 0) {
-      return
-    }
-
-    setBusy(true)
-    try {
-      const uploadItems = await resolveUploadTargets(
-        droppedPaths.map((localPath) => ({
-          localPath,
-          name: localPathBaseName(localPath),
-        })),
-        (name) => currentPath === '/' ? `/${name}` : `${currentPath}/${name}`,
-      )
-      if (uploadItems.length === 0) {
-        setMessage('Upload skipped.')
-        return
-      }
-
-      await runLocalPathUploads({
-        currentPath,
-        enqueueTransfer,
-        items: uploadItems,
-        session,
-      })
-      setMessage(`Uploaded ${uploadItems.length} item${uploadItems.length > 1 ? 's' : ''} to ${currentPath}`)
-      await loadDirectory(currentPath)
-    } catch (error) {
-      if (isTransferCanceledError(error)) {
-        setMessage('Transfer canceled.')
-        return
-      }
-      logOpenXTermError('file-browser.drop-upload', error, {
-        ...fileBrowserErrorContext(session, 'drop-upload', currentPath),
-        droppedPaths,
-      })
-      setMessage(error instanceof Error ? error.message : 'Unable to upload dropped file.')
-    } finally {
-      setBusy(false)
-    }
-  }, [currentPath, enqueueTransfer, loadDirectory, resolveUploadTargets, session, setBusy, setMessage])
+  const { uploadBrowserFiles, uploadLocalPaths } = useRemoteFileUploads({
+    browserErrorLabel: 'file-browser.upload-file',
+    buildErrorContext: fileBrowserErrorContext,
+    currentPath,
+    enqueueTransfer,
+    localPathErrorLabel: 'file-browser.drop-upload',
+    loadDirectory,
+    resolveUploadTargets,
+    session,
+    setBusy,
+    setMessage,
+    targetPathForName,
+  })
 
   useEffect(() => {
     if (!('__TAURI_INTERNALS__' in window)) {
@@ -160,7 +86,7 @@ export function useFileBrowserUploads({
         return
       }
 
-      void uploadLocalPaths(droppedPaths)
+      void uploadLocalPaths(droppedPaths, 'drop-upload')
     }).then((dispose) => {
       if (disposed) {
         return
@@ -181,7 +107,7 @@ export function useFileBrowserUploads({
     }
 
     try {
-      await uploadFiles(Array.from(fileList))
+      await uploadBrowserFiles(Array.from(fileList), 'upload')
     } finally {
       event.target.value = ''
     }
@@ -196,7 +122,7 @@ export function useFileBrowserUploads({
       return
     }
 
-    await uploadFiles(droppedFiles)
+    await uploadBrowserFiles(droppedFiles, 'drop-upload')
   }
 
   return {
