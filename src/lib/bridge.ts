@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 
 import { createDefaultBootstrap } from './mockData'
-import { buildFileEntries } from './sessionUtils'
+import { buildFileEntries, normalizeSessionFolderPath } from './sessionUtils'
 import type {
   AppBootstrap,
   DownloadTargetInspection,
@@ -221,9 +221,20 @@ export async function deleteSessionFolder(folderId: string) {
   }
 
   const state = readBrowserState()
+  const folder = state.sessionFolders.find((item) => item.id === folderId)
+  if (!folder) {
+    writeBrowserState({
+      ...state,
+      sessionFolders: state.sessionFolders.filter((item) => item.id !== folderId),
+    })
+    return
+  }
+
+  const isInDeletedFolder = (path: string) => path === folder.path || path.startsWith(`${folder.path}/`)
   writeBrowserState({
     ...state,
-    sessionFolders: state.sessionFolders.filter((item) => item.id !== folderId),
+    sessionFolders: state.sessionFolders.filter((item) => !isInDeletedFolder(item.path)),
+    sessions: state.sessions.filter((item) => !isInDeletedFolder(normalizeSessionFolderPath(item.folderPath))),
   })
 }
 

@@ -455,6 +455,12 @@
   color: #eafff6;
 }
 
+.modal-actions .primary.danger {
+  border-color: var(--color-border-danger);
+  background: var(--color-surface-danger);
+  color: var(--color-danger-text);
+}
+
 .sr-only-input {
   position: absolute;
   width: 1px;

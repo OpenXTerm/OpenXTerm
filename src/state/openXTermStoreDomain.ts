@@ -73,9 +73,21 @@ export function createDomainActions(
       }))
     },
     async removeSessionFolder(folderId) {
+      const folder = get().sessionFolders.find((item) => item.id === folderId)
       await deleteSessionFolder(folderId)
+
+      if (!folder) {
+        set((state) => ({
+          sessionFolders: state.sessionFolders.filter((item) => item.id !== folderId),
+        }))
+        return
+      }
+
       set((state) => ({
-        sessionFolders: state.sessionFolders.filter((folder) => folder.id !== folderId),
+        sessionFolders: state.sessionFolders.filter((item) => !isFolderPathInSubtree(item.path, folder.path)),
+        sessions: state.sessions.filter((session) => (
+          !isFolderPathInSubtree(normalizeSessionFolderPath(session.folderPath), folder.path)
+        )),
       }))
     },
     async moveSessionToFolder(sessionId, folderPath) {

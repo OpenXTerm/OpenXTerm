@@ -142,7 +142,6 @@ export function SessionsSection({
 
   function renderSessionFolder(folder: SessionTreeFolder, depth: number) {
     const expanded = isSessionFolderExpanded(folder.path)
-    const canDeleteFolder = folder.explicit && folder.folders.length === 0 && folder.sessions.length === 0
     const isDropTarget = sessionDropTargetPath === folder.path
 
     return (
@@ -211,11 +210,10 @@ export function SessionsSection({
             {folder.explicit && (
               <button
                 type="button"
-                title={canDeleteFolder ? 'Delete folder' : 'Folder is not empty'}
-                disabled={!canDeleteFolder}
+                title="Delete folder"
                 onClick={(event) => {
                   event.stopPropagation()
-                  if (canDeleteFolder && folder.folderId) {
+                  if (folder.folderId) {
                     onDeleteSessionFolder(folder.folderId)
                   }
                 }}

@@ -71,9 +71,30 @@ pub fn delete_session(app: AppHandle, session_id: String) -> Result<(), String> 
 #[tauri::command]
 pub fn delete_session_folder(app: AppHandle, folder_id: String) -> Result<(), String> {
     let mut storage = load_storage(&app)?;
+    let Some(folder_path) = storage
+        .session_folders
+        .iter()
+        .find(|folder| folder.id == folder_id)
+        .map(|folder| folder.path.clone())
+    else {
+        storage
+            .session_folders
+            .retain(|folder| folder.id != folder_id);
+        save_storage(&app, &storage)?;
+        return Ok(());
+    };
+
+    let subtree_prefix = format!("{folder_path}/");
     storage
         .session_folders
-        .retain(|folder| folder.id != folder_id);
+        .retain(|folder| folder.path != folder_path && !folder.path.starts_with(&subtree_prefix));
+    storage.sessions.retain(|session| {
+        session
+            .folder_path
+            .as_deref()
+            .map(|path| path != folder_path && !path.starts_with(&subtree_prefix))
+            .unwrap_or(true)
+    });
     save_storage(&app, &storage)
 }
 

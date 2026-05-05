@@ -3,17 +3,20 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPoi
 import { MacroEditorModal } from './components/forms/MacroEditorModal'
 import { MoveSessionModal } from './components/forms/MoveSessionModal'
 import { SessionFolderModal } from './components/forms/SessionFolderModal'
+import { DeleteSessionFolderModal } from './components/forms/DeleteSessionFolderModal'
 import { SessionEditorModal } from './components/forms/SessionEditorModal'
 import { AppSettingsModal } from './components/forms/AppSettingsModal'
 import { AppLockOverlay } from './components/forms/AppLockOverlay'
 import { TopBar } from './components/layout/TopBar'
 import { installEditablePasteShortcut } from './lib/editablePaste'
 import { getSystemAuthSupport, listenMenuAction, requestSystemUnlock } from './lib/bridge'
+import { normalizeSessionFolderPath } from './lib/sessionUtils'
 import { StatusBar } from './components/status/StatusBar'
 import { Sidebar } from './components/sidebar/Sidebar'
 import { Workspace } from './components/workspace/Workspace'
+import { isFolderPathInSubtree } from './state/openXTermStoreHelpers'
 import { useOpenXTermStore } from './state/useOpenXTermStore'
-import type { MacroDefinition, MenuAction, SessionDefinition, SystemAuthSupport } from './types/domain'
+import type { MacroDefinition, MenuAction, SessionDefinition, SessionFolderDefinition, SystemAuthSupport } from './types/domain'
 
 export function App() {
   const isMacOS = navigator.userAgent.includes('Mac')
@@ -58,6 +61,9 @@ export function App() {
   const [sessionDraftFolderPath, setSessionDraftFolderPath] = useState('')
   const [editingMacro, setEditingMacro] = useState<MacroDefinition | null>(null)
   const [movingSession, setMovingSession] = useState<SessionDefinition | null>(null)
+  const [deletingSessionFolder, setDeletingSessionFolder] = useState<SessionFolderDefinition | null>(null)
+  const [deleteSessionFolderBusy, setDeleteSessionFolderBusy] = useState(false)
+  const [deleteSessionFolderError, setDeleteSessionFolderError] = useState('')
   const [newSessionFolderParentPath, setNewSessionFolderParentPath] = useState<string | null>(null)
   const [sessionModalOpen, setSessionModalOpen] = useState(false)
   const [macroModalOpen, setMacroModalOpen] = useState(false)
@@ -75,6 +81,16 @@ export function App() {
   const [unlockError, setUnlockError] = useState('')
   const [terminalCommandRequest, setTerminalCommandRequest] = useState<{ action: 'clear' | 'reset' | 'search'; nonce: number; tabId: string } | null>(null)
   const activeTab = tabs.find((tab) => tab.id === activeTabId)
+  const deletingSessionFolderDetails = deletingSessionFolder
+    ? {
+        nestedFolderCount: sessionFolders.filter((folder) => (
+          folder.id !== deletingSessionFolder.id && isFolderPathInSubtree(folder.path, deletingSessionFolder.path)
+        )).length,
+        sessionCount: sessions.filter((session) => (
+          isFolderPathInSubtree(normalizeSessionFolderPath(session.folderPath), deletingSessionFolder.path)
+        )).length,
+      }
+    : null
 
   useEffect(() => {
     void initialize()
@@ -144,6 +160,45 @@ export function App() {
       setUnlockBusy(false)
     }
   }, [lockSupport.available, unlockBusy])
+
+  const requestDeleteSessionFolder = useCallback((folderId: string) => {
+    const folder = sessionFolders.find((item) => item.id === folderId)
+    if (!folder) {
+      return
+    }
+
+    const hasNestedFolders = sessionFolders.some((item) => (
+      item.id !== folder.id && isFolderPathInSubtree(item.path, folder.path)
+    ))
+    const hasSessions = sessions.some((session) => (
+      isFolderPathInSubtree(normalizeSessionFolderPath(session.folderPath), folder.path)
+    ))
+
+    if (!hasNestedFolders && !hasSessions) {
+      void removeSessionFolder(folder.id)
+      return
+    }
+
+    setDeleteSessionFolderError('')
+    setDeletingSessionFolder(folder)
+  }, [removeSessionFolder, sessionFolders, sessions])
+
+  const confirmDeleteSessionFolder = useCallback(async () => {
+    if (!deletingSessionFolder) {
+      return
+    }
+
+    setDeleteSessionFolderBusy(true)
+    setDeleteSessionFolderError('')
+    try {
+      await removeSessionFolder(deletingSessionFolder.id)
+      setDeletingSessionFolder(null)
+    } catch (error) {
+      setDeleteSessionFolderError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setDeleteSessionFolderBusy(false)
+    }
+  }, [deletingSessionFolder, removeSessionFolder])
 
   const handleMenuAction = useCallback((action: MenuAction) => {
     switch (action) {
@@ -337,7 +392,7 @@ export function App() {
           terminalCwdByTabId={terminalCwdByTabId}
           onDeleteMacro={(macroId) => void removeMacro(macroId)}
           onDeleteSession={(sessionId) => void removeSession(sessionId)}
-          onDeleteSessionFolder={(folderId) => void removeSessionFolder(folderId)}
+          onDeleteSessionFolder={requestDeleteSessionFolder}
           onEditMacro={(macro) => {
             setEditingMacro(macro)
             setMacroModalOpen(true)
@@ -488,6 +543,25 @@ export function App() {
             setSessionFolderModalOpen(false)
             setNewSessionFolderParentPath(null)
           }}
+        />
+      )}
+
+      {deletingSessionFolder && deletingSessionFolderDetails && (
+        <DeleteSessionFolderModal
+          busy={deleteSessionFolderBusy}
+          error={deleteSessionFolderError}
+          folderName={deletingSessionFolder.path.split('/').filter(Boolean).at(-1) ?? deletingSessionFolder.path}
+          folderPath={deletingSessionFolder.path}
+          nestedFolderCount={deletingSessionFolderDetails.nestedFolderCount}
+          sessionCount={deletingSessionFolderDetails.sessionCount}
+          onCancel={() => {
+            if (deleteSessionFolderBusy) {
+              return
+            }
+            setDeletingSessionFolder(null)
+            setDeleteSessionFolderError('')
+          }}
+          onConfirm={() => void confirmDeleteSessionFolder()}
         />
       )}
 
