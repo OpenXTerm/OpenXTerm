@@ -11,13 +11,30 @@ interface MoveSessionModalProps {
 }
 
 export function MoveSessionModal({ open, session, folderOptions, onClose, onSave }: MoveSessionModalProps) {
-  const [folderPath, setFolderPath] = useState(session?.folderPath ?? '')
-  const current = session?.folderPath ? [session.folderPath] : []
-  const options = Array.from(new Set([...current, ...folderOptions])).sort((left, right) => left.localeCompare(right))
-
   if (!open || !session) {
     return null
   }
+
+  return (
+    <MoveSessionModalContent
+      key={`${session.id}:${session.folderPath ?? ''}`}
+      folderOptions={folderOptions}
+      session={session}
+      onClose={onClose}
+      onSave={onSave}
+    />
+  )
+}
+
+function MoveSessionModalContent({
+  session,
+  folderOptions,
+  onClose,
+  onSave,
+}: Omit<MoveSessionModalProps, 'open'> & { session: SessionDefinition }) {
+  const [folderPath, setFolderPath] = useState(session?.folderPath ?? '')
+  const current = session?.folderPath ? [session.folderPath] : []
+  const options = Array.from(new Set([...current, ...folderOptions])).sort((left, right) => left.localeCompare(right))
 
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
