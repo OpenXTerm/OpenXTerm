@@ -557,6 +557,7 @@ For UI/state changes:
 
 ```bash
 npm run check
+npm run test
 ./script/build_and_run.sh --verify
 ```
 
@@ -564,13 +565,14 @@ For Rust/native changes:
 
 ```bash
 cargo build --manifest-path src-tauri/Cargo.toml
+cargo test --manifest-path src-tauri/Cargo.toml
 npm run check
 ./script/build_and_run.sh --verify
 ```
 
 For anything touching native drag or transfers, do at least one manual pass in the running app.
 
-There is no broad automated test suite yet. In practice, `npm run check`, Rust build, and a real app smoke test are the main safety net.
+Automated coverage is still intentionally small, but `npm run test` covers selected frontend pure helpers and `cargo test --manifest-path src-tauri/Cargo.toml` covers selected backend pure helpers. A real app smoke test is still required for terminal transports, native drag, and transfers.
 
 For v0.2 terminal copy/paste/resize QA across macOS, Linux, and Windows, use the manual checklist in `docs/qa/v0.2-core-reliability.md`.
 
@@ -578,6 +580,7 @@ For release-pipeline changes:
 
 ```bash
 npm run check
+cargo test --manifest-path src-tauri/Cargo.toml
 cargo check --manifest-path src-tauri/Cargo.toml
 ```
 

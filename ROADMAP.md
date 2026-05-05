@@ -159,7 +159,7 @@ The documentation/code audit items from the May 2026 cleanup pass are closed. Fu
 - Packaging/signing/notarization is not release-ready.
 - GitHub Releases are currently expected to ship unsigned / unnotarized artifacts until signing secrets and release hardening are added.
 - Storage migrations need versioning before stable release.
-- Automated tests are still minimal.
+- Automated tests now have a small frontend/backend baseline, but coverage is still narrow and needs expansion around transfers, transports, and storage migrations.
 - Public screenshots and demo clips are not prepared.
 - Dependency and license audit still needs to be done before stable release.
 

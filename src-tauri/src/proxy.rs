@@ -461,4 +461,21 @@ mod tests {
         assert!(proxy_enabled(&session_with_proxy_type("socks5")));
         assert!(!proxy_enabled(&session_with_proxy_type("unknown")));
     }
+
+    #[test]
+    fn socks5_reply_message_maps_known_codes() {
+        assert_eq!(socks5_reply_message(0x01), "general SOCKS server failure");
+        assert_eq!(socks5_reply_message(0x05), "connection refused");
+        assert_eq!(socks5_reply_message(0x08), "address type not supported");
+        assert_eq!(socks5_reply_message(0xff), "unknown SOCKS5 error");
+    }
+
+    #[test]
+    fn base64_encode_matches_basic_auth_vectors() {
+        assert_eq!(base64_encode(b""), "");
+        assert_eq!(base64_encode(b"user:pass"), "dXNlcjpwYXNz");
+        assert_eq!(base64_encode(b"u:p"), "dTpw");
+        assert_eq!(base64_encode(b"ab"), "YWI=");
+        assert_eq!(base64_encode(b"a"), "YQ==");
+    }
 }

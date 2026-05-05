@@ -102,6 +102,12 @@ Typecheck and lint:
 npm run check
 ```
 
+Run frontend unit tests:
+
+```bash
+npm run test
+```
+
 Build the Rust backend directly:
 
 ```bash
@@ -132,6 +138,8 @@ Useful commands:
 
 ```bash
 npm run check
+npm run test
+cargo test --manifest-path src-tauri/Cargo.toml
 cargo check --manifest-path src-tauri/Cargo.toml
 cargo build --manifest-path src-tauri/Cargo.toml
 ```

@@ -169,6 +169,43 @@ fn contains_any_x11_failure_pattern(normalized_output: &str, patterns: &[&str]) 
         .any(|pattern| normalized_output.contains(pattern))
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detects_display_failure_patterns() {
+        assert!(contains_any_x11_failure_pattern(
+            "error: cannot open display localhost:10.0",
+            X11_DISPLAY_FAILURE_PATTERNS
+        ));
+        assert!(contains_any_x11_failure_pattern(
+            "missing x server or $display",
+            X11_DISPLAY_FAILURE_PATTERNS
+        ));
+        assert!(!contains_any_x11_failure_pattern(
+            "x11 forwarding is active",
+            X11_DISPLAY_FAILURE_PATTERNS
+        ));
+    }
+
+    #[test]
+    fn detects_glx_failure_patterns() {
+        assert!(contains_any_x11_failure_pattern(
+            "libgl error: no matching fbconfigs or visuals found",
+            X11_GLX_FAILURE_PATTERNS
+        ));
+        assert!(contains_any_x11_failure_pattern(
+            "x error of failed request: glxbadcontext",
+            X11_GLX_FAILURE_PATTERNS
+        ));
+        assert!(!contains_any_x11_failure_pattern(
+            "chromium opened successfully",
+            X11_GLX_FAILURE_PATTERNS
+        ));
+    }
+}
+
 pub(super) fn report_x11_forwarding_failure(
     app: &AppHandle,
     tab_id: &str,
