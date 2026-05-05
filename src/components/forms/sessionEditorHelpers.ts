@@ -1,6 +1,10 @@
 import type { SessionDefinition, SessionDraft, SessionKind } from '../../types/domain'
 
 export type SessionEditorTab = 'general' | 'connection' | 'terminal' | 'advanced'
+export interface SessionDraftValidationResult {
+  message: string
+  tab: SessionEditorTab
+}
 
 export const DEFAULT_TERMINAL_FONT = '"SF Mono", "JetBrains Mono", Menlo, monospace'
 export const DEFAULT_TERMINAL_SIZE = 13
@@ -55,6 +59,12 @@ export const TERMINAL_PRESETS = [
     background: '#050607',
   },
 ] as const
+
+const NETWORK_SESSION_KINDS: SessionKind[] = ['ssh', 'telnet', 'sftp', 'ftp']
+
+export function isNetworkSessionKind(kind: SessionKind) {
+  return NETWORK_SESSION_KINDS.includes(kind)
+}
 
 export function createDraft(session?: SessionDefinition | null, initialFolderPath?: string): SessionDraft {
   if (session) {
@@ -127,6 +137,53 @@ export function supportsConnectionTab(kind: SessionKind) {
 
 export function supportsAdvancedTab(kind: SessionKind) {
   return kind === 'ssh'
+}
+
+export function validateSessionPort(port: number): string | null {
+  if (!Number.isFinite(port) || !Number.isInteger(port)) {
+    return 'Port must be a valid number.'
+  }
+
+  if (port < 1 || port > 65535) {
+    return 'Port must be between 1 and 65535.'
+  }
+
+  return null
+}
+
+export function validateSessionDraft(draft: SessionDraft): SessionDraftValidationResult | null {
+  if (!draft.name.trim()) {
+    return {
+      message: 'Session name is required.',
+      tab: 'general',
+    }
+  }
+
+  if (isNetworkSessionKind(draft.kind)) {
+    if (!draft.host.trim()) {
+      return {
+        message: 'Host or IP is required for this session type.',
+        tab: 'connection',
+      }
+    }
+
+    const portError = validateSessionPort(draft.port)
+    if (portError) {
+      return {
+        message: portError,
+        tab: 'connection',
+      }
+    }
+  }
+
+  if (draft.kind === 'serial' && !draft.serialPort.trim()) {
+    return {
+      message: 'Serial port is required for serial sessions.',
+      tab: 'connection',
+    }
+  }
+
+  return null
 }
 
 export function tabDescription(tab: SessionEditorTab, kind: SessionKind) {

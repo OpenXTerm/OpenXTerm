@@ -272,9 +272,12 @@ export function SessionEditorConnectionTab({
           <span>Port</span>
           <input
             required
+            min={1}
+            max={65535}
+            step={1}
             type="number"
-            value={draft.port}
-            onChange={(event) => updateDraft({ port: Number(event.target.value) })}
+            value={Number.isFinite(draft.port) ? draft.port : ''}
+            onChange={(event) => updateDraft({ port: event.currentTarget.valueAsNumber })}
           />
         </label>
 
@@ -379,9 +382,10 @@ export function SessionEditorConnectionTab({
               <input
                 min={1}
                 max={65535}
+                step={1}
                 type="number"
-                value={draft.proxyPort}
-                onChange={(event) => updateDraft({ proxyPort: Number(event.target.value) })}
+                value={Number.isFinite(draft.proxyPort) ? draft.proxyPort : ''}
+                onChange={(event) => updateDraft({ proxyPort: event.currentTarget.valueAsNumber })}
               />
             </label>
 

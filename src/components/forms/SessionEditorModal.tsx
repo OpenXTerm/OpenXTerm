@@ -19,6 +19,7 @@ import {
   supportsAdvancedTab,
   supportsConnectionTab,
   tabDescription,
+  validateSessionDraft,
   type SessionEditorTab,
 } from './sessionEditorHelpers'
 
@@ -79,6 +80,7 @@ function SessionEditorModalContent({
   const isMacOS = typeof navigator !== 'undefined' && navigator.userAgent.includes('Mac')
   const [draft, setDraft] = useState<SessionDraft>(createDraft(session, initialFolderPath))
   const [activeTab, setActiveTab] = useState<SessionEditorTab>('general')
+  const [saveError, setSaveError] = useState('')
   const {
     busy: systemFontsBusy,
     error: systemFontsError,
@@ -123,7 +125,24 @@ function SessionEditorModalContent({
   const resolvedActiveTab = visibleTabs.some((tab) => tab.id === activeTab) ? activeTab : 'general'
 
   function updateDraft(patch: Partial<SessionDraft>) {
+    setSaveError('')
     setDraft((current) => ({ ...current, ...patch }))
+  }
+
+  async function handleSubmit() {
+    const validationError = validateSessionDraft(draft)
+    if (validationError) {
+      setSaveError(validationError.message)
+      setActiveTab(validationError.tab)
+      return
+    }
+
+    setSaveError('')
+    try {
+      await onSave(draft)
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : String(error))
+    }
   }
 
   function renderGeneralTab() {
@@ -201,7 +220,7 @@ function SessionEditorModalContent({
           className="editor-form"
           onSubmit={(event) => {
             event.preventDefault()
-            void onSave(draft)
+            void handleSubmit()
           }}
         >
           <div className="session-editor-tabstrip" role="tablist" aria-label="Session settings tabs">
@@ -233,6 +252,12 @@ function SessionEditorModalContent({
           {resolvedActiveTab === 'connection' && renderConnectionTab()}
           {resolvedActiveTab === 'terminal' && renderTerminalTab()}
           {resolvedActiveTab === 'advanced' && renderAdvancedTab()}
+
+          {saveError && (
+            <div className="session-editor-error" role="alert" aria-live="polite">
+              {saveError}
+            </div>
+          )}
 
           <div className="modal-actions">
             <button className="ghost-button" type="button" onClick={onClose}>

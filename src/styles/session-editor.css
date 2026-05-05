@@ -143,6 +143,16 @@
   padding: 12px 0 0;
 }
 
+.session-editor-error {
+  border: 1px solid rgba(241, 97, 97, 0.55);
+  border-radius: 6px;
+  background: rgba(241, 97, 97, 0.1);
+  color: #ffb8b8;
+  font-size: 12px;
+  line-height: 1.35;
+  padding: 9px 11px;
+}
+
 .editor-field {
   margin: 0;
 }
