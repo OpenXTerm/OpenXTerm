@@ -1,6 +1,6 @@
 {
   "name": "openxterm",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Open-source desktop terminal workspace for sessions, SSH, SFTP, and local shells.",
   "author": "GiaNTizmO",
   "license": "MIT",
