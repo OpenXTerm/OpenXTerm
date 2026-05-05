@@ -58,7 +58,11 @@ pub fn run_probe(
 fn connect(session: &SessionDefinition, username: &str) -> Result<Session, String> {
     let ssh =
         Session::new().map_err(|error| format!("failed to create libssh session: {error}"))?;
-    ssh.set_option(SshOption::Hostname(session.host.clone()))
+    let host = session.host.trim();
+    if host.is_empty() {
+        return Err("SSH session requires a host or IP address.".into());
+    }
+    ssh.set_option(SshOption::Hostname(host.to_string()))
         .map_err(|error| format!("failed to configure libssh host: {error}"))?;
     ssh.set_option(SshOption::Port(session.port))
         .map_err(|error| format!("failed to configure libssh port: {error}"))?;

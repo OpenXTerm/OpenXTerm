@@ -174,7 +174,11 @@ fn connect_embedded_ssh_session_with_username(
 ) -> Result<LibsshSession, String> {
     let ssh = LibsshSession::new()
         .map_err(|error| format!("failed to create embedded SSH {context}: {error}"))?;
-    ssh.set_option(SshOption::Hostname(session.host.clone()))
+    let host = session.host.trim();
+    if host.is_empty() {
+        return Err("SSH session requires a host or IP address.".into());
+    }
+    ssh.set_option(SshOption::Hostname(host.to_string()))
         .map_err(|error| format!("failed to configure embedded SSH host: {error}"))?;
     ssh.set_option(SshOption::Port(session.port))
         .map_err(|error| format!("failed to configure embedded SSH port: {error}"))?;

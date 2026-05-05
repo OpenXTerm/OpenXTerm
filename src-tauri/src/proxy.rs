@@ -24,7 +24,7 @@ enum ProxyKind {
 }
 
 pub fn connect_tcp_stream(session: &SessionDefinition) -> Result<TcpStream, String> {
-    connect_tcp_stream_to(session, &session.host, session.port)
+    connect_tcp_stream_to(session, session.host.trim(), session.port)
 }
 
 pub fn configure_libssh_proxy_socket(
@@ -36,7 +36,7 @@ pub fn configure_libssh_proxy_socket(
         ProxyKind::None => Ok(()),
         ProxyKind::HttpConnect | ProxyKind::Socks5 => {
             let stream =
-                connect_tcp_stream_to_kind(session, &session.host, session.port, proxy_kind)?;
+                connect_tcp_stream_to_kind(session, session.host.trim(), session.port, proxy_kind)?;
             #[cfg(unix)]
             let socket = stream.into_raw_fd();
             #[cfg(windows)]
