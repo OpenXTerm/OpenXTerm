@@ -57,6 +57,7 @@ const RECENT_TERMINAL_OUTPUT_CHAR_LIMIT: usize = 2048;
 
 pub struct AppRuntime {
     terminals: Arc<Mutex<HashMap<String, ActiveTerminal>>>,
+    pending_terminal_sizes: Arc<Mutex<HashMap<String, (u16, u16)>>>,
 }
 
 struct ActiveTerminal {
@@ -70,11 +71,35 @@ impl Default for AppRuntime {
     fn default() -> Self {
         Self {
             terminals: Arc::new(Mutex::new(HashMap::new())),
+            pending_terminal_sizes: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
 
 impl AppRuntime {
+    fn remember_terminal_size(
+        &self,
+        tab_id: &str,
+        cols: u16,
+        rows: u16,
+    ) -> Result<(u16, u16), String> {
+        let size = (cols.max(2), rows.max(2));
+        self.pending_terminal_sizes
+            .lock()
+            .map_err(|_| "terminal size registry is poisoned".to_string())?
+            .insert(tab_id.to_string(), size);
+        Ok(size)
+    }
+
+    fn latest_terminal_size(&self, tab_id: &str) -> Result<(u16, u16), String> {
+        Ok(*self
+            .pending_terminal_sizes
+            .lock()
+            .map_err(|_| "terminal size registry is poisoned".to_string())?
+            .get(tab_id)
+            .unwrap_or(&(DEFAULT_COLS, DEFAULT_ROWS)))
+    }
+
     pub fn start_local_session(
         &self,
         app: &AppHandle,
@@ -267,14 +292,15 @@ impl AppRuntime {
     }
 
     pub fn resize_terminal(&self, tab_id: &str, cols: u16, rows: u16) -> Result<(), String> {
+        let (cols, rows) = self.remember_terminal_size(tab_id, cols, rows)?;
         let terminals = self
             .terminals
             .lock()
             .map_err(|_| "terminal registry is poisoned".to_string())?;
 
-        let terminal = terminals
-            .get(tab_id)
-            .ok_or_else(|| "terminal is not running".to_string())?;
+        let Some(terminal) = terminals.get(tab_id) else {
+            return Ok(());
+        };
 
         (terminal.resize)(cols, rows)
     }
@@ -309,11 +335,12 @@ impl AppRuntime {
     ) -> Result<bool, String> {
         self.stop_terminal(&tab_id)?;
 
+        let (cols, rows) = self.latest_terminal_size(&tab_id)?;
         let pty_system = NativePtySystem::default();
         let pty_pair = pty_system
             .openpty(PtySize {
-                rows: DEFAULT_ROWS,
-                cols: DEFAULT_COLS,
+                rows,
+                cols,
                 pixel_width: 0,
                 pixel_height: 0,
             })

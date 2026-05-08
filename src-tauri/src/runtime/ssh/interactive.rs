@@ -17,7 +17,7 @@ use super::super::{
     emit_cwd, emit_output, finalize_terminal, maybe_report_x11_forwarding_failure,
     prepare_x11_forwarding, report_x11_forwarding_failure, spawn_status_poller,
     spawn_x11_accept_loop, ssh_status_poller_supported, ActiveTerminal, AppRuntime, SharedWriter,
-    DEFAULT_COLS, DEFAULT_ROWS, SSH_LOOP_IDLE_SLEEP,
+    SSH_LOOP_IDLE_SLEEP,
 };
 use super::{
     auth::{clear_ssh_runtime_auth, prepare_ssh_runtime_metadata, set_ssh_runtime_auth},
@@ -86,7 +86,7 @@ impl AppRuntime {
         } else {
             EmbeddedSshState::Connecting
         }));
-        let terminal_size = Arc::new(Mutex::new((DEFAULT_COLS, DEFAULT_ROWS)));
+        let terminal_size = Arc::new(Mutex::new(self.latest_terminal_size(&tab_id)?));
         let controller = Arc::new(EmbeddedSshController {
             app: app.clone(),
             terminals: self.terminals.clone(),

@@ -112,8 +112,8 @@ pub(in crate::runtime) fn open_embedded_ssh_channel(
         None
     };
     channel
-        .request_exec(&embedded_ssh_shell_command())
-        .or_else(|_| channel.request_shell())
+        .request_shell()
+        .or_else(|_| channel.request_exec(&embedded_ssh_shell_command()))
         .map_err(|error| format!("failed to start embedded SSH shell: {error}"))?;
 
     Ok((channel, x11_warning))
