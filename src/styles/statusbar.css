@@ -68,11 +68,11 @@
   cursor: default;
 }
 
-.status-cpu-segment {
+.status-metric-segment {
   padding-right: 5px;
 }
 
-.status-cpu-sparkline {
+.status-sparkline {
   width: 48px;
   height: 14px;
   display: inline-flex;
@@ -83,10 +83,22 @@
   border-right: 1px solid #293438;
 }
 
-.status-cpu-bar {
+.status-sparkline-bar {
   width: 2px;
   max-height: 12px;
   border-radius: 1px 1px 0 0;
   background: #57d797;
   opacity: 0.88;
+}
+
+.status-sparkline-memory .status-sparkline-bar {
+  background: #65a7ff;
+}
+
+.status-sparkline-download .status-sparkline-bar {
+  background: #5de2ce;
+}
+
+.status-sparkline-upload .status-sparkline-bar {
+  background: #f2b15c;
 }

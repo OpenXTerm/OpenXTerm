@@ -8,6 +8,8 @@ import {
 import { logOpenXTermError } from '../lib/errorLog'
 import {
   appendCpuHistory,
+  appendMemoryHistory,
+  appendNetworkHistory,
   defaultOfflineStatus,
   mapStatusPayload,
 } from './openXTermStoreHelpers'
@@ -83,16 +85,30 @@ export function ensureTransportListeners(set: StoreSetter) {
       } else {
         loggedSessionStatusErrors.delete(payload.tabId)
       }
-      set((state) => ({
-        sessionStatusByTabId: {
-          ...state.sessionStatusByTabId,
-          [payload.tabId]: nextStatus,
-        },
-        sessionCpuHistoryByTabId: {
-          ...state.sessionCpuHistoryByTabId,
-          [payload.tabId]: appendCpuHistory(state.sessionCpuHistoryByTabId[payload.tabId], nextStatus.cpuLoad),
-        },
-      }))
+      set((state) => {
+        return {
+          sessionStatusByTabId: {
+            ...state.sessionStatusByTabId,
+            [payload.tabId]: nextStatus,
+          },
+          sessionCpuHistoryByTabId: {
+            ...state.sessionCpuHistoryByTabId,
+            [payload.tabId]: appendCpuHistory(state.sessionCpuHistoryByTabId[payload.tabId], nextStatus.cpuLoad),
+          },
+          sessionMemoryHistoryByTabId: {
+            ...state.sessionMemoryHistoryByTabId,
+            [payload.tabId]: appendMemoryHistory(state.sessionMemoryHistoryByTabId[payload.tabId], nextStatus.memoryUsage),
+          },
+          sessionNetworkDownHistoryByTabId: {
+            ...state.sessionNetworkDownHistoryByTabId,
+            [payload.tabId]: appendNetworkHistory(state.sessionNetworkDownHistoryByTabId[payload.tabId], nextStatus.networkDownloadBps),
+          },
+          sessionNetworkUpHistoryByTabId: {
+            ...state.sessionNetworkUpHistoryByTabId,
+            [payload.tabId]: appendNetworkHistory(state.sessionNetworkUpHistoryByTabId[payload.tabId], nextStatus.networkUploadBps),
+          },
+        }
+      })
     })
 
     await listenTransferProgress((payload) => handleTransferProgress(set, payload))

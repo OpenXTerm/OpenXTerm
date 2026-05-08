@@ -298,6 +298,15 @@ export function createDomainActions(
         const sessionCpuHistoryByTabId = Object.fromEntries(
           Object.entries(state.sessionCpuHistoryByTabId).filter(([tabId]) => !removedTabIds.has(tabId)),
         )
+        const sessionMemoryHistoryByTabId = Object.fromEntries(
+          Object.entries(state.sessionMemoryHistoryByTabId).filter(([tabId]) => !removedTabIds.has(tabId)),
+        )
+        const sessionNetworkDownHistoryByTabId = Object.fromEntries(
+          Object.entries(state.sessionNetworkDownHistoryByTabId).filter(([tabId]) => !removedTabIds.has(tabId)),
+        )
+        const sessionNetworkUpHistoryByTabId = Object.fromEntries(
+          Object.entries(state.sessionNetworkUpHistoryByTabId).filter(([tabId]) => !removedTabIds.has(tabId)),
+        )
 
         return {
           sessions: state.sessions.filter((item) => item.id !== sessionId),
@@ -308,6 +317,9 @@ export function createDomainActions(
           terminalStoppedByTabId,
           sessionStatusByTabId,
           sessionCpuHistoryByTabId,
+          sessionMemoryHistoryByTabId,
+          sessionNetworkDownHistoryByTabId,
+          sessionNetworkUpHistoryByTabId,
         }
       })
     },

@@ -137,6 +137,10 @@ pub struct SessionStatusSnapshot {
     pub memory_usage: String,
     pub disk_usage: String,
     pub network: String,
+    pub network_download: String,
+    pub network_upload: String,
+    pub network_download_bps: f64,
+    pub network_upload_bps: f64,
     pub latency: String,
 }
 

@@ -42,6 +42,9 @@ export function App() {
     runMacro,
     selectTab,
     sessionCpuHistoryByTabId,
+    sessionMemoryHistoryByTabId,
+    sessionNetworkDownHistoryByTabId,
+    sessionNetworkUpHistoryByTabId,
     sessionFolders,
     setSidebarWidth,
     sessionStatusByTabId,
@@ -467,6 +470,9 @@ export function App() {
             <StatusBar
               activeTab={activeTab}
               sessionCpuHistoryByTabId={sessionCpuHistoryByTabId}
+              sessionMemoryHistoryByTabId={sessionMemoryHistoryByTabId}
+              sessionNetworkDownHistoryByTabId={sessionNetworkDownHistoryByTabId}
+              sessionNetworkUpHistoryByTabId={sessionNetworkUpHistoryByTabId}
               sessionStatusByTabId={sessionStatusByTabId}
               sessions={sessions}
             />

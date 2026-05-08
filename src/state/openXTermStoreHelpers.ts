@@ -16,6 +16,15 @@ import type {
 import type { OpenXTermState, SessionImportSummary } from './openXTermStoreTypes'
 
 const CPU_HISTORY_SIZE = 22
+const DATA_RATE_UNITS: Record<string, number> = {
+  b: 1,
+  kib: 1024,
+  kb: 1000,
+  mib: 1024 * 1024,
+  mb: 1000 * 1000,
+  gib: 1024 * 1024 * 1024,
+  gb: 1000 * 1000 * 1000,
+}
 
 export function sortSessions(sessions: SessionDefinition[]) {
   return [...sessions].sort((left, right) => {
@@ -104,6 +113,10 @@ export function defaultOfflineStatus(): SessionStatusSnapshot {
     memoryUsage: '--',
     diskUsage: '--',
     network: '--',
+    networkDownload: '--',
+    networkUpload: '--',
+    networkDownloadBps: 0,
+    networkUploadBps: 0,
     latency: '--',
   }
 }
@@ -132,8 +145,8 @@ function parseCpuHistoryValue(cpuLoad: string) {
   return Math.max(0, Math.min(100, value))
 }
 
-export function appendCpuHistory(history: number[] | undefined, cpuLoad: string) {
-  const nextHistory = [...(history ?? []), parseCpuHistoryValue(cpuLoad)]
+function appendMetricHistory(history: number[] | undefined, value: number) {
+  const nextHistory = [...(history ?? []), value]
   if (nextHistory.length >= CPU_HISTORY_SIZE) {
     return nextHistory.slice(nextHistory.length - CPU_HISTORY_SIZE)
   }
@@ -141,16 +154,82 @@ export function appendCpuHistory(history: number[] | undefined, cpuLoad: string)
   return [...Array.from({ length: CPU_HISTORY_SIZE - nextHistory.length }, () => 0), ...nextHistory]
 }
 
+function parseDataAmount(value: string, unit: string | undefined) {
+  const amount = Number(value)
+  if (!Number.isFinite(amount)) {
+    return 0
+  }
+
+  const multiplier = unit ? DATA_RATE_UNITS[unit.toLowerCase()] ?? 1 : 1
+  return amount * multiplier
+}
+
+function parseMemoryHistoryValue(memoryUsage: string) {
+  const normalized = memoryUsage.trim()
+  if (!normalized || normalized === '--' || normalized === 'unknown' || normalized === 'unavailable') {
+    return 0
+  }
+
+  const match = normalized.match(/(\d+(?:\.\d+)?)\s*([KMGT]?i?B|[KMGT]?B)?\s*\/\s*(\d+(?:\.\d+)?)\s*([KMGT]?i?B|[KMGT]?B)?/i)
+  if (!match) {
+    return parseCpuHistoryValue(normalized)
+  }
+
+  const used = parseDataAmount(match[1], match[2] ?? match[4])
+  const total = parseDataAmount(match[3], match[4] ?? match[2])
+  if (total <= 0) {
+    return 0
+  }
+
+  return Math.max(0, Math.min(100, (used / total) * 100))
+}
+
+function normalizeStatusRate(value: number | undefined) {
+  if (!Number.isFinite(value)) {
+    return 0
+  }
+
+  return Math.max(0, value ?? 0)
+}
+
+export function appendCpuHistory(history: number[] | undefined, cpuLoad: string) {
+  return appendMetricHistory(history, parseCpuHistoryValue(cpuLoad))
+}
+
+export function appendMemoryHistory(history: number[] | undefined, memoryUsage: string) {
+  return appendMetricHistory(history, parseMemoryHistoryValue(memoryUsage))
+}
+
+export function appendNetworkHistory(history: number[] | undefined, value: number) {
+  return appendMetricHistory(history, value)
+}
+
 export function seedTerminalTabState(
   state: OpenXTermState,
   tabId: string,
   session: SessionDefinition,
-): Pick<OpenXTermState, 'terminalFeeds' | 'terminalCwdByTabId' | 'terminalStoppedByTabId' | 'sessionStatusByTabId' | 'sessionCpuHistoryByTabId'> {
+): Pick<
+  OpenXTermState,
+  | 'terminalFeeds'
+  | 'terminalCwdByTabId'
+  | 'terminalStoppedByTabId'
+  | 'sessionStatusByTabId'
+  | 'sessionCpuHistoryByTabId'
+  | 'sessionMemoryHistoryByTabId'
+  | 'sessionNetworkDownHistoryByTabId'
+  | 'sessionNetworkUpHistoryByTabId'
+> {
   const nextStatuses = { ...state.sessionStatusByTabId }
   const nextCpuHistory = { ...state.sessionCpuHistoryByTabId }
+  const nextMemoryHistory = { ...state.sessionMemoryHistoryByTabId }
+  const nextNetworkDownHistory = { ...state.sessionNetworkDownHistoryByTabId }
+  const nextNetworkUpHistory = { ...state.sessionNetworkUpHistoryByTabId }
   const nextCwd = { ...state.terminalCwdByTabId }
   delete nextStatuses[tabId]
   delete nextCpuHistory[tabId]
+  delete nextMemoryHistory[tabId]
+  delete nextNetworkDownHistory[tabId]
+  delete nextNetworkUpHistory[tabId]
   delete nextCwd[tabId]
 
   return {
@@ -165,6 +244,9 @@ export function seedTerminalTabState(
     },
     sessionStatusByTabId: nextStatuses,
     sessionCpuHistoryByTabId: nextCpuHistory,
+    sessionMemoryHistoryByTabId: nextMemoryHistory,
+    sessionNetworkDownHistoryByTabId: nextNetworkDownHistory,
+    sessionNetworkUpHistoryByTabId: nextNetworkUpHistory,
   }
 }
 
@@ -179,6 +261,10 @@ export function mapStatusPayload(payload: SessionStatusPayload): SessionStatusSn
     memoryUsage: payload.memoryUsage,
     diskUsage: payload.diskUsage,
     network: payload.network,
+    networkDownload: payload.networkDownload,
+    networkUpload: payload.networkUpload,
+    networkDownloadBps: normalizeStatusRate(payload.networkDownloadBps),
+    networkUploadBps: normalizeStatusRate(payload.networkUploadBps),
     latency: payload.latency,
   }
 }

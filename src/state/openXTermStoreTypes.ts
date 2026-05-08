@@ -24,6 +24,9 @@ export interface OpenXTermState {
   terminalStoppedByTabId: Record<string, boolean>
   sessionStatusByTabId: Record<string, SessionStatusSnapshot>
   sessionCpuHistoryByTabId: Record<string, number[]>
+  sessionMemoryHistoryByTabId: Record<string, number[]>
+  sessionNetworkDownHistoryByTabId: Record<string, number[]>
+  sessionNetworkUpHistoryByTabId: Record<string, number[]>
   transferItems: Record<string, TransferProgressPayload>
   transferModalDismissed: boolean
   initialize: () => Promise<void>

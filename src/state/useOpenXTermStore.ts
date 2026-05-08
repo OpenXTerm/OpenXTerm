@@ -41,6 +41,9 @@ export const useOpenXTermStore = create<OpenXTermState>((set, get) => ({
   terminalStoppedByTabId: {},
   sessionStatusByTabId: {},
   sessionCpuHistoryByTabId: {},
+  sessionMemoryHistoryByTabId: {},
+  sessionNetworkDownHistoryByTabId: {},
+  sessionNetworkUpHistoryByTabId: {},
   transferItems: {},
   transferModalDismissed: false,
   async initialize() {
@@ -67,6 +70,9 @@ export const useOpenXTermStore = create<OpenXTermState>((set, get) => ({
       terminalStoppedByTabId: {},
       sessionStatusByTabId: {},
       sessionCpuHistoryByTabId: {},
+      sessionMemoryHistoryByTabId: {},
+      sessionNetworkDownHistoryByTabId: {},
+      sessionNetworkUpHistoryByTabId: {},
       transferItems: {},
       transferModalDismissed: false,
     })

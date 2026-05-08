@@ -100,11 +100,17 @@ export function createTabActions(
         const nextStopped = { ...state.terminalStoppedByTabId }
         const nextStatuses = { ...state.sessionStatusByTabId }
         const nextCpuHistory = { ...state.sessionCpuHistoryByTabId }
+        const nextMemoryHistory = { ...state.sessionMemoryHistoryByTabId }
+        const nextNetworkDownHistory = { ...state.sessionNetworkDownHistoryByTabId }
+        const nextNetworkUpHistory = { ...state.sessionNetworkUpHistoryByTabId }
         delete nextTerminalFeeds[tabId]
         delete nextCwd[tabId]
         delete nextStopped[tabId]
         delete nextStatuses[tabId]
         delete nextCpuHistory[tabId]
+        delete nextMemoryHistory[tabId]
+        delete nextNetworkDownHistory[tabId]
+        delete nextNetworkUpHistory[tabId]
 
         return {
           tabs: nextTabs,
@@ -114,6 +120,9 @@ export function createTabActions(
           terminalStoppedByTabId: nextStopped,
           sessionStatusByTabId: nextStatuses,
           sessionCpuHistoryByTabId: nextCpuHistory,
+          sessionMemoryHistoryByTabId: nextMemoryHistory,
+          sessionNetworkDownHistoryByTabId: nextNetworkDownHistory,
+          sessionNetworkUpHistoryByTabId: nextNetworkUpHistory,
         }
       })
     },

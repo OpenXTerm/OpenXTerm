@@ -1,5 +1,5 @@
 import { useMemo, type ReactNode } from 'react'
-import { Activity, Clock3, Cpu, HardDrive, Monitor, Network, Timer, User } from 'lucide-react'
+import { Activity, Clock3, Cpu, HardDrive, Monitor, Network, User } from 'lucide-react'
 
 import type { SessionDefinition, SessionStatusSnapshot, WorkspaceTab } from '../../types/domain'
 
@@ -7,11 +7,14 @@ interface StatusBarProps {
   activeTab: WorkspaceTab | undefined
   sessions: SessionDefinition[]
   sessionCpuHistoryByTabId: Record<string, number[]>
+  sessionMemoryHistoryByTabId: Record<string, number[]>
+  sessionNetworkDownHistoryByTabId: Record<string, number[]>
+  sessionNetworkUpHistoryByTabId: Record<string, number[]>
   sessionStatusByTabId: Record<string, SessionStatusSnapshot>
 }
 
-const CPU_HISTORY_SIZE = 22
-const EMPTY_CPU_HISTORY = Array.from({ length: CPU_HISTORY_SIZE }, () => 0)
+const STATUS_HISTORY_SIZE = 22
+const EMPTY_STATUS_HISTORY = Array.from({ length: STATUS_HISTORY_SIZE }, () => 0)
 
 function compactValue(value: string, fallback = '--') {
   const trimmed = value.trim()
@@ -98,13 +101,49 @@ function StatusSegment({
   )
 }
 
-function CpuSparkline({ history }: { history: number[] }) {
+function splitNetworkValue(value: string) {
+  const trimmed = compactValue(value)
+  if (trimmed === '--') {
+    return { down: '--', up: '--' }
+  }
+
+  const match = trimmed.match(/↓\s*(.*?)\s*↑\s*(.*)$/)
+  if (!match) {
+    return { down: '--', up: '--' }
+  }
+
+  return {
+    down: compactValue(match[1]),
+    up: compactValue(match[2]),
+  }
+}
+
+function normalizeAutoHistory(history: number[]) {
+  const maxValue = Math.max(...history)
+  if (maxValue <= 0) {
+    return EMPTY_STATUS_HISTORY
+  }
+
+  return history.map((value) => Math.max(0, Math.min(100, (value / maxValue) * 100)))
+}
+
+function MetricSparkline({
+  history,
+  variant = 'default',
+  scale = 'percent',
+}: {
+  history: number[]
+  variant?: 'default' | 'memory' | 'download' | 'upload'
+  scale?: 'percent' | 'auto'
+}) {
+  const values = scale === 'auto' ? normalizeAutoHistory(history) : history
+
   return (
-    <span className="status-cpu-sparkline" aria-hidden="true">
-      {history.map((value, index) => (
+    <span className={`status-sparkline status-sparkline-${variant}`} aria-hidden="true">
+      {values.map((value, index) => (
         <span
           key={`${index}-${value.toFixed(0)}`}
-          className="status-cpu-bar"
+          className="status-sparkline-bar"
           style={{ height: `${Math.max(2, Math.round(value / 7))}px` }}
         />
       ))}
@@ -116,6 +155,9 @@ export function StatusBar({
   activeTab,
   sessions,
   sessionCpuHistoryByTabId,
+  sessionMemoryHistoryByTabId,
+  sessionNetworkDownHistoryByTabId,
+  sessionNetworkUpHistoryByTabId,
   sessionStatusByTabId,
 }: StatusBarProps) {
   const activeTabId = activeTab?.id
@@ -125,10 +167,33 @@ export function StatusBar({
   )
   const liveStatus = activeTabId ? sessionStatusByTabId[activeTabId] : undefined
   const status = liveStatus
-  const cpuGraphValues = useMemo(
-    () => (activeTabId ? sessionCpuHistoryByTabId[activeTabId] ?? EMPTY_CPU_HISTORY : EMPTY_CPU_HISTORY),
+  const cpuHistory = useMemo(
+    () => (activeTabId ? sessionCpuHistoryByTabId[activeTabId] ?? EMPTY_STATUS_HISTORY : EMPTY_STATUS_HISTORY),
     [activeTabId, sessionCpuHistoryByTabId],
   )
+  const memoryHistory = useMemo(
+    () => (activeTabId ? sessionMemoryHistoryByTabId[activeTabId] ?? EMPTY_STATUS_HISTORY : EMPTY_STATUS_HISTORY),
+    [activeTabId, sessionMemoryHistoryByTabId],
+  )
+  const networkDownHistory = useMemo(
+    () => (activeTabId ? sessionNetworkDownHistoryByTabId[activeTabId] ?? EMPTY_STATUS_HISTORY : EMPTY_STATUS_HISTORY),
+    [activeTabId, sessionNetworkDownHistoryByTabId],
+  )
+  const networkUpHistory = useMemo(
+    () => (activeTabId ? sessionNetworkUpHistoryByTabId[activeTabId] ?? EMPTY_STATUS_HISTORY : EMPTY_STATUS_HISTORY),
+    [activeTabId, sessionNetworkUpHistoryByTabId],
+  )
+  const networkValue = useMemo(() => {
+    if (!status) {
+      return { down: '--', up: '--' }
+    }
+
+    const fallback = splitNetworkValue(status.network)
+    return {
+      down: compactValue(status.networkDownload, fallback.down),
+      up: compactValue(status.networkUpload, fallback.up),
+    }
+  }, [status])
 
   if (!activeSession) {
     return (
@@ -146,39 +211,66 @@ export function StatusBar({
         <StatusSegment icon={<Activity size={12} />} value="loading" accent />
         <StatusSegment icon={<Monitor size={12} />} value={activeSession.host || 'local'} />
         <StatusSegment icon={<User size={12} />} value={activeSession.username || 'waiting for login'} />
-        <div className="status-segment status-cpu-segment" title="Waiting for live status">
+        <div className="status-segment status-metric-segment" title="Waiting for live status">
           <span className="status-segment-icon"><Cpu size={12} /></span>
           <span className="status-segment-label">CPU</span>
-          <CpuSparkline history={cpuGraphValues} />
+          <MetricSparkline history={cpuHistory} />
           <span className="status-segment-value">...</span>
         </div>
-        <StatusSegment icon={<Activity size={12} />} label="MEM" value="..." />
+        <div className="status-segment status-metric-segment" title="Waiting for memory usage">
+          <span className="status-segment-icon"><Activity size={12} /></span>
+          <span className="status-segment-label">MEM</span>
+          <MetricSparkline history={memoryHistory} variant="memory" />
+          <span className="status-segment-value">...</span>
+        </div>
         <StatusSegment icon={<HardDrive size={12} />} label="DISK" value="..." />
-        <StatusSegment icon={<Network size={12} />} value="waiting" />
-        <StatusSegment icon={<Timer size={12} />} value="..." />
+        <div className="status-segment status-metric-segment" title="Waiting for download speed">
+          <span className="status-segment-icon"><Network size={12} /></span>
+          <span className="status-segment-label">DL</span>
+          <MetricSparkline history={networkDownHistory} variant="download" scale="auto" />
+          <span className="status-segment-value">...</span>
+        </div>
+        <div className="status-segment status-metric-segment" title="Waiting for upload speed">
+          <span className="status-segment-icon"><Network size={12} /></span>
+          <span className="status-segment-label">UL</span>
+          <MetricSparkline history={networkUpHistory} variant="upload" scale="auto" />
+          <span className="status-segment-value">...</span>
+        </div>
         <StatusSegment icon={<Clock3 size={12} />} value="up ..." />
-        <StatusSegment icon={<Monitor size={12} />} value={activeSession.name} accent />
       </footer>
     )
   }
 
   return (
     <footer className="statusbar">
-      <StatusSegment icon={<Activity size={12} />} value={status.mode} accent />
       <StatusSegment icon={<Monitor size={12} />} value={compactValue(status.host, 'host')} title={status.remoteOs} />
       <StatusSegment icon={<User size={12} />} value={compactValue(status.user, 'user')} />
-      <div className="status-segment status-cpu-segment" title={`CPU load ${status.cpuLoad}`}>
+      <div className="status-segment status-metric-segment" title={`CPU load ${status.cpuLoad}`}>
         <span className="status-segment-icon"><Cpu size={12} /></span>
         <span className="status-segment-label">CPU</span>
-        <CpuSparkline history={cpuGraphValues} />
+        <MetricSparkline history={cpuHistory} />
         <span className="status-segment-value">{compactValue(status.cpuLoad)}</span>
       </div>
-      <StatusSegment icon={<Activity size={12} />} label="MEM" value={compactValue(status.memoryUsage)} />
+      <div className="status-segment status-metric-segment" title={`Memory ${status.memoryUsage}`}>
+        <span className="status-segment-icon"><Activity size={12} /></span>
+        <span className="status-segment-label">MEM</span>
+        <MetricSparkline history={memoryHistory} variant="memory" />
+        <span className="status-segment-value">{compactValue(status.memoryUsage)}</span>
+      </div>
       <StatusSegment icon={<HardDrive size={12} />} label="DISK" value={compactValue(status.diskUsage)} />
-      <StatusSegment icon={<Network size={12} />} value={compactValue(status.network, 'network')} />
-      <StatusSegment icon={<Timer size={12} />} value={compactValue(status.latency, '--')} />
+      <div className="status-segment status-metric-segment" title={`Download ${networkValue.down}`}>
+        <span className="status-segment-icon"><Network size={12} /></span>
+        <span className="status-segment-label">DL</span>
+        <MetricSparkline history={networkDownHistory} variant="download" scale="auto" />
+        <span className="status-segment-value">{networkValue.down}</span>
+      </div>
+      <div className="status-segment status-metric-segment" title={`Upload ${networkValue.up}`}>
+        <span className="status-segment-icon"><Network size={12} /></span>
+        <span className="status-segment-label">UL</span>
+        <MetricSparkline history={networkUpHistory} variant="upload" scale="auto" />
+        <span className="status-segment-value">{networkValue.up}</span>
+      </div>
       <StatusSegment icon={<Clock3 size={12} />} value={`up ${formatUptimeValue(status.uptime)}`} title={status.uptime} />
-      <StatusSegment icon={<Monitor size={12} />} value={activeSession.name} accent title={status.remoteOs} />
     </footer>
   )
 }

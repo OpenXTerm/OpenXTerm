@@ -114,6 +114,10 @@ export interface SessionStatusSnapshot {
   memoryUsage: string
   diskUsage: string
   network: string
+  networkDownload: string
+  networkUpload: string
+  networkDownloadBps: number
+  networkUploadBps: number
   latency: string
 }
 
@@ -144,6 +148,10 @@ export interface SessionStatusPayload {
   memoryUsage: string
   diskUsage: string
   network: string
+  networkDownload: string
+  networkUpload: string
+  networkDownloadBps: number
+  networkUploadBps: number
   latency: string
 }
 
