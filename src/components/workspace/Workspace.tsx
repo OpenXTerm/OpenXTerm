@@ -1,4 +1,4 @@
-import { HardDrive, Server, Terminal, Usb, X } from 'lucide-react'
+import { HardDrive, Plus, Server, Terminal, Usb, X } from 'lucide-react'
 
 import { FileBrowserView } from './FileBrowserView'
 import { TerminalSurface } from './TerminalSurface'
@@ -16,6 +16,7 @@ interface WorkspaceProps {
   onCloseTab: (tabId: string) => void
   onCreateSession: () => void
   onOpenSession: (sessionId: string) => void
+  onOpenWelcome: () => void
   onShowSftp: () => void
   onShowTools: () => void
   onRestartTab: (tabId: string) => void
@@ -57,6 +58,7 @@ export function Workspace({
   onCloseTab,
   onCreateSession,
   onOpenSession,
+  onOpenWelcome,
   onRestartTab,
   onSelectTab,
   onShowSftp,
@@ -104,6 +106,15 @@ export function Workspace({
                 )}
               </button>
             ))}
+            <button
+              className="workspace-tab-add"
+              type="button"
+              aria-label="Open welcome pane"
+              title="Open welcome pane"
+              onClick={onOpenWelcome}
+            >
+              <Plus size={16} />
+            </button>
           </div>
         </div>
       )}

@@ -453,6 +453,7 @@ export function App() {
               setSessionModalOpen(true)
             }}
             onOpenSession={(sessionId) => void openSession(sessionId)}
+            onOpenWelcome={() => selectTab('welcome')}
             onRestartTab={(tabId) => void restartTab(tabId)}
             onShowSftp={() => void setSidebar('sftp')}
             onShowTools={() => void setSidebar('tools')}
