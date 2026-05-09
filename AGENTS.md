@@ -207,9 +207,9 @@ Relevant files:
 
 ### Session/folder drag in `Sessions` is pointer-based
 
-The sessions tree drag/drop is not native HTML5 DnD. It uses pointer tracking in [`Sidebar.tsx`](src/components/sidebar/Sidebar.tsx) because that proved more reliable inside Tauri/WebKit.
+The sessions tree drag/drop is not native HTML5 DnD. It uses pointer tracking in [`SessionsSection.tsx`](src/components/sidebar/SessionsSection.tsx) and [`useSessionTreeDrag.ts`](src/components/sidebar/useSessionTreeDrag.ts) because that proved more reliable inside Tauri/WebKit.
 
-If drag in `Sessions` breaks, inspect `Sidebar.tsx` first and be careful about replacing it with browser DnD APIs.
+If drag in `Sessions` breaks, inspect [`SessionsSection.tsx`](src/components/sidebar/SessionsSection.tsx), [`useSessionTreeDrag.ts`](src/components/sidebar/useSessionTreeDrag.ts), and the sidebar shell in [`Sidebar.tsx`](src/components/sidebar/Sidebar.tsx) first. Be careful about replacing this with browser DnD APIs.
 
 ### Session folders are real persisted entities
 
@@ -293,6 +293,8 @@ Operational consequence:
 Relevant files:
 
 - [`src-tauri/src/runtime.rs`](src-tauri/src/runtime.rs)
+- [`src-tauri/src/runtime/ssh/session.rs`](src-tauri/src/runtime/ssh/session.rs)
+- [`src-tauri/src/runtime/status/mod.rs`](src-tauri/src/runtime/status/mod.rs)
 - [`src-tauri/src/transfer/mod.rs`](src-tauri/src/transfer/mod.rs)
 
 ### X11 forwarding uses the embedded SSH bridge
@@ -353,6 +355,7 @@ If you add a new appearance field, update:
 - [`src-tauri/src/models.rs`](src-tauri/src/models.rs)
 - [`src/state/useOpenXTermStore.ts`](src/state/useOpenXTermStore.ts)
 - [`src/components/forms/SessionEditorModal.tsx`](src/components/forms/SessionEditorModal.tsx)
+- [`src/components/forms/SessionEditorTabs.tsx`](src/components/forms/SessionEditorTabs.tsx)
 - [`src/components/workspace/Workspace.tsx`](src/components/workspace/Workspace.tsx)
 - [`src/components/workspace/TerminalSurface.tsx`](src/components/workspace/TerminalSurface.tsx)
 
@@ -375,6 +378,7 @@ Relevant files:
 - [`src/components/status/StatusBar.tsx`](src/components/status/StatusBar.tsx)
 - [`src/state/useOpenXTermStore.ts`](src/state/useOpenXTermStore.ts)
 - [`src-tauri/src/runtime.rs`](src-tauri/src/runtime.rs)
+- [`src-tauri/src/runtime/status/mod.rs`](src-tauri/src/runtime/status/mod.rs)
 
 ### Console logging is error-only and intentional
 
@@ -432,7 +436,7 @@ Current unsupported examples seen in real data:
 
 ## Current Feature Snapshot
 
-This is the practical feature state as of April 25, 2026:
+This is the practical feature state for the current tree. For planned and recently completed release work, cross-check [`ROADMAP.md`](ROADMAP.md), [`CHANGELOG.md`](CHANGELOG.md), and recent commits before treating this list as exhaustive:
 
 - local shell transport exists
 - live SSH / Telnet / Serial transports exist
@@ -480,6 +484,8 @@ Start with:
 - [`src/types/domain.ts`](src/types/domain.ts)
 - [`src-tauri/src/models.rs`](src-tauri/src/models.rs)
 - [`src/components/forms/SessionEditorModal.tsx`](src/components/forms/SessionEditorModal.tsx)
+- [`src/components/forms/SessionEditorTabs.tsx`](src/components/forms/SessionEditorTabs.tsx)
+- [`src/components/forms/sessionEditorHelpers.ts`](src/components/forms/sessionEditorHelpers.ts)
 - storage and bridge files
 
 ### Change session tree behavior
@@ -501,6 +507,10 @@ Start with:
 - [`src/components/status/StatusBar.tsx`](src/components/status/StatusBar.tsx)
 - [`src/state/useOpenXTermStore.ts`](src/state/useOpenXTermStore.ts)
 - [`src-tauri/src/runtime.rs`](src-tauri/src/runtime.rs)
+- [`src-tauri/src/runtime/ssh/interactive.rs`](src-tauri/src/runtime/ssh/interactive.rs)
+- [`src-tauri/src/runtime/local_shell.rs`](src-tauri/src/runtime/local_shell.rs)
+- [`src-tauri/src/runtime/telnet.rs`](src-tauri/src/runtime/telnet.rs)
+- [`src-tauri/src/runtime/serial.rs`](src-tauri/src/runtime/serial.rs)
 
 ### Change session editor or appearance controls
 
