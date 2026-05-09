@@ -2,20 +2,9 @@ import { useCallback, type PointerEvent as ReactPointerEvent } from 'react'
 
 import { startNativeFileDrag } from '../../lib/bridge'
 import { logOpenXTermError } from '../../lib/errorLog'
+import { sessionErrorContext } from '../../lib/sessionErrorContext'
 import { useDragOutTracking } from '../../hooks/useDragOutTracking'
 import type { RemoteFileEntry, SessionDefinition } from '../../types/domain'
-
-function fileBrowserErrorContext(session: SessionDefinition, action: string, path: string) {
-  return {
-    action,
-    path,
-    sessionId: session.id,
-    sessionName: session.name,
-    host: session.host,
-    kind: session.kind,
-    linkedSshTabId: session.linkedSshTabId,
-  }
-}
 
 interface UseFileNativeDragOutOptions {
   session: SessionDefinition
@@ -37,7 +26,7 @@ export function useFileNativeDragOut({
         }
       })
       .catch((error) => {
-        logOpenXTermError('file-browser.native-drag', error, fileBrowserErrorContext(session, 'native-drag', entry.path))
+        logOpenXTermError('file-browser.native-drag', error, sessionErrorContext(session, 'native-drag', entry.path))
         setMessage(error instanceof Error ? error.message : 'Native drag-out failed.')
       })
   }, [session, setMessage, setSelectedPath])

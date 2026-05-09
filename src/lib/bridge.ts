@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 
 import { createDefaultBootstrap } from './mockData'
+import { joinRemotePath } from './remotePath'
 import { buildFileEntries, normalizeSessionFolderPath } from './sessionUtils'
 import type {
   AppBootstrap,
@@ -33,19 +34,6 @@ function isTauriRuntime() {
 
 function baseName(path: string) {
   return path.split(/[\\/]/).filter(Boolean).at(-1) ?? path
-}
-
-function joinRemotePath(parent: string, name: string) {
-  const cleanName = name.split('/').filter(Boolean).join('/')
-  if (!cleanName) {
-    return parent || '/'
-  }
-
-  if (!parent || parent === '/') {
-    return `/${cleanName}`
-  }
-
-  return `${parent.replace(/\/+$/, '')}/${cleanName}`
 }
 
 function errorMessage(error: unknown, fallback: string) {

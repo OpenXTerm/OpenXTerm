@@ -3,6 +3,8 @@ import {
   uploadLocalFile,
   uploadRemoteFile,
 } from './bridge'
+export { joinRemotePath } from './remotePath'
+import { joinRemotePath } from './remotePath'
 import { queueBatchTransfers } from './transferBatch'
 import type { RemoteFileEntry, SessionDefinition, TransferProgressPayload } from '../types/domain'
 
@@ -31,10 +33,6 @@ interface TransferOptions {
   currentPath: string
   enqueueTransfer: EnqueueTransfer
   session: SessionDefinition
-}
-
-export function joinRemotePath(parent: string, name: string) {
-  return parent === '/' ? `/${name.replace(/^\/+/, '')}` : `${parent.replace(/\/+$/, '')}/${name.replace(/^\/+/, '')}`
 }
 
 export function itemCountLabel(count: number) {

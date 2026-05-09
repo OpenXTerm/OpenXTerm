@@ -3,6 +3,8 @@ import { FileText, Folder } from 'lucide-react'
 
 import { renameRemoteEntry, updateRemoteEntryPermissions } from '../../lib/bridge'
 import { logOpenXTermError } from '../../lib/errorLog'
+import { joinRemotePath, parentPathOf } from '../../lib/remotePath'
+import { sessionErrorContext } from '../../lib/sessionErrorContext'
 import type { RemoteFileEntry, SessionDefinition } from '../../types/domain'
 
 export interface RemoteEntryPropertiesPanelProps {
@@ -13,23 +15,6 @@ export interface RemoteEntryPropertiesPanelProps {
   showInlineTitlebar?: boolean
   onClose: () => void
   onApplied: (message: string) => Promise<void>
-}
-
-function parentPathOf(path: string) {
-  if (!path || path === '/') {
-    return '/'
-  }
-
-  const parts = path.split('/').filter(Boolean)
-  if (parts.length <= 1) {
-    return '/'
-  }
-
-  return `/${parts.slice(0, -1).join('/')}`
-}
-
-function joinRemotePath(parent: string, name: string) {
-  return parent === '/' ? `/${name}` : `${parent.replace(/\/+$/, '')}/${name}`
 }
 
 function remoteSizeKbLabel(entry: RemoteFileEntry) {
@@ -90,18 +75,6 @@ function octalModeLabel(mode: number) {
 function accessLabelForMode(kind: RemoteFileEntry['kind'], mode: number) {
   const triplet = (bits: number) => `${bits & 0o4 ? 'r' : '-'}${bits & 0o2 ? 'w' : '-'}${bits & 0o1 ? 'x' : '-'}`
   return `${kind === 'folder' ? 'd' : '-'}${triplet((mode >> 6) & 0o7)}${triplet((mode >> 3) & 0o7)}${triplet(mode & 0o7)}`
-}
-
-function fileBrowserErrorContext(session: SessionDefinition, action: string, path: string) {
-  return {
-    action,
-    path,
-    sessionId: session.id,
-    sessionName: session.name,
-    host: session.host,
-    kind: session.kind,
-    linkedSshTabId: session.linkedSshTabId,
-  }
 }
 
 export function RemoteEntryPropertiesPanel({
@@ -195,7 +168,7 @@ export function RemoteEntryPropertiesPanel({
       await onApplied(changes.length ? `Updated ${changes.join(' and ')} for ${nextName}` : `No changes for ${entry.name}`)
     } catch (applyError) {
       logOpenXTermError('file-browser.properties-apply', applyError, {
-        ...fileBrowserErrorContext(session, 'properties-apply', entry.path),
+        ...sessionErrorContext(session, 'properties-apply', entry.path),
         nextName,
         mode: octalModeLabel(mode),
       })

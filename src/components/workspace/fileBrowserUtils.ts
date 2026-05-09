@@ -1,38 +1,5 @@
-import type { SessionDefinition } from '../../types/domain'
-
-export function parentPathOf(path: string) {
-  if (!path || path === '/') {
-    return '/'
-  }
-
-  const parts = path.split('/').filter(Boolean)
-  if (parts.length <= 1) {
-    return '/'
-  }
-
-  return `/${parts.slice(0, -1).join('/')}`
-}
-
-export function normalizeRemotePath(path: string) {
-  const trimmed = path.trim()
-  if (!trimmed || trimmed === '/') {
-    return '/'
-  }
-
-  return `/${trimmed.replace(/^\/+/, '').replace(/\/{2,}/g, '/')}`.replace(/\/+$/, '') || '/'
-}
-
-export function fileBrowserErrorContext(session: SessionDefinition, action: string, path: string) {
-  return {
-    action,
-    path,
-    sessionId: session.id,
-    sessionName: session.name,
-    host: session.host,
-    kind: session.kind,
-    linkedSshTabId: session.linkedSshTabId,
-  }
-}
+export { normalizeRemotePath, parentPathOf } from '../../lib/remotePath'
+export { sessionErrorContext as fileBrowserErrorContext } from '../../lib/sessionErrorContext'
 
 export async function copyTextToClipboard(text: string) {
   if (navigator.clipboard?.writeText) {

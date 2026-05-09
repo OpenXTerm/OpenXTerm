@@ -1,5 +1,7 @@
 import { useCallback, type PointerEvent as ReactPointerEvent } from 'react'
 
+import { movedEnough } from '../lib/dragTracking'
+
 type DragSource = 'row' | 'handle'
 
 interface UseDragOutTrackingOptions<TItem, TElement extends HTMLElement> {
@@ -12,10 +14,6 @@ interface UseDragOutTrackingOptions<TItem, TElement extends HTMLElement> {
     source: DragSource,
   ) => void
   shouldIgnoreTarget?: (target: HTMLElement, item: TItem, source: DragSource) => boolean
-}
-
-function movedEnough(startX: number, startY: number, currentX: number, currentY: number, minDistance: number) {
-  return Math.hypot(currentX - startX, currentY - startY) > minDistance
 }
 
 export function useDragOutTracking<TItem, TElement extends HTMLElement = HTMLElement>({

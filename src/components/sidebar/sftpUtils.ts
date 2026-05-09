@@ -1,5 +1,8 @@
-import type { RemoteFileEntry, SessionDefinition } from '../../types/domain'
-export { batchLocalPathLabel, itemCountLabel, joinRemotePath } from '../../lib/sftpTransfers'
+import type { RemoteFileEntry } from '../../types/domain'
+export { batchLocalPathLabel, itemCountLabel } from '../../lib/sftpTransfers'
+export { movedEnough } from '../../lib/dragTracking'
+export { joinRemotePath, normalizeRemotePath } from '../../lib/remotePath'
+export { sessionErrorContext as sidebarSftpErrorContext } from '../../lib/sessionErrorContext'
 
 export type SftpSortKey = 'name' | 'size' | 'modified' | 'owner' | 'group' | 'access'
 export type SortDirection = 'asc' | 'desc'
@@ -31,15 +34,6 @@ export function remoteSizeKbLabel(entry: RemoteFileEntry) {
   }
 
   return entry.sizeLabel === '--' ? '' : entry.sizeLabel
-}
-
-export function normalizeRemotePath(path: string) {
-  const trimmed = path.trim()
-  if (!trimmed || trimmed === '/') {
-    return '/'
-  }
-
-  return `/${trimmed.replace(/^\/+/, '').replace(/\/{2,}/g, '/')}`.replace(/\/+$/, '') || '/'
 }
 
 function compareText(left: string | undefined, right: string | undefined) {
@@ -86,20 +80,4 @@ export function compareSftpEntries(
   }
 
   return result * multiplier
-}
-
-export function sidebarSftpErrorContext(session: SessionDefinition, action: string, path: string) {
-  return {
-    action,
-    path,
-    sessionId: session.id,
-    sessionName: session.name,
-    host: session.host,
-    kind: session.kind,
-    linkedSshTabId: session.linkedSshTabId,
-  }
-}
-
-export function movedEnough(startX: number, startY: number, currentX: number, currentY: number) {
-  return Math.hypot(currentX - startX, currentY - startY) > 5
 }
