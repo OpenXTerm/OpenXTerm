@@ -69,19 +69,72 @@ function stripCodeFence(source) {
     .trim();
 }
 
+function extractMarkdownSection(source, heading) {
+  const pattern = new RegExp(`^##\\s+${heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'm');
+  const match = source.match(pattern);
+  if (!match || match.index === undefined) {
+    return '';
+  }
+
+  const sectionStart = match.index + match[0].length;
+  const rest = source.slice(sectionStart);
+  const nextHeadingIndex = rest.search(/\n##\s+/);
+  const section = nextHeadingIndex === -1 ? rest : rest.slice(0, nextHeadingIndex);
+  return section.trim();
+}
+
+function extractUsefulListLines(section) {
+  return section
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .filter((line) => line.startsWith('- ') && !line.includes('_No '));
+}
+
+function formatCollectedSourceFallback(source) {
+  if (!source.includes('# Release Changelog Source')) {
+    return source.trim();
+  }
+
+  const githubNotes = extractMarkdownSection(source, 'GitHub Generated Release Notes');
+  const pullLines = extractUsefulListLines(extractMarkdownSection(source, 'Pull Requests In Range'));
+  const commitLines = extractUsefulListLines(extractMarkdownSection(source, 'Direct Commits In Range'));
+  const lines = [];
+
+  if (pullLines.length > 0) {
+    lines.push('### Pull Requests', '', ...pullLines, '');
+  }
+
+  if (commitLines.length > 0) {
+    lines.push('### Direct Commits', '', ...commitLines, '');
+  }
+
+  if (githubNotes) {
+    const fullChangelogLine = githubNotes
+      .split('\n')
+      .map((line) => line.trim())
+      .find((line) => line.startsWith('**Full Changelog**:'));
+
+    if (fullChangelogLine) {
+      lines.push(fullChangelogLine);
+    } else {
+      lines.push('### GitHub Generated Notes', '', githubNotes);
+    }
+  }
+
+  return lines.join('\n').trim();
+}
+
 function formatFallbackEntry({ releaseTag, previousTag, generatedNotes }) {
   const date = new Date().toISOString().slice(0, 10);
   const lines = [`## ${releaseTag} - ${date}`, ''];
 
-  lines.push(`Built from tag \`${releaseTag}\`.`);
   if (previousTag) {
-    lines.push('');
     lines.push(`Changes since \`${previousTag}\`.`);
+    lines.push('');
   }
 
-  const notes = generatedNotes.trim();
+  const notes = formatCollectedSourceFallback(generatedNotes);
   if (notes) {
-    lines.push('');
     lines.push(notes);
   }
 
@@ -95,7 +148,7 @@ function buildPrompt({ releaseTag, previousTag, generatedNotes }) {
 Release tag: ${releaseTag}
 ${previousCopy}
 
-Rewrite the GitHub-generated release notes into a concise, high-signal Markdown changelog entry.
+Rewrite the collected release source into a concise, high-signal Markdown changelog entry.
 
 Hard requirements:
 - Start with exactly this heading format: ## ${releaseTag} - YYYY-MM-DD
@@ -106,7 +159,7 @@ Hard requirements:
 - Do not include markdown code fences.
 - Do not include legal disclaimers.
 
-GitHub-generated release notes:
+Collected release source:
 
 ${generatedNotes}`;
 }
@@ -226,4 +279,4 @@ if (changelogPath) {
   updateChangelog(changelogPath, entry);
 }
 
-console.log(geminiEntry ? 'Generated changelog with Gemini.' : 'Generated fallback changelog from GitHub release notes.');
+console.log(geminiEntry ? 'Generated changelog with Gemini.' : 'Generated fallback changelog from collected release source.');

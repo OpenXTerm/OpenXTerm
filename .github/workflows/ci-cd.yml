@@ -100,8 +100,15 @@ jobs:
               --jq '.body // ""' > generated-release-notes.md
           fi
 
+          node script/collect_release_notes_input.mjs \
+            --github-notes generated-release-notes.md \
+            --output collected-release-notes-input.md \
+            --release-tag "$RELEASE_TAG" \
+            --previous-tag "$PREVIOUS_TAG" \
+            --target "$TARGET_COMMITISH"
+
           node script/generate_changelog.mjs \
-            --input generated-release-notes.md \
+            --input collected-release-notes-input.md \
             --output generated-changelog-entry.md \
             --release-tag "$RELEASE_TAG" \
             --previous-tag "$PREVIOUS_TAG" \
@@ -413,8 +420,15 @@ jobs:
               --jq '.body // ""' > generated-release-notes.md
           fi
 
+          node script/collect_release_notes_input.mjs \
+            --github-notes generated-release-notes.md \
+            --output collected-release-notes-input.md \
+            --release-tag "$RELEASE_TAG" \
+            --previous-tag "$PREVIOUS_TAG" \
+            --target "$RELEASE_TAG"
+
           node script/generate_changelog.mjs \
-            --input generated-release-notes.md \
+            --input collected-release-notes-input.md \
             --output release-notes.md \
             --release-tag "$RELEASE_TAG" \
             --previous-tag "$PREVIOUS_TAG"
