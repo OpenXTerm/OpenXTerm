@@ -56,6 +56,8 @@ jobs:
         id: prepare
         shell: bash
         env:
+          GH_TOKEN: ${{ github.token }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           RELEASE_VERSION_INPUT: ${{ inputs.version }}
         run: |
           set -euo pipefail
@@ -77,11 +79,39 @@ jobs:
             exit 0
           fi
 
+          mapfile -t VERSION_TAGS < <(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' | sort -V)
+          PREVIOUS_TAG=""
+
+          for TAG in "${VERSION_TAGS[@]}"; do
+            PREVIOUS_TAG="$TAG"
+          done
+
+          TARGET_COMMITISH="$(git rev-parse HEAD)"
+          if [ -n "$PREVIOUS_TAG" ]; then
+            gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+              -f tag_name="$RELEASE_TAG" \
+              -f previous_tag_name="$PREVIOUS_TAG" \
+              -f target_commitish="$TARGET_COMMITISH" \
+              --jq '.body // ""' > generated-release-notes.md
+          else
+            gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+              -f tag_name="$RELEASE_TAG" \
+              -f target_commitish="$TARGET_COMMITISH" \
+              --jq '.body // ""' > generated-release-notes.md
+          fi
+
+          node script/generate_changelog.mjs \
+            --input generated-release-notes.md \
+            --output generated-changelog-entry.md \
+            --release-tag "$RELEASE_TAG" \
+            --previous-tag "$PREVIOUS_TAG" \
+            --changelog-path CHANGELOG.md
+
           node script/set_version.mjs "$RELEASE_VERSION"
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+          git add CHANGELOG.md package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
 
           if ! git diff --cached --quiet; then
             git commit -m "Release $RELEASE_TAG"
@@ -333,10 +363,16 @@ jobs:
           ref: ${{ needs.prepare-release.outputs.release_tag }}
           fetch-depth: 0
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
       - name: Generate release notes
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           RELEASE_TAG: ${{ needs.prepare-release.outputs.release_tag }}
         run: |
           set -euo pipefail
@@ -377,17 +413,11 @@ jobs:
               --jq '.body // ""' > generated-release-notes.md
           fi
 
-          {
-            echo "Built from tag \`$RELEASE_TAG\`."
-
-            if [ -n "$PREVIOUS_TAG" ]; then
-              echo
-              echo "Changes since \`$PREVIOUS_TAG\`."
-            fi
-
-            echo
-            cat generated-release-notes.md
-          } > release-notes.md
+          node script/generate_changelog.mjs \
+            --input generated-release-notes.md \
+            --output release-notes.md \
+            --release-tag "$RELEASE_TAG" \
+            --previous-tag "$PREVIOUS_TAG"
 
       - name: Download bundled artifacts
         uses: actions/download-artifact@v4

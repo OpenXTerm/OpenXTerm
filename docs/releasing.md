@@ -9,7 +9,7 @@ OpenXTerm releases are manual. Normal commits and pushed tags do not start the C
 - `version`: `0.2.0`
 - `release_type`: `release` or `prerelease`
 
-2. GitHub Actions updates all version files on `main`, creates a release commit, and pushes it:
+2. GitHub Actions generates a `CHANGELOG.md` entry from GitHub release notes, optionally asks Gemini 2.5 Flash to rewrite it when `GEMINI_API_KEY` is configured, validates that pull request references and contributor mentions are preserved, updates all version files on `main`, creates a release commit, and pushes it:
 
 ```bash
 git commit -m "Release v0.2.0"
@@ -21,13 +21,26 @@ git commit -m "Release v0.2.0"
 git tag -a v0.2.0 -m "OpenXTerm v0.2.0"
 ```
 
-4. GitHub Actions checks out that tag, builds the currently enabled release bundles, generates release notes from the previous version tag, and publishes a GitHub Release.
+4. GitHub Actions checks out that tag, builds the currently enabled release bundles, generates polished GitHub Release notes from the same source data, and publishes a GitHub Release.
 
 The local helper is still available if a version must be changed outside CI:
 
 ```bash
 npm run version:set -- 0.2.0
 ```
+
+The changelog generator can also be run locally with an already-generated notes file:
+
+```bash
+npm run changelog:generate -- \
+  --input generated-release-notes.md \
+  --output generated-changelog-entry.md \
+  --release-tag v0.2.0 \
+  --previous-tag v0.1.0 \
+  --changelog-path CHANGELOG.md
+```
+
+Set the GitHub Actions secret `GEMINI_API_KEY` to enable the Gemini rewrite path in CI. If the key is missing, the model call fails, or the model output drops pull request references or contributor mentions, the script falls back to the original GitHub-generated notes.
 
 ## Release Assets
 
@@ -56,7 +69,14 @@ The workflow creates `v<version>`, finds the previous semver-like tag, then asks
 - previous tag
 - selected release tag
 
-Example: running the workflow for `v0.2.0` after `v0.1.0` generates notes for changes since `v0.1.0`.
+Those GitHub-generated notes are the source of truth for pull request references and contributor mentions. The changelog generator then either:
+
+- rewrites them with Gemini 2.5 Flash when `GEMINI_API_KEY` is configured, or
+- uses the GitHub notes directly as a fallback.
+
+The generator validates that pull request URLs, `#123` references, and `@contributor` mentions from the GitHub notes are still present. If validation fails, it uses the fallback notes.
+
+Example: running the workflow for `v0.2.0` after `v0.1.0` creates a `CHANGELOG.md` entry and GitHub Release notes for changes since `v0.1.0`.
 
 ## Manual Build Matrix
 

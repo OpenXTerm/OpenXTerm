@@ -9,6 +9,7 @@
     "dev": "vite --host 127.0.0.1 --port 5173",
     "build": "tsc -b && vite build",
     "check": "tsc -b && eslint . && npm run test",
+    "changelog:generate": "node script/generate_changelog.mjs",
     "lint": "eslint .",
     "preview": "vite preview --host 127.0.0.1 --port 4173",
     "test": "vitest run",
