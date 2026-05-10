@@ -76,5 +76,6 @@ Before triggering the release workflow, update `CHANGELOG.md` manually:
 
    ```markdown
    ## vX.Y.Z (YYYY-MM-DD)
+   ```
 
 2. Create a fresh empty `## Unreleased` section for the next development cycle.

@@ -103,8 +103,8 @@
 - v0.0.1 release version validation
 
 ---
+[Unreleased]: https://github.com/OpenXTerm/OpenXTerm/compare/v0.0.4...HEAD
 [v0.0.4]: https://github.com/OpenXTerm/OpenXTerm/compare/v0.0.3...v0.0.4
 [v0.0.3]: https://github.com/OpenXTerm/OpenXTerm/compare/v0.0.2...v0.0.3
 [v0.0.2]: https://github.com/OpenXTerm/OpenXTerm/compare/v0.0.1...v0.0.2
 [v0.0.1]: https://github.com/OpenXTerm/OpenXTerm/releases/tag/v0.0.1
-https://github.com/OpenXTerm/OpenXTerm/compare/v0.0.4...HEAD
