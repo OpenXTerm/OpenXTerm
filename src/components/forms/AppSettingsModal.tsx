@@ -5,6 +5,7 @@ import {
   DEFAULT_STATUS_BAR_METRICS,
   normalizeUiPreferences,
 } from '../../lib/preferences'
+import { openExternalTarget } from '../../lib/bridge'
 import type {
   SidebarSection,
   StatusBarMetrics,
@@ -48,6 +49,9 @@ const STATUS_BAR_METRIC_OPTIONS: Array<{ value: keyof StatusBarMetrics; label: s
   { value: 'networkUp', label: 'Upload' },
   { value: 'uptime', label: 'Uptime' },
 ]
+
+const THIRD_PARTY_LICENSES_URL = 'https://github.com/OpenXTerm/OpenXTerm/blob/main/THIRD_PARTY_LICENSES.md'
+const TRADEMARKS_URL = 'https://github.com/OpenXTerm/OpenXTerm/blob/main/TRADEMARKS.md'
 
 const SETTINGS_TABS: Array<{
   id: AppSettingsTab
@@ -120,6 +124,15 @@ export function AppSettingsModal({
       setError(saveError instanceof Error ? saveError.message : String(saveError))
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleOpenExternal(target: string) {
+    setError('')
+    try {
+      await openExternalTarget(target)
+    } catch (openError) {
+      setError(openError instanceof Error ? openError.message : String(openError))
     }
   }
 
@@ -317,22 +330,20 @@ export function AppSettingsModal({
                 </p>
 
                 <div className="settings-about-actions" aria-label="Project legal documents">
-                  <a
+                  <button
                     className="ghost-button settings-about-link"
-                    href="https://github.com/OpenXTerm/OpenXTerm/blob/main/THIRD_PARTY_LICENSES.md"
-                    target="_blank"
-                    rel="noreferrer"
+                    type="button"
+                    onClick={() => void handleOpenExternal(THIRD_PARTY_LICENSES_URL)}
                   >
                     Third-party licenses
-                  </a>
-                  <a
+                  </button>
+                  <button
                     className="ghost-button settings-about-link"
-                    href="https://github.com/OpenXTerm/OpenXTerm/blob/main/TRADEMARKS.md"
-                    target="_blank"
-                    rel="noreferrer"
+                    type="button"
+                    onClick={() => void handleOpenExternal(TRADEMARKS_URL)}
                   >
                     Trademarks
-                  </a>
+                  </button>
                 </div>
               </div>
             </section>
@@ -340,16 +351,16 @@ export function AppSettingsModal({
 
           {error && <p className="settings-error">{error}</p>}
 
-          <div className="modal-actions">
-            <button className="ghost-button" type="button" onClick={onClose} disabled={saving}>
-              {activeTab === 'about' ? 'Close' : 'Cancel'}
-            </button>
-            {activeTab !== 'about' && (
+          {activeTab !== 'about' && (
+            <div className="modal-actions">
+              <button className="ghost-button" type="button" onClick={onClose} disabled={saving}>
+                Cancel
+              </button>
               <button className="solid-button" type="submit" disabled={saving}>
                 {saving ? 'Saving...' : 'Save settings'}
               </button>
-            )}
-          </div>
+            </div>
+          )}
         </form>
       </section>
     </div>
