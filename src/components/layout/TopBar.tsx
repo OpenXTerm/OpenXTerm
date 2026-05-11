@@ -24,21 +24,18 @@ const MENUS: TopBarMenu[] = [
     ],
   },
   {
-    label: 'Terminal',
+    label: 'New',
     items: [
       { label: 'New Session', action: 'new-session' },
       { label: 'New Macro', action: 'new-macro' },
-      { label: 'Search in Terminal', action: 'search-terminal' },
-      { label: 'Clear Terminal', action: 'clear-terminal' },
-      { label: 'Reset Terminal', action: 'reset-terminal' },
-      { label: 'Lock OpenXTerm', action: 'lock-app' },
     ],
   },
   {
-    label: 'Sessions',
+    label: 'Terminal',
     items: [
-      { label: 'Show Sessions', action: 'show-sessions' },
-      { label: 'Show SFTP', action: 'show-sftp' },
+      { label: 'Search in Terminal', action: 'search-terminal' },
+      { label: 'Clear Terminal', action: 'clear-terminal' },
+      { label: 'Reset Terminal', action: 'reset-terminal' },
     ],
   },
   {
@@ -48,26 +45,6 @@ const MENUS: TopBarMenu[] = [
       { label: 'Show SFTP', action: 'show-sftp' },
       { label: 'Show Tools', action: 'show-tools' },
       { label: 'Show Macros', action: 'show-macros' },
-    ],
-  },
-  {
-    label: 'Tools',
-    items: [
-      { label: 'Open Tools', action: 'show-tools' },
-    ],
-  },
-  {
-    label: 'Macros',
-    items: [
-      { label: 'New Macro', action: 'new-macro' },
-      { label: 'Show Macros', action: 'show-macros' },
-    ],
-  },
-  {
-    label: 'Help',
-    items: [
-      { label: 'Open Sessions', action: 'show-sessions' },
-      { label: 'About OpenXTerm', action: 'open-about' },
     ],
   },
 ]

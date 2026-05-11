@@ -23,15 +23,15 @@ pub fn install_macos_menu<R: Runtime>(_app: &AppHandle<R>) -> tauri::Result<()> 
             .quit()
             .build()?;
 
-        let terminal_menu = SubmenuBuilder::new(app, "Terminal")
+        let file_menu = SubmenuBuilder::new(app, "File")
             .text("new-session", "New Session")
             .text("new-macro", "New Macro")
-            .separator()
+            .build()?;
+
+        let terminal_menu = SubmenuBuilder::new(app, "Terminal")
             .text("search-terminal", "Search in Terminal")
             .text("clear-terminal", "Clear Terminal")
             .text("reset-terminal", "Reset Terminal")
-            .separator()
-            .text("lock-app", "Lock OpenXTerm")
             .build()?;
 
         let edit_menu = SubmenuBuilder::new(app, "Edit")
@@ -44,11 +44,6 @@ pub fn install_macos_menu<R: Runtime>(_app: &AppHandle<R>) -> tauri::Result<()> 
             .select_all()
             .build()?;
 
-        let sessions_menu = SubmenuBuilder::new(app, "Sessions")
-            .text("show-sessions", "Show Sessions")
-            .text("show-sftp", "Show SFTP")
-            .build()?;
-
         let view_menu = SubmenuBuilder::new(app, "View")
             .text("show-sessions", "Show Sessions")
             .text("show-sftp", "Show SFTP")
@@ -58,35 +53,19 @@ pub fn install_macos_menu<R: Runtime>(_app: &AppHandle<R>) -> tauri::Result<()> 
             .fullscreen()
             .build()?;
 
-        let tools_menu = SubmenuBuilder::new(app, "Tools")
-            .text("show-tools", "Open Tools")
-            .build()?;
-
-        let macros_menu = SubmenuBuilder::new(app, "Macros")
-            .text("new-macro", "New Macro")
-            .text("show-macros", "Show Macros")
-            .build()?;
-
         let window_menu = SubmenuBuilder::new(app, "Window")
             .minimize()
             .separator()
             .close_window()
             .build()?;
 
-        let help_menu = SubmenuBuilder::new(app, "Help")
-            .text("show-sessions", "Open Sessions")
-            .build()?;
-
         let menu = MenuBuilder::new(app)
             .item(&app_menu)
+            .item(&file_menu)
             .item(&terminal_menu)
             .item(&edit_menu)
-            .item(&sessions_menu)
             .item(&view_menu)
-            .item(&tools_menu)
-            .item(&macros_menu)
             .item(&window_menu)
-            .item(&help_menu)
             .build()?;
 
         app.set_menu(menu)?;
