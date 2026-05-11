@@ -52,7 +52,7 @@ interface SidebarProps {
   sshSftpLinks: SessionDefinition[]
   terminalCwdByTabId: Record<string, string>
   macros: MacroDefinition[]
-  preferredSftpSessionId?: string
+  preferredSftpSessionId?: string | null
   onSelectSection: (section: SidebarSection) => void
   onOpenSession: (sessionId: string) => void
   onOpenLinkedSftp: (sessionId: string, linkedSshTabId?: string) => void
@@ -131,10 +131,16 @@ export function Sidebar({
     onDropSessionToFolder,
   })
 
-  const selectedSftpSession =
-    sshSftpLinks.find((session) => session.id === selectedSftpSessionId)
-    ?? sshSftpLinks.find((session) => session.id === preferredSftpSessionId)
-    ?? sshSftpLinks[0]
+  const preferredSftpSession = preferredSftpSessionId
+    ? sshSftpLinks.find((session) => session.id === preferredSftpSessionId)
+    : undefined
+  const selectedSftpSession = preferredSftpSessionId === null
+    ? undefined
+    : (
+        sshSftpLinks.find((session) => session.id === selectedSftpSessionId)
+        ?? preferredSftpSession
+        ?? sshSftpLinks[0]
+      )
 
   const selectedSftpSnapshot = selectedSftpSession ? snapshotsBySessionId[selectedSftpSession.id] : undefined
 
@@ -160,6 +166,13 @@ export function Sidebar({
   }, [])
 
   useEffect(() => {
+    if (preferredSftpSessionId === null) {
+      setSelectedSftpSessionId(null)
+      setSftpLoading(false)
+      setSftpMessage('No active SSH connection for the selected terminal.')
+      return
+    }
+
     if (!sshSftpLinks.length) {
       setSelectedSftpSessionId(null)
       setSnapshotsBySessionId({})

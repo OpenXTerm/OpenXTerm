@@ -289,9 +289,16 @@ export function App() {
   }, [handleMenuAction])
 
   const terminalTabsForSftp = activeTab ? [activeTab, ...tabs.filter((tab) => tab.id !== activeTab.id)] : tabs
+  const canUseTabForLinkedSftp = useCallback((tab: typeof tabs[number]) => (
+    Boolean(tab.sessionId)
+    && tab.kind === 'terminal'
+    && tab.protocol === 'ssh'
+    && !terminalStoppedByTabId[tab.id]
+    && sessionStatusByTabId[tab.id]?.mode !== 'error'
+  ), [sessionStatusByTabId, terminalStoppedByTabId])
   const liveLinkedSftpSessions = Array.from(
     terminalTabsForSftp.reduce((linkedSessions, tab) => {
-      if (!tab.sessionId || tab.kind !== 'terminal' || tab.protocol !== 'ssh' || terminalStoppedByTabId[tab.id]) {
+      if (!canUseTabForLinkedSftp(tab)) {
         return linkedSessions
       }
 
@@ -311,13 +318,18 @@ export function App() {
       return linkedSessions
     }, new Map<string, SessionDefinition>()),
   ).map(([, session]) => session)
-  const preferredSftpSessionId =
+  const activeTabIsSshTerminal = Boolean(
     activeTab?.sessionId
     && activeTab.kind === 'terminal'
-    && activeTab.protocol === 'ssh'
-    && !terminalStoppedByTabId[activeTab.id]
-      ? `linked-sftp-${activeTab.id}`
-      : liveLinkedSftpSessions[0]?.id
+    && activeTab.protocol === 'ssh',
+  )
+  const preferredSftpSessionId = activeTabIsSshTerminal
+    ? (
+        activeTab && canUseTabForLinkedSftp(activeTab)
+          ? `linked-sftp-${activeTab.id}`
+          : null
+      )
+    : liveLinkedSftpSessions[0]?.id
   const sidebarWidth = sidebarWidthDraft ?? (preferences.sidebarWidth ?? 252)
   const folderOptions = sessionFolders.map((folder) => folder.path)
   useEffect(() => {
@@ -332,6 +344,9 @@ export function App() {
 
   useEffect(() => {
     if (!preferredSftpSessionId) {
+      if (preferredSftpSessionId === null) {
+        lastAutoSftpSessionIdRef.current = null
+      }
       return
     }
 
