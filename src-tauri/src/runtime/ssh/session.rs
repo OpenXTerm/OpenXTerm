@@ -19,6 +19,11 @@ use super::{
     guidance::{humanize_ssh_error_message, windows_credential_reuse_message},
 };
 
+enum InteractiveShellRequest {
+    Instrumented,
+    Plain,
+}
+
 pub(in crate::runtime) fn run_remote_ssh_script_with_label(
     session: &SessionDefinition,
     tab_id: &str,
@@ -79,6 +84,31 @@ pub(in crate::runtime) fn open_embedded_ssh_channel(
         "interactive session",
     )?;
 
+    match open_interactive_session_channel(
+        &ssh,
+        terminal_size,
+        x11_config,
+        InteractiveShellRequest::Instrumented,
+    ) {
+        Ok(channel) => Ok(channel),
+        Err(instrumented_error) => open_interactive_session_channel(
+            &ssh,
+            terminal_size,
+            x11_config,
+            InteractiveShellRequest::Plain,
+        )
+        .map_err(|plain_error| {
+            format!("{plain_error}; instrumented shell startup failed first: {instrumented_error}")
+        }),
+    }
+}
+
+fn open_interactive_session_channel(
+    ssh: &LibsshSession,
+    terminal_size: (u16, u16),
+    x11_config: Option<&X11ForwardConfig>,
+    shell_request: InteractiveShellRequest,
+) -> Result<(LibsshChannel, Option<String>), String> {
     let channel = ssh
         .new_channel()
         .map_err(|error| format!("failed to create embedded SSH channel: {error}"))?;
@@ -113,10 +143,13 @@ pub(in crate::runtime) fn open_embedded_ssh_channel(
     } else {
         None
     };
-    channel
-        .request_shell()
-        .or_else(|_| channel.request_exec(&embedded_ssh_shell_command()))
-        .map_err(|error| format!("failed to start embedded SSH shell: {error}"))?;
+    match shell_request {
+        InteractiveShellRequest::Instrumented => {
+            channel.request_exec(&embedded_ssh_shell_command())
+        }
+        InteractiveShellRequest::Plain => channel.request_shell(),
+    }
+    .map_err(|error| format!("failed to start embedded SSH shell: {error}"))?;
 
     Ok((channel, x11_warning))
 }

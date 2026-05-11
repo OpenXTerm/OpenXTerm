@@ -1,6 +1,8 @@
 mod auth;
 pub(super) mod guidance;
 mod interactive;
+mod interactive_reader;
+mod interactive_text;
 mod session;
 
 pub(in crate::runtime) use auth::{cleanup_ssh_runtime_metadata, clear_ssh_runtime_auth};
