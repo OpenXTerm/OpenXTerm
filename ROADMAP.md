@@ -345,6 +345,7 @@ Goal: users should be able to install OpenXTerm without building from source.
 
 - Tauri bundle config exists.
 - Build script exists.
+- Changelog generation (`CHANGELOG.md` seeded from v0.0.1 to v0.0.4, Keep a Changelog format).
 
 ### In Progress
 
@@ -360,7 +361,6 @@ Goal: users should be able to install OpenXTerm without building from source.
 - Linux `.deb`.
 - Release hardening in CI.
 - GitHub Releases workflow polish.
-- Changelog generation.
 - Decide updater strategy.
 
 ## v0.7 Beta: X11 And Remote GUI
