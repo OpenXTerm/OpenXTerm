@@ -104,10 +104,23 @@ export interface LibsshProbePayload {
 }
 
 export interface AppBootstrap {
+  schemaVersion?: number
   sessions: SessionDefinition[]
   sessionFolders: SessionFolderDefinition[]
   macros: MacroDefinition[]
   preferences: UiPreferences
+}
+
+export interface StorageExportPayload {
+  path: string
+  schemaVersion: number
+}
+
+export interface StorageBackupInfo {
+  fileName: string
+  path: string
+  sizeBytes: number
+  createdAt: string
 }
 
 export interface WorkspaceTab {

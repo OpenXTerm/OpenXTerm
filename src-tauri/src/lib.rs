@@ -25,6 +25,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::bootstrap_state,
+            commands::export_storage,
+            commands::list_storage_backups,
             commands::save_session,
             commands::save_session_folder,
             commands::delete_session,

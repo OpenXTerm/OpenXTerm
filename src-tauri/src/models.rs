@@ -1,5 +1,11 @@
 use serde::{Deserialize, Serialize};
 
+pub const CURRENT_STORAGE_SCHEMA_VERSION: u32 = 2;
+
+pub fn current_storage_schema_version() -> u32 {
+    CURRENT_STORAGE_SCHEMA_VERSION
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionDefinition {
@@ -142,11 +148,29 @@ pub struct StatusBarMetrics {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StorageModel {
+    #[serde(default = "current_storage_schema_version")]
+    pub schema_version: u32,
     pub sessions: Vec<SessionDefinition>,
     #[serde(default)]
     pub session_folders: Vec<SessionFolderDefinition>,
     pub macros: Vec<MacroDefinition>,
     pub preferences: UiPreferences,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StorageExportPayload {
+    pub path: String,
+    pub schema_version: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StorageBackupInfo {
+    pub file_name: String,
+    pub path: String,
+    pub size_bytes: u64,
+    pub created_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

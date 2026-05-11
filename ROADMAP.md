@@ -33,6 +33,7 @@ OpenXTerm is independent software. It is not affiliated with, endorsed by, or co
 - Fixed batch transfer aggregation so multi-item downloads do not regress from running progress back to queued/waiting.
 - Added Windows SFTP folder drag-out support by expanding dragged folders into virtual file entries for Explorer.
 - Added runtime guards for remote properties-window `localStorage` JSON payloads/results.
+- Added versioned storage schema migrations with pre-migration backups, atomic state-file replacement, and backend export/list-backup commands.
 - Kept X11 failure detection pattern matching data-driven and moved the remaining inline request-failure match into the pattern table.
 - Introduced first-pass CSS color variables for the core dark surface, border, hover, text, and accent colors.
 - Expanded shared CSS color variables for repeated sidebar surfaces, borders, text tones, and accent states.
@@ -158,7 +159,7 @@ The documentation/code audit items from the May 2026 cleanup pass are closed. Fu
 - SFTP authentication reuse needs more real-world hardening, especially on Windows where helper connections still cannot recover a password after the originating SSH tab closes.
 - Packaging/signing/notarization is not release-ready.
 - GitHub Releases are currently expected to ship unsigned / unnotarized artifacts until signing secrets and release hardening are added.
-- Storage migrations need versioning before stable release.
+- Storage migrations are versioned now; future schema changes must add incremental migration tests before release.
 - Automated tests now have a small frontend/backend baseline, but coverage is still narrow and needs expansion around transfers, transports, and storage migrations.
 - Public screenshots and demo clips are not prepared.
 - First-pass trademark and third-party license notices exist through [#28](https://github.com/OpenXTerm/OpenXTerm/issues/28), but automated dependency/license audit still needs to be completed before stable release through [#29](https://github.com/OpenXTerm/OpenXTerm/issues/29).
@@ -180,9 +181,8 @@ These must be handled before calling OpenXTerm stable.
   - Linux AppImage and/or `.deb`.
   - repeatable release workflow.
 - Storage migrations:
-  - versioned storage schema.
-  - safe migration path for existing users.
-  - backup/export story.
+  - incremental tests for every future schema bump.
+  - upgrade validation from previous alpha/beta storage snapshots.
 - Crash audit:
   - native desktop drag.
   - transfer queue.

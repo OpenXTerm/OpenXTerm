@@ -17,6 +17,8 @@ import type {
   SessionDefinition,
   SessionFolderDefinition,
   SessionStatusPayload,
+  StorageBackupInfo,
+  StorageExportPayload,
   StatusBarMetrics,
   SystemAuthSupport,
   TerminalCwdPayload,
@@ -170,6 +172,7 @@ function readBrowserState(): AppBootstrap {
   }
 
   return {
+    schemaVersion: typeof parsed.schemaVersion === 'number' ? parsed.schemaVersion : seed.schemaVersion,
     sessions: isSessionList(parsed.sessions) ? parsed.sessions : seed.sessions,
     sessionFolders: isSessionFolderList(parsed.sessionFolders) ? parsed.sessionFolders : seed.sessionFolders,
     macros: isMacroList(parsed.macros) ? parsed.macros : seed.macros,
@@ -186,6 +189,35 @@ export async function bootstrapState() {
     return invoke<AppBootstrap>('bootstrap_state')
   }
   return readBrowserState()
+}
+
+export async function exportStorage() {
+  if (isTauriRuntime()) {
+    return invoke<StorageExportPayload>('export_storage')
+  }
+
+  const state = readBrowserState()
+  const payload = {
+    path: 'localStorage:openxterm.browser.state',
+    schemaVersion: state.schemaVersion ?? 2,
+  }
+  localStorage.setItem(`${BROWSER_STORAGE_KEY}.export`, JSON.stringify(state))
+  return payload
+}
+
+export async function listStorageBackups() {
+  if (isTauriRuntime()) {
+    return invoke<StorageBackupInfo[]>('list_storage_backups')
+  }
+
+  return localStorage.getItem(`${BROWSER_STORAGE_KEY}.export`)
+    ? [{
+        fileName: `${BROWSER_STORAGE_KEY}.export`,
+        path: `localStorage:${BROWSER_STORAGE_KEY}.export`,
+        sizeBytes: localStorage.getItem(`${BROWSER_STORAGE_KEY}.export`)?.length ?? 0,
+        createdAt: 'browser-local',
+      }]
+    : []
 }
 
 export async function saveSession(session: SessionDefinition) {

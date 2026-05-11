@@ -4,7 +4,8 @@ use crate::{
     drag,
     models::{
         LibsshProbePayload, LocalX11SupportPayload, MacroDefinition, RemoteDragEntry,
-        SessionDefinition, SessionFolderDefinition, StorageModel, UiPreferences,
+        SessionDefinition, SessionFolderDefinition, StorageBackupInfo, StorageExportPayload,
+        StorageModel, UiPreferences,
     },
     platform::{
         auth::{
@@ -14,13 +15,26 @@ use crate::{
         x11 as x11_support,
     },
     runtime::AppRuntime,
-    storage::{load_storage, save_storage},
+    storage::{
+        export_storage_snapshot, list_storage_backups as list_storage_backup_files, load_storage,
+        save_storage,
+    },
     transfer,
 };
 
 #[tauri::command]
 pub fn bootstrap_state(app: AppHandle) -> Result<StorageModel, String> {
     load_storage(&app)
+}
+
+#[tauri::command]
+pub fn export_storage(app: AppHandle) -> Result<StorageExportPayload, String> {
+    export_storage_snapshot(&app)
+}
+
+#[tauri::command]
+pub fn list_storage_backups(app: AppHandle) -> Result<Vec<StorageBackupInfo>, String> {
+    list_storage_backup_files(&app)
 }
 
 #[tauri::command]

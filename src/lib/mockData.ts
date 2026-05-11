@@ -36,6 +36,7 @@ const DEFAULT_MACROS: MacroDefinition[] = [
 
 export function createDefaultBootstrap(): AppBootstrap {
   return {
+    schemaVersion: 2,
     sessions: [],
     sessionFolders: [],
     macros: DEFAULT_MACROS.map((item) => ({ ...item })),
