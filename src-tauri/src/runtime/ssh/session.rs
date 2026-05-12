@@ -3,14 +3,15 @@ use std::{fs, io::Read};
 use std::time::Duration;
 
 use libssh_rs::{
-    AuthStatus, Channel as LibsshChannel, Session as LibsshSession, Sftp as LibsshSftp, SshOption,
+    AuthStatus, Channel as LibsshChannel, Session as LibsshSession, Sftp as LibsshSftp, SshKey,
+    SshOption,
 };
 
 use crate::{models::SessionDefinition, proxy::configure_libssh_proxy_socket};
 
 const EMBEDDED_SSH_TIMEOUT: Duration = Duration::from_secs(8);
-const LEGACY_RSA_PUBLIC_KEY_ACCEPTED_TYPES: &str =
-    "ssh-rsa,rsa-sha2-512,rsa-sha2-256,ssh-ed25519,ecdsa-sha2-nistp521,ecdsa-sha2-nistp384,ecdsa-sha2-nistp256";
+const EMBEDDED_SSH_PUBLIC_KEY_ACCEPTED_TYPES: &str =
+    "rsa-sha2-512,rsa-sha2-256,ssh-ed25519,ecdsa-sha2-nistp521,ecdsa-sha2-nistp384,ecdsa-sha2-nistp256,ssh-rsa";
 
 use super::super::x11::X11ForwardConfig;
 use super::super::{expand_tilde, shell_quote};
@@ -201,15 +202,6 @@ pub(in crate::runtime) fn should_retry_interactive_password(
         || normalized.contains("access denied")
 }
 
-fn should_retry_key_auth_with_legacy_rsa(error: &str) -> bool {
-    let normalized = error.to_ascii_lowercase();
-    normalized.contains("publickey")
-        && (normalized.contains("access denied")
-            || normalized.contains("authentication failed")
-            || normalized.contains("requestdenied")
-            || normalized.contains("request denied"))
-}
-
 fn auth_status_error(method: &str, context: &str, status: AuthStatus) -> String {
     match status {
         AuthStatus::Denied => {
@@ -244,80 +236,50 @@ fn ensure_auth_success(
     ))
 }
 
-fn userauth_public_key_auto_with_legacy_rsa_fallback(
+fn userauth_with_private_key_file(
     ssh: &LibsshSession,
     key_path: &str,
     passphrase: Option<&str>,
     context: &str,
     session: &SessionDefinition,
 ) -> Result<(), String> {
-    match ssh.userauth_public_key_auto(Some(key_path), passphrase) {
-        Ok(AuthStatus::Success) => Ok(()),
-        Ok(status) => {
-            if status != AuthStatus::Denied {
-                return ensure_auth_success(status, "key", context, session);
-            }
+    // Load the exact private key the user picked, instead of going through
+    // libssh's automatic identity-file probe. The auto probe ignores custom
+    // file paths (it only walks default `~/.ssh/id_*` names and the agent),
+    // so a key like `id_rsa_yadro` or `keys/server.pem` was silently skipped
+    // before this path existed.
+    let private_key = SshKey::from_privkey_file(key_path, passphrase).map_err(|error| {
+        humanize_ssh_error_message(
+            &format!(
+                "embedded SSH {context} failed to load private key from {key_path}: {error}"
+            ),
+            session,
+        )
+    })?;
 
-            ssh.set_option(SshOption::PublicKeyAcceptedTypes(
-                LEGACY_RSA_PUBLIC_KEY_ACCEPTED_TYPES.into(),
-            ))
-            .map_err(|error| {
-                humanize_ssh_error_message(
-                    &format!(
-                        "embedded SSH {context} failed to enable legacy ssh-rsa key signatures: {error}"
-                    ),
-                    session,
-                )
-            })?;
+    // Enable the legacy `ssh-rsa` signature before the first attempt so older
+    // OpenSSH/Dropbear servers work without a retry round trip. Modern
+    // algorithms come first; `ssh-rsa` is the tail and libssh picks whatever
+    // the server actually advertises.
+    ssh.set_option(SshOption::PublicKeyAcceptedTypes(
+        EMBEDDED_SSH_PUBLIC_KEY_ACCEPTED_TYPES.into(),
+    ))
+    .map_err(|error| {
+        humanize_ssh_error_message(
+            &format!(
+                "embedded SSH {context} failed to configure key signature algorithms: {error}"
+            ),
+            session,
+        )
+    })?;
 
-            ssh.userauth_public_key_auto(Some(key_path), passphrase)
-                .map_err(|legacy_error| {
-                    humanize_ssh_error_message(
-                        &format!(
-                            "embedded SSH {context} key authentication failed after enabling legacy ssh-rsa signatures: {legacy_error}. Initial status: {status:?}"
-                        ),
-                        session,
-                    )
-                })
-                .and_then(|legacy_status| {
-                    ensure_auth_success(legacy_status, "key", context, session)
-                })
-        }
-        Err(initial_error) => {
-            let initial_message = initial_error.to_string();
-            if !should_retry_key_auth_with_legacy_rsa(&initial_message) {
-                return Err(humanize_ssh_error_message(
-                    &format!("embedded SSH {context} key authentication failed: {initial_message}"),
-                    session,
-                ));
-            }
-
-            ssh.set_option(SshOption::PublicKeyAcceptedTypes(
-                LEGACY_RSA_PUBLIC_KEY_ACCEPTED_TYPES.into(),
-            ))
-            .map_err(|error| {
-                humanize_ssh_error_message(
-                    &format!(
-                        "embedded SSH {context} failed to enable legacy ssh-rsa key signatures: {error}"
-                    ),
-                    session,
-                )
-            })?;
-
-            ssh.userauth_public_key_auto(Some(key_path), passphrase)
-                .map_err(|legacy_error| {
-                    humanize_ssh_error_message(
-                        &format!(
-                            "embedded SSH {context} key authentication failed after enabling legacy ssh-rsa signatures: {legacy_error}. Initial failure: {initial_message}"
-                        ),
-                        session,
-                    )
-                })
-                .and_then(|legacy_status| {
-                    ensure_auth_success(legacy_status, "key", context, session)
-                })
-        }
-    }
+    let status = ssh.userauth_publickey(None, &private_key).map_err(|error| {
+        humanize_ssh_error_message(
+            &format!("embedded SSH {context} key authentication failed: {error}"),
+            session,
+        )
+    })?;
+    ensure_auth_success(status, "key", context, session)
 }
 
 fn connect_embedded_ssh_session_with_username(
@@ -394,9 +356,7 @@ fn connect_embedded_ssh_session_with_username(
                         .as_deref()
                         .filter(|value| !value.is_empty())
                 });
-            userauth_public_key_auto_with_legacy_rsa_fallback(
-                &ssh, &expanded, passphrase, context, session,
-            )?;
+            userauth_with_private_key_file(&ssh, &expanded, passphrase, context, session)?;
         }
         _ => {
             let status = ssh.userauth_agent(Some(username)).map_err(|error| {
@@ -488,26 +448,18 @@ pub(crate) fn open_embedded_sftp(
 mod tests {
     use libssh_rs::AuthStatus;
 
-    use super::{auth_status_error, should_retry_key_auth_with_legacy_rsa};
+    use super::{auth_status_error, EMBEDDED_SSH_PUBLIC_KEY_ACCEPTED_TYPES};
 
     #[test]
-    fn retries_publickey_access_denied_with_legacy_rsa() {
-        assert!(should_retry_key_auth_with_legacy_rsa(
-            "RequestDenied: Access denied for 'publickey'. Authentication that can continue: publickey,password",
-        ));
-        assert!(should_retry_key_auth_with_legacy_rsa(
-            "embedded SSH interactive session key authentication failed: authentication failed for publickey",
-        ));
-    }
-
-    #[test]
-    fn does_not_retry_unrelated_key_errors_with_legacy_rsa() {
-        assert!(!should_retry_key_auth_with_legacy_rsa(
-            "failed to read private key file: permission denied",
-        ));
-        assert!(!should_retry_key_auth_with_legacy_rsa(
-            "password authentication failed",
-        ));
+    fn public_key_accepted_types_include_legacy_ssh_rsa_after_sha2() {
+        let types = EMBEDDED_SSH_PUBLIC_KEY_ACCEPTED_TYPES;
+        let sha2 = types.find("rsa-sha2-512").expect("rsa-sha2-512 must be listed");
+        let legacy = types.find("ssh-rsa").expect("legacy ssh-rsa must be listed");
+        assert!(
+            sha2 < legacy,
+            "modern SHA-2 RSA must be advertised before legacy ssh-rsa so Dropbear-style \
+             servers still negotiate SHA-2 when they accept it"
+        );
     }
 
     #[test]
