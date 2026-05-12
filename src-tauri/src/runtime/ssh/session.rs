@@ -3,12 +3,15 @@ use std::{fs, io::Read};
 use std::time::Duration;
 
 use libssh_rs::{
-    AuthStatus, Channel as LibsshChannel, Session as LibsshSession, Sftp as LibsshSftp, SshOption,
+    AuthStatus, Channel as LibsshChannel, Session as LibsshSession, Sftp as LibsshSftp, SshKey,
+    SshOption,
 };
 
 use crate::{models::SessionDefinition, proxy::configure_libssh_proxy_socket};
 
 const EMBEDDED_SSH_TIMEOUT: Duration = Duration::from_secs(8);
+const MODERN_PUBLIC_KEY_ACCEPTED_TYPES: &str =
+    "rsa-sha2-512,rsa-sha2-256,ssh-ed25519,ecdsa-sha2-nistp521,ecdsa-sha2-nistp384,ecdsa-sha2-nistp256";
 const LEGACY_RSA_PUBLIC_KEY_ACCEPTED_TYPES: &str =
     "ssh-rsa,rsa-sha2-512,rsa-sha2-256,ssh-ed25519,ecdsa-sha2-nistp521,ecdsa-sha2-nistp384,ecdsa-sha2-nistp256";
 
@@ -244,33 +247,33 @@ fn ensure_auth_success(
     ))
 }
 
-fn userauth_public_key_auto_with_legacy_rsa_fallback(
+fn userauth_public_key_with_configured_identity(
     ssh: &LibsshSession,
     key_path: &str,
     passphrase: Option<&str>,
     context: &str,
     session: &SessionDefinition,
 ) -> Result<(), String> {
-    match ssh.userauth_public_key_auto(Some(key_path), passphrase) {
+    let private_key = SshKey::from_privkey_file(key_path, passphrase).map_err(|error| {
+        humanize_ssh_error_message(
+            &format!("embedded SSH {context} failed to load private key: {error}"),
+            session,
+        )
+    })?;
+
+    match ssh.userauth_publickey(None, &private_key) {
         Ok(AuthStatus::Success) => Ok(()),
         Ok(status) => {
             if status != AuthStatus::Denied {
                 return ensure_auth_success(status, "key", context, session);
             }
+            if !session.legacy_rsa_sha1_signatures {
+                return ensure_auth_success(status, "key", context, session);
+            }
 
-            ssh.set_option(SshOption::PublicKeyAcceptedTypes(
-                LEGACY_RSA_PUBLIC_KEY_ACCEPTED_TYPES.into(),
-            ))
-            .map_err(|error| {
-                humanize_ssh_error_message(
-                    &format!(
-                        "embedded SSH {context} failed to enable legacy ssh-rsa key signatures: {error}"
-                    ),
-                    session,
-                )
-            })?;
+            enable_legacy_rsa_key_signatures(ssh, context, session)?;
 
-            ssh.userauth_public_key_auto(Some(key_path), passphrase)
+            ssh.userauth_publickey(None, &private_key)
                 .map_err(|legacy_error| {
                     humanize_ssh_error_message(
                         &format!(
@@ -285,26 +288,18 @@ fn userauth_public_key_auto_with_legacy_rsa_fallback(
         }
         Err(initial_error) => {
             let initial_message = initial_error.to_string();
-            if !should_retry_key_auth_with_legacy_rsa(&initial_message) {
+            if !session.legacy_rsa_sha1_signatures
+                || !should_retry_key_auth_with_legacy_rsa(&initial_message)
+            {
                 return Err(humanize_ssh_error_message(
                     &format!("embedded SSH {context} key authentication failed: {initial_message}"),
                     session,
                 ));
             }
 
-            ssh.set_option(SshOption::PublicKeyAcceptedTypes(
-                LEGACY_RSA_PUBLIC_KEY_ACCEPTED_TYPES.into(),
-            ))
-            .map_err(|error| {
-                humanize_ssh_error_message(
-                    &format!(
-                        "embedded SSH {context} failed to enable legacy ssh-rsa key signatures: {error}"
-                    ),
-                    session,
-                )
-            })?;
+            enable_legacy_rsa_key_signatures(ssh, context, session)?;
 
-            ssh.userauth_public_key_auto(Some(key_path), passphrase)
+            ssh.userauth_publickey(None, &private_key)
                 .map_err(|legacy_error| {
                     humanize_ssh_error_message(
                         &format!(
@@ -318,6 +313,50 @@ fn userauth_public_key_auto_with_legacy_rsa_fallback(
                 })
         }
     }
+}
+
+fn enable_legacy_rsa_key_signatures(
+    ssh: &LibsshSession,
+    context: &str,
+    session: &SessionDefinition,
+) -> Result<(), String> {
+    configure_public_key_accepted_types(
+        ssh,
+        LEGACY_RSA_PUBLIC_KEY_ACCEPTED_TYPES,
+        "legacy ssh-rsa key signatures",
+        context,
+        session,
+    )
+}
+
+fn enable_modern_key_signatures(
+    ssh: &LibsshSession,
+    context: &str,
+    session: &SessionDefinition,
+) -> Result<(), String> {
+    configure_public_key_accepted_types(
+        ssh,
+        MODERN_PUBLIC_KEY_ACCEPTED_TYPES,
+        "modern key signatures",
+        context,
+        session,
+    )
+}
+
+fn configure_public_key_accepted_types(
+    ssh: &LibsshSession,
+    accepted_types: &str,
+    label: &str,
+    context: &str,
+    session: &SessionDefinition,
+) -> Result<(), String> {
+    ssh.set_option(SshOption::PublicKeyAcceptedTypes(accepted_types.into()))
+        .map_err(|error| {
+            humanize_ssh_error_message(
+                &format!("embedded SSH {context} failed to enable {label}: {error}"),
+                session,
+            )
+        })
 }
 
 fn connect_embedded_ssh_session_with_username(
@@ -346,6 +385,13 @@ fn connect_embedded_ssh_session_with_username(
         .map_err(|error| {
             format!("failed to configure embedded SSH global known_hosts path: {error}")
         })?;
+    if session.auth_type == "key" {
+        if session.legacy_rsa_sha1_signatures {
+            enable_legacy_rsa_key_signatures(&ssh, context, session)?;
+        } else {
+            enable_modern_key_signatures(&ssh, context, session)?;
+        }
+    }
     configure_libssh_proxy_socket(&ssh, session)?;
     ssh.connect().map_err(|error| {
         humanize_ssh_error_message(
@@ -394,7 +440,7 @@ fn connect_embedded_ssh_session_with_username(
                         .as_deref()
                         .filter(|value| !value.is_empty())
                 });
-            userauth_public_key_auto_with_legacy_rsa_fallback(
+            userauth_public_key_with_configured_identity(
                 &ssh, &expanded, passphrase, context, session,
             )?;
         }

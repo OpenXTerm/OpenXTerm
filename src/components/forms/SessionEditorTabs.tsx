@@ -514,6 +514,48 @@ export function SessionEditorAdvancedTab({
 }) {
   return (
     <section className="session-editor-tab-panel">
+      <div className="session-editor-inline-heading">SSH compatibility</div>
+      <div className="session-auth-grid" role="radiogroup" aria-label="Legacy RSA SHA1 signature mode">
+        <button
+          className={`session-auth-option ${!draft.legacyRsaSha1Signatures ? 'active' : ''}`}
+          type="button"
+          role="radio"
+          aria-checked={!draft.legacyRsaSha1Signatures}
+          onClick={() => updateDraft({ legacyRsaSha1Signatures: false })}
+        >
+          <span className="session-auth-icon">
+            <ShieldOff size={14} />
+          </span>
+          <span className="session-auth-copy">
+            <strong>Modern</strong>
+            <span>Use current public key signatures.</span>
+          </span>
+        </button>
+
+        <button
+          className={`session-auth-option ${draft.legacyRsaSha1Signatures ? 'active' : ''}`}
+          type="button"
+          role="radio"
+          aria-checked={draft.legacyRsaSha1Signatures}
+          onClick={() => updateDraft({ legacyRsaSha1Signatures: true })}
+        >
+          <span className="session-auth-icon">
+            <KeyRound size={14} />
+          </span>
+          <span className="session-auth-copy">
+            <strong>Legacy RSA/SHA1</strong>
+            <span>For older BMCs and SSH servers.</span>
+          </span>
+        </button>
+      </div>
+
+      {draft.legacyRsaSha1Signatures && (
+        <div className="editor-hint">
+          Enables ssh-rsa signatures for private-key authentication. Use only for servers that reject modern RSA signatures.
+        </div>
+      )}
+
+      <div className="session-editor-inline-heading">X11 forwarding</div>
       <div className="session-auth-grid" role="radiogroup" aria-label="X11 forwarding mode">
         <button
           className={`session-auth-option ${!draft.x11Forwarding ? 'active' : ''}`}

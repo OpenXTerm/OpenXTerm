@@ -37,6 +37,8 @@ pub struct SessionDefinition {
     #[serde(default)]
     pub x11_display: Option<String>,
     #[serde(default)]
+    pub legacy_rsa_sha1_signatures: bool,
+    #[serde(default)]
     pub terminal_font_family: Option<String>,
     #[serde(default)]
     pub terminal_font_size: Option<u16>,
