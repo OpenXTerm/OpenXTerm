@@ -22,6 +22,7 @@ export interface SessionDefinition {
   x11Forwarding?: boolean
   x11Trusted?: boolean
   x11Display?: string
+  legacyRsaSha1Signatures?: boolean
   terminalFontFamily?: string
   terminalFontSize?: number
   terminalForeground?: string
@@ -202,6 +203,7 @@ export interface SessionDraft {
   x11Forwarding: boolean
   x11Trusted: boolean
   x11Display: string
+  legacyRsaSha1Signatures: boolean
   terminalFontFamily: string
   terminalFontSize: number
   terminalForeground: string

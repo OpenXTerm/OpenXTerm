@@ -3,12 +3,27 @@ use std::{fs, io::Read};
 use std::time::Duration;
 
 use libssh_rs::{
-    AuthStatus, Channel as LibsshChannel, Session as LibsshSession, Sftp as LibsshSftp, SshOption,
+    AuthStatus, Channel as LibsshChannel, Session as LibsshSession, Sftp as LibsshSftp, SshKey,
+    SshOption,
 };
 
 use crate::{models::SessionDefinition, proxy::configure_libssh_proxy_socket};
 
 const EMBEDDED_SSH_TIMEOUT: Duration = Duration::from_secs(8);
+const MODERN_KEY_EXCHANGE: &str =
+    "curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group18-sha512,diffie-hellman-group16-sha512";
+const MODERN_HOST_KEY_TYPES: &str = "ssh-ed25519,rsa-sha2-512,rsa-sha2-256";
+const MODERN_CIPHERS: &str =
+    "chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com";
+const MODERN_HMACS: &str = "hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com";
+const MODERN_PUBLIC_KEY_ACCEPTED_TYPES: &str =
+    "ssh-ed25519,ecdsa-sha2-nistp521,ecdsa-sha2-nistp384,ecdsa-sha2-nistp256";
+const LEGACY_KEY_EXCHANGE: &str =
+    "ecdh-sha2-nistp256,ecdh-sha2-nistp384,ecdh-sha2-nistp521,diffie-hellman-group-exchange-sha256";
+const LEGACY_HOST_KEY_TYPES: &str =
+    "ecdsa-sha2-nistp384,ecdsa-sha2-nistp256,ecdsa-sha2-nistp521,ssh-rsa,ssh-dss,rsa-sha2-512,rsa-sha2-256";
+const LEGACY_CIPHERS: &str = "aes128-ctr,aes192-ctr,aes256-ctr";
+const LEGACY_HMACS: &str = "hmac-sha2-256,hmac-sha2-512";
 const LEGACY_RSA_PUBLIC_KEY_ACCEPTED_TYPES: &str =
     "ssh-rsa,rsa-sha2-512,rsa-sha2-256,ssh-ed25519,ecdsa-sha2-nistp521,ecdsa-sha2-nistp384,ecdsa-sha2-nistp256";
 
@@ -244,33 +259,42 @@ fn ensure_auth_success(
     ))
 }
 
-fn userauth_public_key_auto_with_legacy_rsa_fallback(
+fn userauth_public_key_with_configured_identity(
     ssh: &LibsshSession,
     key_path: &str,
     passphrase: Option<&str>,
     context: &str,
     session: &SessionDefinition,
 ) -> Result<(), String> {
-    match ssh.userauth_public_key_auto(Some(key_path), passphrase) {
+    if !session.legacy_rsa_sha1_signatures && private_key_file_looks_like_rsa(key_path) {
+        return Err(humanize_ssh_error_message(
+            &format!(
+                "embedded SSH {context} modern key authentication rejects RSA private keys. Enable RSA compatibility for legacy SSH endpoints or use an Ed25519/ECDSA key."
+            ),
+            session,
+        ));
+    }
+
+    let private_key = SshKey::from_privkey_file(key_path, passphrase).map_err(|error| {
+        humanize_ssh_error_message(
+            &format!("embedded SSH {context} failed to load private key: {error}"),
+            session,
+        )
+    })?;
+
+    match ssh.userauth_publickey(None, &private_key) {
         Ok(AuthStatus::Success) => Ok(()),
         Ok(status) => {
             if status != AuthStatus::Denied {
                 return ensure_auth_success(status, "key", context, session);
             }
+            if !session.legacy_rsa_sha1_signatures {
+                return ensure_auth_success(status, "key", context, session);
+            }
 
-            ssh.set_option(SshOption::PublicKeyAcceptedTypes(
-                LEGACY_RSA_PUBLIC_KEY_ACCEPTED_TYPES.into(),
-            ))
-            .map_err(|error| {
-                humanize_ssh_error_message(
-                    &format!(
-                        "embedded SSH {context} failed to enable legacy ssh-rsa key signatures: {error}"
-                    ),
-                    session,
-                )
-            })?;
+            enable_legacy_rsa_key_signatures(ssh, context, session)?;
 
-            ssh.userauth_public_key_auto(Some(key_path), passphrase)
+            ssh.userauth_publickey(None, &private_key)
                 .map_err(|legacy_error| {
                     humanize_ssh_error_message(
                         &format!(
@@ -285,26 +309,18 @@ fn userauth_public_key_auto_with_legacy_rsa_fallback(
         }
         Err(initial_error) => {
             let initial_message = initial_error.to_string();
-            if !should_retry_key_auth_with_legacy_rsa(&initial_message) {
+            if !session.legacy_rsa_sha1_signatures
+                || !should_retry_key_auth_with_legacy_rsa(&initial_message)
+            {
                 return Err(humanize_ssh_error_message(
                     &format!("embedded SSH {context} key authentication failed: {initial_message}"),
                     session,
                 ));
             }
 
-            ssh.set_option(SshOption::PublicKeyAcceptedTypes(
-                LEGACY_RSA_PUBLIC_KEY_ACCEPTED_TYPES.into(),
-            ))
-            .map_err(|error| {
-                humanize_ssh_error_message(
-                    &format!(
-                        "embedded SSH {context} failed to enable legacy ssh-rsa key signatures: {error}"
-                    ),
-                    session,
-                )
-            })?;
+            enable_legacy_rsa_key_signatures(ssh, context, session)?;
 
-            ssh.userauth_public_key_auto(Some(key_path), passphrase)
+            ssh.userauth_publickey(None, &private_key)
                 .map_err(|legacy_error| {
                     humanize_ssh_error_message(
                         &format!(
@@ -318,6 +334,213 @@ fn userauth_public_key_auto_with_legacy_rsa_fallback(
                 })
         }
     }
+}
+
+fn private_key_file_looks_like_rsa(key_path: &str) -> bool {
+    let Ok(contents) = fs::read_to_string(key_path) else {
+        return false;
+    };
+    if contents.contains("BEGIN RSA PRIVATE KEY") || contents.contains("ssh-rsa") {
+        return true;
+    }
+
+    let Some(body) = openssh_private_key_base64_body(&contents) else {
+        return false;
+    };
+    base64_decode(body.as_bytes())
+        .map(|decoded| {
+            decoded
+                .windows(b"ssh-rsa".len())
+                .any(|window| window == b"ssh-rsa")
+        })
+        .unwrap_or(false)
+}
+
+fn openssh_private_key_base64_body(contents: &str) -> Option<String> {
+    let mut inside = false;
+    let mut body = String::new();
+    for line in contents.lines() {
+        match line.trim() {
+            "-----BEGIN OPENSSH PRIVATE KEY-----" => {
+                inside = true;
+            }
+            "-----END OPENSSH PRIVATE KEY-----" => {
+                return inside.then_some(body);
+            }
+            value if inside => body.push_str(value),
+            _ => {}
+        }
+    }
+    None
+}
+
+fn base64_decode(input: &[u8]) -> Option<Vec<u8>> {
+    let mut output = Vec::with_capacity(input.len() * 3 / 4);
+    let mut chunk = [0u8; 4];
+    let mut chunk_len = 0usize;
+
+    for &byte in input {
+        let value = match byte {
+            b'A'..=b'Z' => byte - b'A',
+            b'a'..=b'z' => byte - b'a' + 26,
+            b'0'..=b'9' => byte - b'0' + 52,
+            b'+' => 62,
+            b'/' => 63,
+            b'=' => 64,
+            b'\r' | b'\n' | b'\t' | b' ' => continue,
+            _ => return None,
+        };
+
+        chunk[chunk_len] = value;
+        chunk_len += 1;
+        if chunk_len == 4 {
+            if chunk[0] == 64 || chunk[1] == 64 {
+                return None;
+            }
+            output.push((chunk[0] << 2) | (chunk[1] >> 4));
+            if chunk[2] != 64 {
+                output.push((chunk[1] << 4) | (chunk[2] >> 2));
+            }
+            if chunk[3] != 64 {
+                output.push((chunk[2] << 6) | chunk[3]);
+            }
+            chunk_len = 0;
+        }
+    }
+
+    (chunk_len == 0).then_some(output)
+}
+
+fn enable_legacy_rsa_key_signatures(
+    ssh: &LibsshSession,
+    context: &str,
+    session: &SessionDefinition,
+) -> Result<(), String> {
+    configure_ssh_algorithm_profile(
+        ssh,
+        SshAlgorithmProfile {
+            label: "legacy SSH compatibility",
+            key_exchange: LEGACY_KEY_EXCHANGE,
+            host_keys: LEGACY_HOST_KEY_TYPES,
+            ciphers: LEGACY_CIPHERS,
+            hmacs: LEGACY_HMACS,
+            public_key_types: LEGACY_RSA_PUBLIC_KEY_ACCEPTED_TYPES,
+        },
+        context,
+        session,
+    )
+}
+
+fn enable_modern_key_signatures(
+    ssh: &LibsshSession,
+    context: &str,
+    session: &SessionDefinition,
+) -> Result<(), String> {
+    configure_ssh_algorithm_profile(
+        ssh,
+        SshAlgorithmProfile {
+            label: "modern SSH algorithms",
+            key_exchange: MODERN_KEY_EXCHANGE,
+            host_keys: MODERN_HOST_KEY_TYPES,
+            ciphers: MODERN_CIPHERS,
+            hmacs: MODERN_HMACS,
+            public_key_types: MODERN_PUBLIC_KEY_ACCEPTED_TYPES,
+        },
+        context,
+        session,
+    )
+}
+
+struct SshAlgorithmProfile<'a> {
+    label: &'a str,
+    key_exchange: &'a str,
+    host_keys: &'a str,
+    ciphers: &'a str,
+    hmacs: &'a str,
+    public_key_types: &'a str,
+}
+
+fn configure_ssh_algorithm_profile(
+    ssh: &LibsshSession,
+    profile: SshAlgorithmProfile<'_>,
+    context: &str,
+    session: &SessionDefinition,
+) -> Result<(), String> {
+    set_ssh_option(
+        ssh,
+        SshOption::KeyExchange(profile.key_exchange.into()),
+        profile.label,
+        "key exchange",
+        context,
+        session,
+    )?;
+    set_ssh_option(
+        ssh,
+        SshOption::HostKeys(profile.host_keys.into()),
+        profile.label,
+        "host key algorithms",
+        context,
+        session,
+    )?;
+    set_ssh_option(
+        ssh,
+        SshOption::CiphersCS(profile.ciphers.into()),
+        profile.label,
+        "client-to-server ciphers",
+        context,
+        session,
+    )?;
+    set_ssh_option(
+        ssh,
+        SshOption::CiphersSC(profile.ciphers.into()),
+        profile.label,
+        "server-to-client ciphers",
+        context,
+        session,
+    )?;
+    set_ssh_option(
+        ssh,
+        SshOption::HmacCS(profile.hmacs.into()),
+        profile.label,
+        "client-to-server MACs",
+        context,
+        session,
+    )?;
+    set_ssh_option(
+        ssh,
+        SshOption::HmacSC(profile.hmacs.into()),
+        profile.label,
+        "server-to-client MACs",
+        context,
+        session,
+    )?;
+    set_ssh_option(
+        ssh,
+        SshOption::PublicKeyAcceptedTypes(profile.public_key_types.into()),
+        profile.label,
+        "public key signatures",
+        context,
+        session,
+    )
+}
+
+fn set_ssh_option(
+    ssh: &LibsshSession,
+    option: SshOption,
+    profile_label: &str,
+    option_label: &str,
+    context: &str,
+    session: &SessionDefinition,
+) -> Result<(), String> {
+    ssh.set_option(option)
+        .map_err(|error| {
+            humanize_ssh_error_message(
+                &format!(
+                    "embedded SSH {context} failed to configure {profile_label} {option_label}: {error}"
+                ),
+                session,
+            )
+        })
 }
 
 fn connect_embedded_ssh_session_with_username(
@@ -346,6 +569,13 @@ fn connect_embedded_ssh_session_with_username(
         .map_err(|error| {
             format!("failed to configure embedded SSH global known_hosts path: {error}")
         })?;
+    if session.auth_type == "key" {
+        if session.legacy_rsa_sha1_signatures {
+            enable_legacy_rsa_key_signatures(&ssh, context, session)?;
+        } else {
+            enable_modern_key_signatures(&ssh, context, session)?;
+        }
+    }
     configure_libssh_proxy_socket(&ssh, session)?;
     ssh.connect().map_err(|error| {
         humanize_ssh_error_message(
@@ -394,7 +624,7 @@ fn connect_embedded_ssh_session_with_username(
                         .as_deref()
                         .filter(|value| !value.is_empty())
                 });
-            userauth_public_key_auto_with_legacy_rsa_fallback(
+            userauth_public_key_with_configured_identity(
                 &ssh, &expanded, passphrase, context, session,
             )?;
         }
