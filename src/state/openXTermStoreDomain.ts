@@ -226,7 +226,6 @@ export function createDomainActions(
         x11Forwarding: draft.x11Forwarding,
         x11Trusted: draft.x11Trusted,
         x11Display: draft.x11Display.trim(),
-        legacyRsaSha1Signatures: draft.legacyRsaSha1Signatures,
         terminalFontFamily: draft.terminalFontFamily,
         terminalFontSize: draft.terminalFontSize,
         terminalForeground: draft.terminalForeground,

@@ -216,15 +216,6 @@ pub(in crate::runtime) fn should_retry_interactive_password(
         || normalized.contains("access denied")
 }
 
-fn should_retry_key_auth_with_legacy_rsa(error: &str) -> bool {
-    let normalized = error.to_ascii_lowercase();
-    normalized.contains("publickey")
-        && (normalized.contains("access denied")
-            || normalized.contains("authentication failed")
-            || normalized.contains("requestdenied")
-            || normalized.contains("request denied"))
-}
-
 fn auth_status_error(method: &str, context: &str, status: AuthStatus) -> String {
     match status {
         AuthStatus::Denied => {
@@ -266,15 +257,10 @@ fn userauth_public_key_with_configured_identity(
     context: &str,
     session: &SessionDefinition,
 ) -> Result<(), String> {
-    if !session.legacy_rsa_sha1_signatures && private_key_file_looks_like_rsa(key_path) {
-        return Err(humanize_ssh_error_message(
-            &format!(
-                "embedded SSH {context} modern key authentication rejects RSA private keys. Enable RSA compatibility for legacy SSH endpoints or use an Ed25519/ECDSA key."
-            ),
-            session,
-        ));
-    }
-
+    // The algorithm profile (modern vs. legacy-RSA) is already configured upstream
+    // in `connect_embedded_ssh_session_with_username` based on the private key type.
+    // No retry-with-different-profile fallback is needed here: the choice was made
+    // before KEX, and changing it now would not change what libssh negotiated.
     let private_key = SshKey::from_privkey_file(key_path, passphrase).map_err(|error| {
         humanize_ssh_error_message(
             &format!("embedded SSH {context} failed to load private key: {error}"),
@@ -282,58 +268,13 @@ fn userauth_public_key_with_configured_identity(
         )
     })?;
 
-    match ssh.userauth_publickey(None, &private_key) {
-        Ok(AuthStatus::Success) => Ok(()),
-        Ok(status) => {
-            if status != AuthStatus::Denied {
-                return ensure_auth_success(status, "key", context, session);
-            }
-            if !session.legacy_rsa_sha1_signatures {
-                return ensure_auth_success(status, "key", context, session);
-            }
-
-            enable_legacy_rsa_key_signatures(ssh, context, session)?;
-
-            ssh.userauth_publickey(None, &private_key)
-                .map_err(|legacy_error| {
-                    humanize_ssh_error_message(
-                        &format!(
-                            "embedded SSH {context} key authentication failed after enabling legacy ssh-rsa signatures: {legacy_error}. Initial status: {status:?}"
-                        ),
-                        session,
-                    )
-                })
-                .and_then(|legacy_status| {
-                    ensure_auth_success(legacy_status, "key", context, session)
-                })
-        }
-        Err(initial_error) => {
-            let initial_message = initial_error.to_string();
-            if !session.legacy_rsa_sha1_signatures
-                || !should_retry_key_auth_with_legacy_rsa(&initial_message)
-            {
-                return Err(humanize_ssh_error_message(
-                    &format!("embedded SSH {context} key authentication failed: {initial_message}"),
-                    session,
-                ));
-            }
-
-            enable_legacy_rsa_key_signatures(ssh, context, session)?;
-
-            ssh.userauth_publickey(None, &private_key)
-                .map_err(|legacy_error| {
-                    humanize_ssh_error_message(
-                        &format!(
-                            "embedded SSH {context} key authentication failed after enabling legacy ssh-rsa signatures: {legacy_error}. Initial failure: {initial_message}"
-                        ),
-                        session,
-                    )
-                })
-                .and_then(|legacy_status| {
-                    ensure_auth_success(legacy_status, "key", context, session)
-                })
-        }
-    }
+    let status = ssh.userauth_publickey(None, &private_key).map_err(|error| {
+        humanize_ssh_error_message(
+            &format!("embedded SSH {context} key authentication failed: {error}"),
+            session,
+        )
+    })?;
+    ensure_auth_success(status, "key", context, session)
 }
 
 fn private_key_file_looks_like_rsa(key_path: &str) -> bool {
@@ -570,7 +511,19 @@ fn connect_embedded_ssh_session_with_username(
             format!("failed to configure embedded SSH global known_hosts path: {error}")
         })?;
     if session.auth_type == "key" {
-        if session.legacy_rsa_sha1_signatures {
+        // Pick the SSH algorithm profile from the selected private key itself.
+        // RSA-only servers (Dropbear, older OpenSSH) need the legacy profile
+        // because they cannot negotiate Ed25519/ECDSA. Anything else stays on
+        // the modern profile, which keeps `ssh-rsa` out of the wire.
+        let key_is_rsa = session
+            .key_path
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(expand_tilde)
+            .map(|path| private_key_file_looks_like_rsa(&path))
+            .unwrap_or(false);
+        if key_is_rsa {
             enable_legacy_rsa_key_signatures(&ssh, context, session)?;
         } else {
             enable_modern_key_signatures(&ssh, context, session)?;
@@ -716,28 +669,43 @@ pub(crate) fn open_embedded_sftp(
 
 #[cfg(test)]
 mod tests {
+    use std::{env, fs};
+
     use libssh_rs::AuthStatus;
 
-    use super::{auth_status_error, should_retry_key_auth_with_legacy_rsa};
+    use super::{auth_status_error, private_key_file_looks_like_rsa};
 
     #[test]
-    fn retries_publickey_access_denied_with_legacy_rsa() {
-        assert!(should_retry_key_auth_with_legacy_rsa(
-            "RequestDenied: Access denied for 'publickey'. Authentication that can continue: publickey,password",
-        ));
-        assert!(should_retry_key_auth_with_legacy_rsa(
-            "embedded SSH interactive session key authentication failed: authentication failed for publickey",
-        ));
+    fn pem_rsa_header_is_detected_as_rsa() {
+        let path = env::temp_dir().join("oxt-pr31-pem-rsa.key");
+        fs::write(
+            &path,
+            "-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA...\n-----END RSA PRIVATE KEY-----\n",
+        )
+        .expect("temp write");
+        assert!(private_key_file_looks_like_rsa(path.to_str().unwrap()));
+        let _ = fs::remove_file(path);
     }
 
     #[test]
-    fn does_not_retry_unrelated_key_errors_with_legacy_rsa() {
-        assert!(!should_retry_key_auth_with_legacy_rsa(
-            "failed to read private key file: permission denied",
-        ));
-        assert!(!should_retry_key_auth_with_legacy_rsa(
-            "password authentication failed",
-        ));
+    fn ed25519_openssh_block_is_not_rsa() {
+        let path = env::temp_dir().join("oxt-pr31-ed25519.key");
+        // Real OpenSSH ed25519 keys start with this header and base64-encode an
+        // "ssh-ed25519" marker; no "ssh-rsa" appears anywhere in the body.
+        fs::write(
+            &path,
+            "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZWQyNTUxOQAAACA=\n-----END OPENSSH PRIVATE KEY-----\n",
+        )
+        .expect("temp write");
+        assert!(!private_key_file_looks_like_rsa(path.to_str().unwrap()));
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn missing_key_path_is_not_rsa() {
+        let path = env::temp_dir().join("oxt-pr31-missing.key");
+        let _ = fs::remove_file(&path);
+        assert!(!private_key_file_looks_like_rsa(path.to_str().unwrap()));
     }
 
     #[test]
