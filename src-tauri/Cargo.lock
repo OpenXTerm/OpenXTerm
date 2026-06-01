@@ -2999,7 +2999,7 @@ dependencies = [
 
 [[package]]
 name = "openxterm"
-version = "0.0.5"
+version = "0.0.6"
 dependencies = [
  "arboard",
  "cc",

@@ -4,6 +4,26 @@ All notable changes to OpenXTerm are documented here.
 
 Release entries are generated during the manual CI/CD release flow from GitHub release notes. When `GEMINI_API_KEY` is configured, Gemini 2.5 Flash may rewrite the entry for readability, but the generator validates that pull request references and contributor mentions from GitHub's generated notes are preserved.
 
+## v0.0.6 - 2026-06-01
+
+Changes since `v0.0.5`.
+
+### Pull Requests
+
+- #31: Ssh key auth legacy toggle by @GoGixdd (https://github.com/OpenXTerm/OpenXTerm/pull/31)
+- #32: refactor(ssh): auto-detect SSH compatibility from private key type (follow-up to #31) by @GiaNTizmO (https://github.com/OpenXTerm/OpenXTerm/pull/32)
+- #33: feat(session-editor): pick SSH private key with a native file dialog by @GiaNTizmO (https://github.com/OpenXTerm/OpenXTerm/pull/33)
+- #34: fix(deps): pin @tauri-apps/plugin-dialog to 2.6.x for tauri 2.10 compat by @GiaNTizmO (https://github.com/OpenXTerm/OpenXTerm/pull/34)
+
+### Direct Commits
+
+- 5eef919: fix(ci): pin Rust dialog plugin to npm version by @GiaNTizmO
+- 1bd4783: fix(macOS): include native drag system headers by @GiaNTizmO
+- c288e88: Support PuTTY PPK SSH keys by @GiaNTizmO
+- cea397a: Speed up manual CI/CD pipeline by @GiaNTizmO
+- 552867e: Fix sccache scope in CI workflow by @GiaNTizmO
+- 80ef5ec: Disable sccache in release builds by @GiaNTizmO
+
 ## v0.0.5 - 2026-05-11
 
 ### Features
