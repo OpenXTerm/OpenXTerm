@@ -28,7 +28,6 @@ concurrency:
 env:
   CI: true
   NODE_VERSION: 22
-  RUSTC_WRAPPER: sccache
 
 jobs:
   prepare-release:
@@ -211,6 +210,8 @@ jobs:
     needs:
       - prepare-release
     runs-on: ${{ matrix.runner }}
+    env:
+      RUSTC_WRAPPER: sccache
     strategy:
       fail-fast: false
       matrix:
