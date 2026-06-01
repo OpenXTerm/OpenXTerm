@@ -28,6 +28,7 @@ concurrency:
 env:
   CI: true
   NODE_VERSION: 22
+  RUSTC_WRAPPER: sccache
 
 jobs:
   prepare-release:
@@ -190,15 +191,6 @@ jobs:
             exit 1
           fi
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Rust cache
-        uses: swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            ./src-tauri -> target
-
       - name: License audit
         run: |
           npm run licenses:check
@@ -211,35 +203,13 @@ jobs:
           path: docs/legal/generated
           if-no-files-found: error
 
-      - name: Install Linux build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends --no-install-suggests \
-            build-essential \
-            curl \
-            file \
-            libayatana-appindicator3-dev \
-            libfuse2 \
-            libgtk-3-dev \
-            libudev-dev \
-            librsvg2-dev \
-            libssl-dev \
-            libwebkit2gtk-4.1-dev \
-            libxdo-dev \
-            patchelf \
-            wget
-
       - name: Typecheck and lint
         run: npm run check
-
-      - name: Cargo check
-        run: cargo check --manifest-path src-tauri/Cargo.toml
 
   build:
     name: Build ${{ matrix.name }}
     needs:
       - prepare-release
-      - verify
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -303,6 +273,10 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+
+      - name: Setup sccache
+        if: ${{ matrix.enabled }}
+        uses: mozilla-actions/sccache-action@v0.0.9
 
       - name: Rust cache
         if: ${{ matrix.enabled }}
@@ -370,10 +344,15 @@ jobs:
             !src-tauri/target/${{ matrix.target }}/release/bundle/**/data.tar.gz
             release-portable/*.zip
 
+      - name: Show sccache stats
+        if: ${{ matrix.enabled && always() }}
+        run: sccache --show-stats
+
   release:
     name: Publish GitHub Release
     needs:
       - prepare-release
+      - verify
       - build
     runs-on: ubuntu-22.04
     permissions:
