@@ -282,35 +282,51 @@ export function SessionEditorConnectionTab({
             )}
 
             {draft.authType === 'key' && (
-              <label className="editor-field editor-field-wide">
-                <span>Key path</span>
-                <div className="key-path-row">
-                  <input
-                    placeholder="~/.ssh/id_ed25519"
-                    value={draft.keyPath}
-                    onChange={(event) => updateDraft({ keyPath: event.target.value })}
-                  />
-                  <button
-                    className="ghost-button key-path-browse"
-                    type="button"
-                    onClick={async () => {
-                      try {
-                        const picked = await pickPrivateKeyFile(draft.keyPath)
-                        if (picked) {
-                          updateDraft({ keyPath: picked })
+              <>
+                <label className="editor-field editor-field-wide">
+                  <span>Key path</span>
+                  <div className="key-path-row">
+                    <input
+                      placeholder="~/.ssh/id_ed25519"
+                      value={draft.keyPath}
+                      onChange={(event) => updateDraft({ keyPath: event.target.value })}
+                    />
+                    <button
+                      className="ghost-button key-path-browse"
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const picked = await pickPrivateKeyFile(draft.keyPath)
+                          if (picked) {
+                            updateDraft({ keyPath: picked })
+                          }
+                        } catch (error) {
+                          logOpenXTermError('session-editor.pick-key', error, {
+                            previousKeyPath: draft.keyPath,
+                          })
                         }
-                      } catch (error) {
-                        logOpenXTermError('session-editor.pick-key', error, {
-                          previousKeyPath: draft.keyPath,
-                        })
-                      }
-                    }}
-                  >
-                    <FolderOpen size={14} />
-                    <span>Choose…</span>
-                  </button>
-                </div>
-              </label>
+                      }}
+                    >
+                      <FolderOpen size={14} />
+                      <span>Choose…</span>
+                    </button>
+                  </div>
+                </label>
+
+                <label className="editor-field editor-field-wide">
+                  <span>Key passphrase</span>
+                  <input
+                    type="password"
+                    placeholder="Optional encrypted key passphrase"
+                    value={draft.keyPassphrase}
+                    onChange={(event) => updateDraft({ keyPassphrase: event.target.value })}
+                  />
+                </label>
+
+                <span className="editor-hint editor-field-wide">
+                  Supports OpenSSH private keys and PuTTY .ppk keys. This passphrase is used only to unlock the selected key.
+                </span>
+              </>
             )}
           </div>
         </>

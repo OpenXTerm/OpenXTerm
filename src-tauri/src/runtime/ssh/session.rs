@@ -3,8 +3,7 @@ use std::{fs, io::Read};
 use std::time::Duration;
 
 use libssh_rs::{
-    AuthStatus, Channel as LibsshChannel, Session as LibsshSession, Sftp as LibsshSftp, SshKey,
-    SshOption,
+    AuthStatus, Channel as LibsshChannel, Session as LibsshSession, Sftp as LibsshSftp, SshOption,
 };
 
 use crate::{models::SessionDefinition, proxy::configure_libssh_proxy_socket};
@@ -32,6 +31,7 @@ use super::super::{expand_tilde, shell_quote};
 use super::{
     auth::{ssh_runtime_password, ssh_runtime_username, ssh_runtime_username_path_for_tab},
     guidance::{humanize_ssh_error_message, windows_credential_reuse_message},
+    ppk::load_private_key_for_libssh,
 };
 
 enum InteractiveShellRequest {
@@ -261,7 +261,7 @@ fn userauth_public_key_with_configured_identity(
     // in `connect_embedded_ssh_session_with_username` based on the private key type.
     // No retry-with-different-profile fallback is needed here: the choice was made
     // before KEX, and changing it now would not change what libssh negotiated.
-    let private_key = SshKey::from_privkey_file(key_path, passphrase).map_err(|error| {
+    let private_key = load_private_key_for_libssh(key_path, passphrase).map_err(|error| {
         humanize_ssh_error_message(
             &format!("embedded SSH {context} failed to load private key: {error}"),
             session,
@@ -573,6 +573,12 @@ fn connect_embedded_ssh_session_with_username(
                 .filter(|value| !value.is_empty())
                 .or_else(|| {
                     session
+                        .key_passphrase
+                        .as_deref()
+                        .filter(|value| !value.is_empty())
+                })
+                .or_else(|| {
+                    session
                         .password
                         .as_deref()
                         .filter(|value| !value.is_empty())
@@ -635,16 +641,31 @@ pub(crate) fn ssh_helper_username(
     Ok(username)
 }
 
-fn ssh_helper_password(
+fn ssh_helper_secret(
     session: &SessionDefinition,
     runtime_tab_id: Option<&str>,
 ) -> Option<String> {
-    session
-        .password
-        .as_deref()
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
-        .or_else(|| ssh_helper_tab_id(session, runtime_tab_id).and_then(ssh_runtime_password))
+    match session.auth_type.as_str() {
+        "password" => session
+            .password
+            .as_deref()
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .or_else(|| ssh_helper_tab_id(session, runtime_tab_id).and_then(ssh_runtime_password)),
+        "key" => session
+            .key_passphrase
+            .as_deref()
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .or_else(|| {
+                session
+                    .password
+                    .as_deref()
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_string)
+            }),
+        _ => None,
+    }
 }
 
 pub(crate) fn connect_embedded_ssh_session(
@@ -653,8 +674,8 @@ pub(crate) fn connect_embedded_ssh_session(
     context: &str,
 ) -> Result<LibsshSession, String> {
     let username = ssh_helper_username(session, runtime_tab_id)?;
-    let password = ssh_helper_password(session, runtime_tab_id);
-    connect_embedded_ssh_session_with_username(session, &username, password.as_deref(), context)
+    let secret = ssh_helper_secret(session, runtime_tab_id);
+    connect_embedded_ssh_session_with_username(session, &username, secret.as_deref(), context)
 }
 
 pub(crate) fn open_embedded_sftp(

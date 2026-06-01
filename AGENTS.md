@@ -24,6 +24,8 @@ npm install
 ./script/build_and_run.sh
 ```
 
+The Rust backend now requires Rust 1.85 or newer.
+
 `npm install` now provisions the local `@tauri-apps/cli` binary used by `npm run tauri:dev` / `npm run tauri:build`, so the repo no longer assumes a globally installed Tauri CLI.
 
 On Windows, `npm run tauri:dev` / `npm run tauri:build` go through `script/run_tauri.mjs`. That wrapper checks for a full Perl before Cargo starts because `libssh-rs` builds vendored OpenSSL; if no usable Perl is found, it prints Strawberry Perl install commands.

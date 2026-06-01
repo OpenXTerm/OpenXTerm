@@ -20,6 +20,8 @@ pub struct SessionDefinition {
     pub auth_type: String,
     pub password: Option<String>,
     pub key_path: Option<String>,
+    #[serde(default)]
+    pub key_passphrase: Option<String>,
     #[serde(default = "default_proxy_type")]
     pub proxy_type: String,
     #[serde(default)]

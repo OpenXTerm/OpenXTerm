@@ -80,6 +80,11 @@ Current focus areas:
 
 ## Quick Start
 
+Prerequisites:
+
+- Node.js 22
+- Rust 1.85 or newer
+
 Install dependencies:
 
 ```bash

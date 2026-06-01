@@ -319,6 +319,7 @@ fn normalize_v1_sessions(object: &mut Map<String, Value>) -> Result<(), String> 
             .or_insert_with(|| Value::String("password".into()));
         session.entry("password").or_insert(Value::Null);
         session.entry("keyPath").or_insert(Value::Null);
+        session.entry("keyPassphrase").or_insert(Value::Null);
         session
             .entry("proxyType")
             .or_insert_with(|| Value::String("none".into()));

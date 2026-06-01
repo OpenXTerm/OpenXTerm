@@ -91,9 +91,15 @@ fn connect(session: &SessionDefinition, username: &str) -> Result<Session, Strin
                 .filter(|value| !value.trim().is_empty())
                 .ok_or_else(|| "libssh-rs spike needs a key path for key auth.".to_string())?;
             let passphrase = session
-                .password
+                .key_passphrase
                 .as_deref()
-                .filter(|value| !value.is_empty());
+                .filter(|value| !value.is_empty())
+                .or_else(|| {
+                    session
+                        .password
+                        .as_deref()
+                        .filter(|value| !value.is_empty())
+                });
             ssh.userauth_public_key_auto(Some(key_path), passphrase)
                 .map_err(|error| format!("libssh key authentication failed: {error}"))?;
         }

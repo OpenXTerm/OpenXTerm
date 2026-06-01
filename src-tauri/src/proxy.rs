@@ -399,6 +399,7 @@ mod tests {
             auth_type: "password".into(),
             password: None,
             key_path: None,
+            key_passphrase: None,
             proxy_type: proxy_type.into(),
             proxy_host: None,
             proxy_port: None,

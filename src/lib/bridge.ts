@@ -371,7 +371,7 @@ export async function pickPrivateKeyFile(defaultPath?: string): Promise<string |
     title: 'Select SSH private key',
     defaultPath: defaultPath?.trim() || undefined,
     filters: [
-      { name: 'SSH keys', extensions: ['pem', 'ppk', 'key'] },
+      { name: 'SSH private keys', extensions: ['pem', 'ppk', 'key'] },
       { name: 'All files', extensions: ['*'] },
     ],
   })

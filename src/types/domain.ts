@@ -14,6 +14,7 @@ export interface SessionDefinition {
   authType: AuthType
   password?: string
   keyPath?: string
+  keyPassphrase?: string
   proxyType?: ProxyType
   proxyHost?: string
   proxyPort?: number
@@ -194,6 +195,7 @@ export interface SessionDraft {
   authType: AuthType
   password: string
   keyPath: string
+  keyPassphrase: string
   proxyType: ProxyType
   proxyHost: string
   proxyPort: number

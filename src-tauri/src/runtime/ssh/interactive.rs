@@ -116,7 +116,7 @@ impl AppRuntime {
         {
             controller.prompt_for_password(session.username.trim().to_string());
         } else {
-            let password_override = session.password.clone();
+            let password_override = session_secret_override(&session);
             set_ssh_runtime_auth(
                 &tab_id,
                 Some(session.username.trim().to_string()),
@@ -358,7 +358,7 @@ impl EmbeddedSshController {
                             };
                             emit_output(&self.app, &self.tab_id, &prompt);
                         } else {
-                            let password_override = self.session.password.clone();
+                            let password_override = session_secret_override(&self.session);
                             set_ssh_runtime_auth(
                                 &self.tab_id,
                                 Some(username.clone()),
@@ -448,4 +448,19 @@ fn emit_connecting_message(
             session.host, session.port, username
         ),
     );
+}
+
+fn session_secret_override(session: &SessionDefinition) -> Option<String> {
+    match session.auth_type.as_str() {
+        "password" => non_empty_secret(session.password.as_deref()),
+        "key" => non_empty_secret(session.key_passphrase.as_deref())
+            .or_else(|| non_empty_secret(session.password.as_deref())),
+        _ => None,
+    }
+}
+
+fn non_empty_secret(value: Option<&str>) -> Option<String> {
+    value
+        .filter(|secret| !secret.is_empty())
+        .map(str::to_string)
 }
