@@ -85,6 +85,7 @@ fn run_ftp_command(
     command.args(["--silent", "--show-error", "--disable-epsv"]);
     configure_curl_proxy_args(&mut command, session)?;
     if let Some(quote) = quote {
+        validate_ftp_quote(&quote)?;
         command.arg("--quote").arg(quote);
     }
     command.arg("--user").arg(format!(
@@ -117,6 +118,13 @@ fn run_ftp_command(
     }
 
     Ok(output.stdout)
+}
+
+fn validate_ftp_quote(quote: &str) -> Result<(), String> {
+    if quote.chars().any(char::is_control) {
+        return Err("FTP command arguments cannot contain control characters".into());
+    }
+    Ok(())
 }
 
 fn ftp_url(session: &SessionDefinition, path: &str) -> String {
@@ -159,4 +167,29 @@ fn parse_ftp_list_line(line: &str, current_path: &str) -> Option<RemoteFileEntry
         access_label: Some(parts[0].to_string()),
         permissions: parse_access_permissions(parts[0]),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_ftp_quote;
+
+    #[test]
+    fn accepts_regular_ftp_quote_commands() {
+        assert!(validate_ftp_quote("MKD /reports/June 2026").is_ok());
+        assert!(validate_ftp_quote("RNTO /reports/final.txt").is_ok());
+    }
+
+    #[test]
+    fn rejects_control_character_command_injection() {
+        for quote in [
+            "MKD /safe\r\nDELE /important",
+            "RNTO /safe\nSITE EXEC attack",
+            "DELE /unsafe\0name",
+        ] {
+            assert!(
+                validate_ftp_quote(quote).is_err(),
+                "expected {quote:?} to be rejected"
+            );
+        }
+    }
 }
