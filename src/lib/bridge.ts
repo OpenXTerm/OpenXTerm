@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 
 import { createDefaultBootstrap } from './mockData'
+import { stripBrowserStorageSecrets } from './browserStorage'
 import { joinRemotePath } from './remotePath'
 import { buildFileEntries, normalizeSessionFolderPath } from './sessionUtils'
 import type {
@@ -171,17 +172,19 @@ function readBrowserState(): AppBootstrap {
     return seed
   }
 
-  return {
+  const state = stripBrowserStorageSecrets({
     schemaVersion: typeof parsed.schemaVersion === 'number' ? parsed.schemaVersion : seed.schemaVersion,
     sessions: isSessionList(parsed.sessions) ? parsed.sessions : seed.sessions,
     sessionFolders: isSessionFolderList(parsed.sessionFolders) ? parsed.sessionFolders : seed.sessionFolders,
     macros: isMacroList(parsed.macros) ? parsed.macros : seed.macros,
     preferences: isUiPreferences(parsed.preferences) ? parsed.preferences : seed.preferences,
-  }
+  })
+  writeBrowserState(state)
+  return state
 }
 
 function writeBrowserState(state: AppBootstrap) {
-  localStorage.setItem(BROWSER_STORAGE_KEY, JSON.stringify(state))
+  localStorage.setItem(BROWSER_STORAGE_KEY, JSON.stringify(stripBrowserStorageSecrets(state)))
 }
 
 export async function bootstrapState() {
