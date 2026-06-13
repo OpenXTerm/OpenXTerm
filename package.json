@@ -16,6 +16,7 @@
     "lint": "eslint .",
     "preview": "vite preview --host 127.0.0.1 --port 4173",
     "test": "vitest run",
+    "test:ssh": "./script/run_ssh_integration.sh",
     "test:watch": "vitest",
     "version:set": "node script/set_version.mjs",
     "tauri:dev": "node script/run_tauri.mjs dev",

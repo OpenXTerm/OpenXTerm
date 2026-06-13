@@ -36,10 +36,15 @@ Useful checks:
 
 ```bash
 npm run check
+npm run test:ssh
 npm run build
 cargo build --manifest-path src-tauri/Cargo.toml
 ./script/build_and_run.sh --verify
 ```
+
+`npm run test:ssh` requires a running Docker daemon. It creates an ephemeral
+OpenSSH server and generated OpenSSH/PPK keys, then exercises the production
+`libssh-rs` authentication, remote-exec, SFTP, failure, and timeout paths.
 
 `./script/build_and_run.sh` kills old Vite / Tauri / debug app processes before starting a fresh dev run.
 

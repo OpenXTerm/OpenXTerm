@@ -268,12 +268,14 @@ fn userauth_public_key_with_configured_identity(
         )
     })?;
 
-    let status = ssh.userauth_publickey(None, &private_key).map_err(|error| {
-        humanize_ssh_error_message(
-            &format!("embedded SSH {context} key authentication failed: {error}"),
-            session,
-        )
-    })?;
+    let status = ssh
+        .userauth_publickey(None, &private_key)
+        .map_err(|error| {
+            humanize_ssh_error_message(
+                &format!("embedded SSH {context} key authentication failed: {error}"),
+                session,
+            )
+        })?;
     ensure_auth_success(status, "key", context, session)
 }
 
@@ -641,10 +643,7 @@ pub(crate) fn ssh_helper_username(
     Ok(username)
 }
 
-fn ssh_helper_secret(
-    session: &SessionDefinition,
-    runtime_tab_id: Option<&str>,
-) -> Option<String> {
+fn ssh_helper_secret(session: &SessionDefinition, runtime_tab_id: Option<&str>) -> Option<String> {
     match session.auth_type.as_str() {
         "password" => session
             .password
@@ -690,11 +689,253 @@ pub(crate) fn open_embedded_sftp(
 
 #[cfg(test)]
 mod tests {
-    use std::{env, fs};
+    use std::{
+        env, fs,
+        path::PathBuf,
+        time::{Duration, Instant},
+    };
 
     use libssh_rs::AuthStatus;
 
-    use super::{auth_status_error, private_key_file_looks_like_rsa};
+    use crate::models::SessionDefinition;
+
+    use super::{
+        auth_status_error, connect_embedded_ssh_session, open_embedded_sftp,
+        private_key_file_looks_like_rsa, run_remote_ssh_script_with_label,
+    };
+
+    const SSH_INTEGRATION_TEST_GUIDANCE: &str =
+        "run SSH integration tests through ./script/run_ssh_integration.sh";
+
+    struct SshIntegrationConfig {
+        host: String,
+        port: u16,
+        blackhole_port: u16,
+        username: String,
+        password: String,
+        key_path: PathBuf,
+        ppk_path: PathBuf,
+        encrypted_ppk_path: PathBuf,
+        key_passphrase: String,
+    }
+
+    impl SshIntegrationConfig {
+        fn from_env() -> Self {
+            Self {
+                host: required_env("OPENXTERM_SSH_TEST_HOST"),
+                port: required_env("OPENXTERM_SSH_TEST_PORT")
+                    .parse()
+                    .expect("OPENXTERM_SSH_TEST_PORT must be a u16"),
+                blackhole_port: required_env("OPENXTERM_SSH_TEST_BLACKHOLE_PORT")
+                    .parse()
+                    .expect("OPENXTERM_SSH_TEST_BLACKHOLE_PORT must be a u16"),
+                username: required_env("OPENXTERM_SSH_TEST_USERNAME"),
+                password: required_env("OPENXTERM_SSH_TEST_PASSWORD"),
+                key_path: PathBuf::from(required_env("OPENXTERM_SSH_TEST_KEY")),
+                ppk_path: PathBuf::from(required_env("OPENXTERM_SSH_TEST_PPK")),
+                encrypted_ppk_path: PathBuf::from(required_env("OPENXTERM_SSH_TEST_ENCRYPTED_PPK")),
+                key_passphrase: required_env("OPENXTERM_SSH_TEST_KEY_PASSPHRASE"),
+            }
+        }
+
+        fn password_session(&self, password: &str) -> SessionDefinition {
+            integration_session(
+                &self.host,
+                self.port,
+                &self.username,
+                "password",
+                Some(password),
+                None,
+                None,
+            )
+        }
+
+        fn key_session(
+            &self,
+            key_path: &std::path::Path,
+            passphrase: Option<&str>,
+        ) -> SessionDefinition {
+            integration_session(
+                &self.host,
+                self.port,
+                &self.username,
+                "key",
+                None,
+                Some(key_path.to_string_lossy().as_ref()),
+                passphrase,
+            )
+        }
+    }
+
+    fn required_env(name: &str) -> String {
+        env::var(name)
+            .unwrap_or_else(|_| panic!("{name} is missing; {SSH_INTEGRATION_TEST_GUIDANCE}"))
+    }
+
+    fn integration_session(
+        host: &str,
+        port: u16,
+        username: &str,
+        auth_type: &str,
+        password: Option<&str>,
+        key_path: Option<&str>,
+        key_passphrase: Option<&str>,
+    ) -> SessionDefinition {
+        SessionDefinition {
+            id: "ssh-integration".into(),
+            name: "SSH integration".into(),
+            folder_path: None,
+            kind: "ssh".into(),
+            host: host.into(),
+            port,
+            username: username.into(),
+            auth_type: auth_type.into(),
+            password: password.map(str::to_string),
+            key_path: key_path.map(str::to_string),
+            key_passphrase: key_passphrase.map(str::to_string),
+            proxy_type: "none".into(),
+            proxy_host: None,
+            proxy_port: None,
+            proxy_username: None,
+            proxy_password: None,
+            x11_forwarding: false,
+            x11_trusted: true,
+            x11_display: None,
+            terminal_font_family: None,
+            terminal_font_size: None,
+            terminal_foreground: None,
+            terminal_background: None,
+            linked_ssh_tab_id: None,
+            local_working_directory: None,
+            serial_port: None,
+            baud_rate: None,
+            parity: "none".into(),
+            stop_bits: 1,
+            data_bits: 8,
+            created_at: "1970-01-01T00:00:00Z".into(),
+            updated_at: "1970-01-01T00:00:00Z".into(),
+        }
+    }
+
+    fn assert_remote_exec(session: &SessionDefinition, marker: &str) {
+        let output = run_remote_ssh_script_with_label(
+            session,
+            "ssh-integration-tab",
+            &format!("printf '%s' '{marker}'"),
+            "integration test",
+        )
+        .unwrap_or_else(|error| panic!("SSH exec failed: {error}"));
+        assert_eq!(output, marker);
+    }
+
+    fn connection_error(session: &SessionDefinition) -> String {
+        match connect_embedded_ssh_session(session, None, "integration test") {
+            Ok(_) => panic!("SSH connection unexpectedly succeeded"),
+            Err(error) => error,
+        }
+    }
+
+    #[test]
+    #[ignore = "requires the Docker OpenSSH fixture"]
+    fn ssh_integration_password_auth_executes_remote_command() {
+        let config = SshIntegrationConfig::from_env();
+        assert_remote_exec(
+            &config.password_session(&config.password),
+            "password-auth-ok",
+        );
+    }
+
+    #[test]
+    #[ignore = "requires the Docker OpenSSH fixture"]
+    fn ssh_integration_openssh_key_executes_remote_command() {
+        let config = SshIntegrationConfig::from_env();
+        assert_remote_exec(
+            &config.key_session(&config.key_path, None),
+            "openssh-key-auth-ok",
+        );
+    }
+
+    #[test]
+    #[ignore = "requires the Docker OpenSSH fixture"]
+    fn ssh_integration_unencrypted_ppk_executes_remote_command() {
+        let config = SshIntegrationConfig::from_env();
+        assert_remote_exec(&config.key_session(&config.ppk_path, None), "ppk-auth-ok");
+    }
+
+    #[test]
+    #[ignore = "requires the Docker OpenSSH fixture"]
+    fn ssh_integration_encrypted_ppk_executes_remote_command() {
+        let config = SshIntegrationConfig::from_env();
+        assert_remote_exec(
+            &config.key_session(&config.encrypted_ppk_path, Some(&config.key_passphrase)),
+            "encrypted-ppk-auth-ok",
+        );
+    }
+
+    #[test]
+    #[ignore = "requires the Docker OpenSSH fixture"]
+    fn ssh_integration_sftp_lists_remote_home() {
+        let config = SshIntegrationConfig::from_env();
+        let session = config.password_session(&config.password);
+        let sftp = open_embedded_sftp(&session, None, "integration test")
+            .unwrap_or_else(|error| panic!("failed to open SFTP: {error}"));
+        let entries = sftp
+            .read_dir("/home/openxterm")
+            .unwrap_or_else(|error| panic!("failed to list SFTP directory: {error}"));
+
+        assert!(entries.iter().any(|entry| {
+            entry
+                .name()
+                .is_some_and(|name| name == "integration-ready.txt")
+        }));
+    }
+
+    #[test]
+    #[ignore = "requires the Docker OpenSSH fixture"]
+    fn ssh_integration_rejects_wrong_password_without_leaking_it() {
+        let config = SshIntegrationConfig::from_env();
+        let wrong_password = "definitely-not-the-password";
+        let error = connection_error(&config.password_session(wrong_password));
+
+        assert!(!error.contains(wrong_password));
+        assert!(error.to_ascii_lowercase().contains("auth"));
+    }
+
+    #[test]
+    #[ignore = "requires the Docker OpenSSH fixture"]
+    fn ssh_integration_rejects_wrong_ppk_passphrase_without_leaking_it() {
+        let config = SshIntegrationConfig::from_env();
+        let wrong_passphrase = "definitely-not-the-passphrase";
+        let error = connection_error(
+            &config.key_session(&config.encrypted_ppk_path, Some(wrong_passphrase)),
+        );
+
+        assert!(!error.contains(wrong_passphrase));
+        assert!(error.to_ascii_lowercase().contains("key"));
+    }
+
+    #[test]
+    #[ignore = "requires the Docker OpenSSH fixture"]
+    fn ssh_integration_blackhole_connection_times_out_within_bound() {
+        let config = SshIntegrationConfig::from_env();
+        let session = integration_session(
+            &config.host,
+            config.blackhole_port,
+            &config.username,
+            "password",
+            Some(&config.password),
+            None,
+            None,
+        );
+        let started_at = Instant::now();
+        let error = connection_error(&session);
+        let elapsed = started_at.elapsed();
+
+        assert!(
+            elapsed <= Duration::from_secs(20),
+            "SSH timeout exceeded the integration bound: {elapsed:?}: {error}"
+        );
+    }
 
     #[test]
     fn pem_rsa_header_is_detected_as_rsa() {

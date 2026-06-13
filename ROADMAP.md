@@ -160,7 +160,7 @@ The documentation/code audit items from the May 2026 cleanup pass are closed. Fu
 - Packaging/signing/notarization is not release-ready.
 - GitHub Releases are currently expected to ship unsigned / unnotarized artifacts until signing secrets and release hardening are added.
 - Storage migrations are versioned now; future schema changes must add incremental migration tests before release.
-- Automated tests now have a small frontend/backend baseline, but coverage is still narrow and needs expansion around transfers, transports, and storage migrations.
+- Automated tests now cover frontend/backend basics plus Docker-backed SSH password, OpenSSH key, PPK, remote-exec, SFTP, authentication-failure, and timeout paths; coverage still needs expansion around transfers, interactive terminal behavior, and storage snapshot upgrades.
 - Public screenshots and demo clips are not prepared.
 - Automated dependency/license audit now exists through [#29](https://github.com/OpenXTerm/OpenXTerm/issues/29) with Cargo/npm generated reports, policy checks, and CI artifacts; future work should tighten bundle inclusion and full generated notice packaging.
 

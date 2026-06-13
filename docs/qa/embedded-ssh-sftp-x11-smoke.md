@@ -35,6 +35,32 @@ Last broad manual pass: May 2, 2026.
 | X11 GLX/heavy apps | RISK | `glxgears`/Chromium depend heavily on XQuartz/local GLX support. |
 | Cross-platform Windows/Linux SFTP/status | RISK | Needs more real-machine passes. |
 
+## Automated SSH Integration Suite
+
+Run the reproducible backend suite with a running Docker daemon:
+
+```bash
+npm run test:ssh
+```
+
+The runner builds an ephemeral Debian/OpenSSH target, generates all private
+keys at runtime, maps random localhost ports, and removes the container and
+keys after the test. It covers:
+
+- saved-password authentication and remote command execution;
+- unencrypted OpenSSH Ed25519 key authentication;
+- unencrypted PuTTY PPK authentication;
+- encrypted PuTTY PPK authentication;
+- rejected passwords and rejected PPK passphrases without secret leakage;
+- SFTP startup and remote directory listing;
+- a bounded SSH handshake timeout against a local TCP blackhole.
+
+The same suite runs in `.github/workflows/ssh-integration.yml` for pull
+requests, pushes to `main`, and manual dispatches. It intentionally complements
+rather than replaces the desktop smoke checks below: interactive terminal input,
+linked-tab credential reuse, native drag, X11, and platform UI behavior still
+need real application runs.
+
 ## Latest SFTP Transfer Smoke Pass
 
 Completed May 2, 2026 on macOS with Finder drag-in/drag-out against Linux SSH/SFTP targets.
