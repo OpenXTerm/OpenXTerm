@@ -225,7 +225,7 @@ export function createDomainActions(
         proxyUsername: draft.proxyType === 'none' ? undefined : draft.proxyUsername.trim(),
         proxyPassword: draft.proxyType === 'none' ? undefined : draft.proxyPassword,
         x11Forwarding: draft.x11Forwarding,
-        x11Trusted: draft.x11Trusted,
+        x11Trusted: true,
         x11Display: draft.x11Display.trim(),
         terminalFontFamily: draft.terminalFontFamily,
         terminalFontSize: draft.terminalFontSize,

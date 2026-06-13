@@ -590,40 +590,6 @@ export function SessionEditorAdvancedTab({
 
       {draft.x11Forwarding && (
         <>
-          <div className="session-auth-grid" role="radiogroup" aria-label="X11 trust mode">
-            <button
-              className={`session-auth-option ${!draft.x11Trusted ? 'active' : ''}`}
-              type="button"
-              role="radio"
-              aria-checked={!draft.x11Trusted}
-              onClick={() => updateDraft({ x11Trusted: false })}
-            >
-              <span className="session-auth-icon">
-                <ShieldOff size={14} />
-              </span>
-              <span className="session-auth-copy">
-                <strong>Untrusted</strong>
-                <span>Stricter X11 sandbox.</span>
-              </span>
-            </button>
-
-            <button
-              className={`session-auth-option ${draft.x11Trusted ? 'active' : ''}`}
-              type="button"
-              role="radio"
-              aria-checked={draft.x11Trusted}
-              onClick={() => updateDraft({ x11Trusted: true })}
-            >
-              <span className="session-auth-icon">
-                <Monitor size={14} />
-              </span>
-              <span className="session-auth-copy">
-                <strong>Trusted</strong>
-                <span>Best compatibility for apps like Chromium.</span>
-              </span>
-            </button>
-          </div>
-
           <div className="session-editor-grid">
             <label className="editor-field editor-field-wide">
               <span>Display override</span>

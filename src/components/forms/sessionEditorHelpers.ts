@@ -86,7 +86,7 @@ export function createDraft(session?: SessionDefinition | null, initialFolderPat
       proxyUsername: session.proxyUsername ?? '',
       proxyPassword: session.proxyPassword ?? '',
       x11Forwarding: session.x11Forwarding ?? false,
-      x11Trusted: session.x11Trusted ?? true,
+      x11Trusted: true,
       x11Display: session.x11Display ?? '',
       terminalFontFamily: session.terminalFontFamily ?? DEFAULT_TERMINAL_FONT,
       terminalFontSize: session.terminalFontSize ?? DEFAULT_TERMINAL_SIZE,

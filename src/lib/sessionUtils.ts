@@ -110,7 +110,7 @@ export function buildSessionTranscript(session: SessionDefinition) {
     ...(session.kind === 'ssh'
       ? [
           session.x11Forwarding
-            ? `> X11: ${session.x11Trusted ?? true ? 'trusted' : 'untrusted'} forwarding enabled${session.x11Display?.trim() ? ` via ${session.x11Display.trim()}` : ''}`
+            ? `> X11: trusted forwarding enabled${session.x11Display?.trim() ? ` via ${session.x11Display.trim()}` : ''}`
             : '> X11: disabled in this profile',
         ]
       : []),
