@@ -14,8 +14,6 @@ use super::super::{emit_output, SharedWriter, RECENT_TERMINAL_OUTPUT_CHAR_LIMIT}
 
 #[derive(Default)]
 pub(in crate::runtime) struct SshRuntimeGuidanceState {
-    host_key_prompt: bool,
-    host_key_changed: bool,
     auth_failed: bool,
     key_permission_error: bool,
     connection_refused: bool,
@@ -94,29 +92,6 @@ pub(in crate::runtime) fn maybe_report_ssh_runtime_guidance(
 ) {
     if session.kind != "ssh" {
         return;
-    }
-
-    if !state.host_key_prompt
-        && recent_output.contains("are you sure you want to continue connecting (yes/no")
-    {
-        state.host_key_prompt = true;
-        emit_output(
-            app,
-            tab_id,
-            "\r\n[information] SSH is asking to trust a new host key. Review the hostname and fingerprint, then type 'yes' in the terminal to store it in known_hosts. Type 'no' to abort.\r\n",
-        );
-    }
-
-    if !state.host_key_changed
-        && (recent_output.contains("remote host identification has changed")
-            || recent_output.contains("host key verification failed"))
-    {
-        state.host_key_changed = true;
-        emit_output(
-            app,
-            tab_id,
-            "\r\n[error] The remote host key does not match your known_hosts entry. Verify the server first, then remove the stale key with ssh-keygen -R <host> before reconnecting.\r\n",
-        );
     }
 
     if !state.auth_failed && looks_like_ssh_auth_failure(recent_output) {
@@ -227,14 +202,6 @@ pub(in crate::runtime) fn humanize_ssh_error_message(
     }
     if lower.contains("permission denied") {
         return "SSH authentication failed. Check the username and whether the selected password, key, or agent credentials are valid.".into();
-    }
-    if lower.contains("remote host identification has changed")
-        || lower.contains("host key verification failed")
-    {
-        return format!(
-            "The SSH host key for {} no longer matches known_hosts. Verify the server first, then remove the stale key entry before reconnecting.",
-            session.host
-        );
     }
     if lower.contains("unprotected private key file") || lower.contains("bad permissions") {
         return "The SSH private key permissions are too open for OpenSSH. Restrict the key file and its parent .ssh directory, then retry.".into();
