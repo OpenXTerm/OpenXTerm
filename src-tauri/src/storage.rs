@@ -11,8 +11,8 @@ use tauri::{AppHandle, Manager};
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 use crate::models::{
-    current_storage_schema_version, MacroDefinition, StatusBarMetrics, StorageBackupInfo,
-    StorageExportPayload, StorageModel, UiPreferences, CURRENT_STORAGE_SCHEMA_VERSION,
+    current_storage_schema_version, StatusBarMetrics, StorageBackupInfo, StorageExportPayload,
+    StorageModel, UiPreferences, CURRENT_STORAGE_SCHEMA_VERSION,
 };
 
 const LEGACY_UNVERSIONED_SCHEMA_VERSION: u32 = 1;
@@ -451,35 +451,9 @@ fn seed_storage() -> StorageModel {
         schema_version: CURRENT_STORAGE_SCHEMA_VERSION,
         sessions: vec![],
         session_folders: vec![],
-        macros: seed_macros(),
+        macros: vec![],
         preferences: seed_preferences(),
     }
-}
-
-fn seed_macros() -> Vec<MacroDefinition> {
-    vec![
-        MacroDefinition {
-            id: "macro-df".into(),
-            name: "Disk usage".into(),
-            command: "df -h".into(),
-            created_at: "2026-04-13T09:30:00.000Z".into(),
-            updated_at: "2026-04-13T09:30:00.000Z".into(),
-        },
-        MacroDefinition {
-            id: "macro-top".into(),
-            name: "Load snapshot".into(),
-            command: "uptime && free -m".into(),
-            created_at: "2026-04-13T09:31:00.000Z".into(),
-            updated_at: "2026-04-13T09:31:00.000Z".into(),
-        },
-        MacroDefinition {
-            id: "macro-tail".into(),
-            name: "Tail auth log".into(),
-            command: "tail -n 100 /var/log/auth.log".into(),
-            created_at: "2026-04-13T09:32:00.000Z".into(),
-            updated_at: "2026-04-13T09:32:00.000Z".into(),
-        },
-    ]
 }
 
 fn seed_preferences() -> UiPreferences {
@@ -492,6 +466,15 @@ mod tests {
 
     fn test_storage_path() -> PathBuf {
         PathBuf::from("/tmp/openxterm-test-state.json")
+    }
+
+    #[test]
+    fn fresh_storage_starts_without_demo_data() {
+        let storage = seed_storage();
+
+        assert!(storage.sessions.is_empty());
+        assert!(storage.session_folders.is_empty());
+        assert!(storage.macros.is_empty());
     }
 
     #[test]
