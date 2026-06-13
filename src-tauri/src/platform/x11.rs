@@ -1,6 +1,7 @@
 use std::{env, process::Command};
 
 use crate::models::LocalX11SupportPayload;
+use url::Url;
 
 pub fn inspect_local_x11_support(display_override: Option<&str>) -> LocalX11SupportPayload {
     let system_display = detect_system_x11_display(display_override);
@@ -67,9 +68,7 @@ pub fn resolve_local_x11_display(display_override: Option<&str>) -> Result<Strin
 }
 
 pub fn open_external_target(target: &str) -> Result<(), String> {
-    if target.trim().is_empty() {
-        return Err("no target was provided".into());
-    }
+    validate_external_target(target)?;
 
     #[cfg(target_os = "macos")]
     {
@@ -82,8 +81,8 @@ pub fn open_external_target(target: &str) -> Result<(), String> {
 
     #[cfg(windows)]
     {
-        Command::new("cmd")
-            .args(["/C", "start", "", target])
+        Command::new("explorer.exe")
+            .arg(target)
             .spawn()
             .map_err(|error| format!("failed to open target: {error}"))?;
         return Ok(());
@@ -97,6 +96,33 @@ pub fn open_external_target(target: &str) -> Result<(), String> {
             .map_err(|error| format!("failed to open target: {error}"))?;
         Ok(())
     }
+}
+
+fn validate_external_target(target: &str) -> Result<(), String> {
+    if target.is_empty() {
+        return Err("no target was provided".into());
+    }
+    if target
+        .chars()
+        .any(|ch| ch.is_control() || ch.is_whitespace())
+    {
+        return Err("external target cannot contain whitespace or control characters".into());
+    }
+
+    let parsed = Url::parse(target).map_err(|_| "external target must be a valid URL")?;
+    let raw_authority = target
+        .find("://")
+        .map(|separator| &target[separator + 3..])
+        .unwrap_or_default();
+    if !matches!(parsed.scheme(), "http" | "https")
+        || parsed.host_str().is_none()
+        || raw_authority.is_empty()
+        || raw_authority.starts_with('/')
+    {
+        return Err("external target must be an http or https URL".into());
+    }
+
+    Ok(())
 }
 
 fn detect_system_x11_display(display_override: Option<&str>) -> Option<String> {
@@ -199,5 +225,33 @@ fn inspect_xquartz_indirect_glx() -> Option<XQuartzIndirectGlxStatus> {
         Some(line) if line.contains("-iglx") => Some(XQuartzIndirectGlxStatus::EnabledNeedsRestart),
         Some(_) => Some(XQuartzIndirectGlxStatus::EnabledNeedsRestart),
         None => Some(XQuartzIndirectGlxStatus::EnabledNeedsRestart),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_external_target;
+
+    #[test]
+    fn accepts_http_help_links() {
+        assert!(validate_external_target("https://github.com/OpenXTerm/OpenXTerm").is_ok());
+        assert!(validate_external_target("http://localhost:3000/docs?section=x11").is_ok());
+    }
+
+    #[test]
+    fn rejects_non_web_and_shell_like_targets() {
+        for target in [
+            "file:///tmp/secret",
+            "javascript:alert(1)",
+            "https://example.com & calc.exe",
+            "https://example.com\r\ncalc.exe",
+            "//example.com/path",
+            "https:///missing-host",
+        ] {
+            assert!(
+                validate_external_target(target).is_err(),
+                "expected {target:?} to be rejected"
+            );
+        }
     }
 }
