@@ -166,6 +166,19 @@ export interface TerminalExitPayload {
   reason: string
 }
 
+export type HostKeyPromptKind = 'unknown' | 'changed'
+
+export interface HostKeyPromptPayload {
+  requestId: string
+  host: string
+  port: number
+  fingerprint: string
+  kind: HostKeyPromptKind
+  sessionLabel: string
+}
+
+export type HostKeyDecision = 'store' | 'once' | 'reject'
+
 export interface SessionStatusPayload {
   tabId: string
   mode: 'live' | 'limited' | 'offline' | 'error'

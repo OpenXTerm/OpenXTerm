@@ -7,16 +7,31 @@ import { DeleteSessionFolderModal } from './components/forms/DeleteSessionFolder
 import { SessionEditorModal } from './components/forms/SessionEditorModal'
 import { AppSettingsModal, type AppSettingsTab } from './components/forms/AppSettingsModal'
 import { AppLockOverlay } from './components/forms/AppLockOverlay'
+import { HostKeyPromptModal } from './components/forms/HostKeyPromptModal'
 import { TopBar } from './components/layout/TopBar'
 import { installEditablePasteShortcut } from './lib/editablePaste'
-import { getSystemAuthSupport, listenMenuAction, requestSystemUnlock } from './lib/bridge'
+import {
+  getSystemAuthSupport,
+  listenMenuAction,
+  listenSshHostKeyPrompt,
+  requestSystemUnlock,
+  resolveSshHostKey,
+} from './lib/bridge'
 import { normalizeSessionFolderPath } from './lib/sessionUtils'
 import { StatusBar } from './components/status/StatusBar'
 import { Sidebar } from './components/sidebar/Sidebar'
 import { Workspace } from './components/workspace/Workspace'
 import { isFolderPathInSubtree } from './state/openXTermStoreHelpers'
 import { useOpenXTermStore } from './state/useOpenXTermStore'
-import type { MacroDefinition, MenuAction, SessionDefinition, SessionFolderDefinition, SystemAuthSupport } from './types/domain'
+import type {
+  HostKeyDecision,
+  HostKeyPromptPayload,
+  MacroDefinition,
+  MenuAction,
+  SessionDefinition,
+  SessionFolderDefinition,
+  SystemAuthSupport,
+} from './types/domain'
 
 export function App() {
   const isMacOS = navigator.userAgent.includes('Mac')
@@ -74,6 +89,7 @@ export function App() {
   const [settingsInitialTab, setSettingsInitialTab] = useState<AppSettingsTab>('interface')
   const [moveSessionModalOpen, setMoveSessionModalOpen] = useState(false)
   const [sessionFolderModalOpen, setSessionFolderModalOpen] = useState(false)
+  const [hostKeyPrompts, setHostKeyPrompts] = useState<HostKeyPromptPayload[]>([])
   const [sidebarWidthDraft, setSidebarWidthDraft] = useState<number | null>(null)
   const [lockSupport, setLockSupport] = useState<SystemAuthSupport>({
     available: false,
@@ -101,6 +117,40 @@ export function App() {
   }, [initialize])
 
   useEffect(() => installEditablePasteShortcut(), [])
+
+  useEffect(() => {
+    let disposed = false
+    let unlisten = () => {}
+
+    void listenSshHostKeyPrompt((payload) => {
+      setHostKeyPrompts((current) =>
+        current.some((item) => item.requestId === payload.requestId)
+          ? current
+          : [...current, payload],
+      )
+    }).then((dispose) => {
+      if (disposed) {
+        void dispose()
+      } else {
+        unlisten = dispose
+      }
+    })
+
+    return () => {
+      disposed = true
+      unlisten()
+    }
+  }, [])
+
+  const handleHostKeyDecision = useCallback((decision: HostKeyDecision) => {
+    setHostKeyPrompts((current) => {
+      const [head, ...rest] = current
+      if (head) {
+        void resolveSshHostKey(head.requestId, decision)
+      }
+      return rest
+    })
+  }, [])
 
   useEffect(() => {
     if (!initialized) {
@@ -610,6 +660,14 @@ export function App() {
             setMacroModalOpen(false)
             setEditingMacro(null)
           }}
+        />
+      )}
+
+      {hostKeyPrompts[0] && (
+        <HostKeyPromptModal
+          key={hostKeyPrompts[0].requestId}
+          prompt={hostKeyPrompts[0]}
+          onDecision={handleHostKeyDecision}
         />
       )}
 
