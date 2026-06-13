@@ -33,10 +33,10 @@
   align-items: center;
   gap: 5px;
   padding: 0 6px;
-  border: 1px solid #2e383c;
+  border: 1px solid var(--color-statusbar-status-chip-border);
   border-radius: 4px;
-  background: #111719;
-  color: #dfe5e7;
+  background: var(--color-statusbar-status-chip-background);
+  color: var(--color-statusbar-status-chip-color);
   font-size: 11px;
   line-height: 1;
   white-space: nowrap;
@@ -60,11 +60,11 @@
 
 .status-segment-icon {
   display: inline-flex;
-  color: #91a0a4;
+  color: var(--color-statusbar-status-segment-icon-color);
 }
 
 .status-segment-label {
-  color: #91a0a4;
+  color: var(--color-statusbar-status-segment-icon-color);
   font-size: 10px;
   font-weight: 700;
 }
@@ -86,8 +86,8 @@
 .status-segment-accent,
 .status-chip-accent {
   color: var(--color-accent-bright);
-  border-color: #2c6a50;
-  background: #10201a;
+  border-color: var(--color-statusbar-status-chip-accent-border-color);
+  background: var(--color-statusbar-status-chip-accent-background);
 }
 
 .status-chip-static {
@@ -115,8 +115,8 @@
   align-items: flex-end;
   gap: 1px;
   padding: 1px 2px;
-  border-left: 1px solid #293438;
-  border-right: 1px solid #293438;
+  border-left: 1px solid var(--color-statusbar-status-sparkline-border-left);
+  border-right: 1px solid var(--color-statusbar-status-sparkline-border-left);
 }
 
 .statusbar-compact .status-sparkline {
@@ -133,7 +133,7 @@
   width: 2px;
   max-height: 12px;
   border-radius: 1px 1px 0 0;
-  background: #57d797;
+  background: var(--color-statusbar-status-sparkline-bar-background);
   opacity: 0.88;
 }
 
@@ -143,13 +143,13 @@
 }
 
 .status-sparkline-memory .status-sparkline-bar {
-  background: #65a7ff;
+  background: var(--color-statusbar-status-sparkline-memory-status-sparkline-bar-background);
 }
 
 .status-sparkline-download .status-sparkline-bar {
-  background: #5de2ce;
+  background: var(--color-statusbar-status-sparkline-download-status-sparkline-bar-background);
 }
 
 .status-sparkline-upload .status-sparkline-bar {
-  background: #f2b15c;
+  background: var(--color-statusbar-status-sparkline-upload-status-sparkline-bar-background);
 }

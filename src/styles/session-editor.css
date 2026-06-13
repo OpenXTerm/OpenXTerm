@@ -29,7 +29,7 @@
 
 .modal-subtitle {
   margin: 0;
-  color: #93a4aa;
+  color: var(--color-session-editor-modal-subtitle-color);
   font-size: 12px;
   line-height: 1.45;
 }
@@ -76,8 +76,8 @@
   -webkit-appearance: none;
   padding-right: 34px;
   background:
-    linear-gradient(45deg, transparent 50%, #9fb0b6 50%) calc(100% - 17px) 50% / 6px 6px no-repeat,
-    linear-gradient(135deg, #9fb0b6 50%, transparent 50%) calc(100% - 12px) 50% / 6px 6px no-repeat,
+    linear-gradient(45deg, transparent 50%, var(--color-session-editor-editor-form-background) 50%) calc(100% - 17px) 50% / 6px 6px no-repeat,
+    linear-gradient(135deg, var(--color-session-editor-editor-form-background) 50%, transparent 50%) calc(100% - 12px) 50% / 6px 6px no-repeat,
     var(--color-control-bg);
 }
 
@@ -107,14 +107,14 @@
   width: min(820px, calc(100vw - 28px));
   height: min(660px, calc(100vh - 32px));
   overflow: hidden;
-  background: #15191c;
+  background: var(--color-surface-toolbar);
 }
 
 .session-editor-modal .modal-header {
   align-items: center;
   flex: 0 0 auto;
   padding: 12px 14px 10px;
-  background: #171c1f;
+  background: var(--color-session-editor-session-editor-modal-modal-header-background);
 }
 
 .session-editor-modal .modal-heading {
@@ -122,7 +122,7 @@
 }
 
 .session-editor-modal .modal-subtitle {
-  color: #8fa1a7;
+  color: var(--color-session-editor-session-editor-modal-modal-subtitle-color);
 }
 
 .session-editor-form {
@@ -146,7 +146,7 @@
   grid-template-rows: auto auto minmax(0, 1fr);
   min-height: 0;
   border-right: 1px solid var(--color-border-panel-muted);
-  background: #12171a;
+  background: var(--color-surface-input);
 }
 
 .session-editor-side-title {
@@ -175,7 +175,7 @@
   border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;
-  color: #9fb0b6;
+  color: var(--color-session-editor-editor-form-background);
   padding: 6px 8px;
   font-size: 12px;
   text-align: left;
@@ -197,8 +197,8 @@
 }
 
 .session-editor-kind-pill.active {
-  border-color: rgba(90, 214, 166, 0.42);
-  background: rgba(33, 83, 66, 0.38);
+  border-color: var(--color-session-editor-session-editor-kind-pill-active-border-color);
+  background: var(--color-session-editor-session-editor-kind-pill-active-background);
   color: var(--color-text-strong);
 }
 
@@ -228,7 +228,7 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  background: #15191c;
+  background: var(--color-surface-toolbar);
 }
 
 .session-editor-grid {
@@ -262,8 +262,8 @@
   display: flex;
   gap: 4px;
   padding: 0 16px;
-  border-bottom: 1px solid #252e33;
-  background: #13181b;
+  border-bottom: 1px solid var(--color-session-editor-session-editor-tabstrip-border-bottom);
+  background: var(--color-session-editor-session-editor-tabstrip-background);
   flex: 0 0 auto;
 }
 
@@ -277,14 +277,14 @@
   border-bottom: 2px solid transparent;
   border-radius: 0;
   background: transparent;
-  color: #a8b8bd;
+  color: var(--color-session-editor-session-editor-tab-color);
   padding: 0 12px;
   cursor: pointer;
 }
 
 .session-editor-tab.active {
   border-color: var(--color-accent-bright);
-  background: rgba(62, 181, 137, 0.08);
+  background: var(--color-session-editor-session-editor-tab-active-background);
   color: var(--color-text-strong);
 }
 
@@ -319,10 +319,10 @@
 
 .session-editor-error {
   margin: 12px 16px 0;
-  border: 1px solid rgba(241, 97, 97, 0.55);
+  border: 1px solid var(--color-session-editor-session-editor-error-border);
   border-radius: 6px;
-  background: rgba(241, 97, 97, 0.1);
-  color: #ffb8b8;
+  background: var(--color-session-editor-session-editor-error-background);
+  color: var(--color-session-editor-session-editor-error-color);
   font-size: 12px;
   line-height: 1.35;
   padding: 9px 11px;
@@ -371,7 +371,7 @@
   border: 1px solid var(--color-border-strong);
   border-radius: 6px;
   background: var(--color-surface-input);
-  color: #dfe6e8;
+  color: var(--color-files-remote-properties-window-titlebar-color);
   padding: 8px 9px;
 }
 
@@ -393,12 +393,12 @@
   width: 22px;
   height: 22px;
   border-radius: 4px;
-  background: #1b2327;
-  color: #89bdf0;
+  background: var(--color-session-editor-session-auth-icon-background);
+  color: var(--color-session-editor-session-auth-icon-color);
 }
 
 .session-auth-option.active .session-auth-icon {
-  background: #1d4a3a;
+  background: var(--color-session-editor-active-session-auth-icon-background);
   color: var(--color-accent-bright);
 }
 
@@ -465,7 +465,7 @@
   border: 1px solid var(--color-panel-border);
   border-radius: 6px;
   background: var(--color-surface-raised);
-  color: #d8dadb;
+  color: var(--color-session-editor-font-picker-preview-color);
   font-size: 13px;
 }
 
@@ -487,7 +487,7 @@
   min-width: 54px;
   height: 30px;
   border-radius: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--color-session-editor-terminal-preset-swatch-border);
 }
 
 .color-field-row {
@@ -526,7 +526,7 @@
   min-height: 86px;
   padding: 10px;
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--color-session-editor-terminal-preview-swatch-border);
   line-height: 1.35;
 }
 
@@ -558,7 +558,7 @@
   border: 1px solid var(--color-panel-border);
   border-radius: 6px;
   background: var(--color-surface-raised);
-  color: #9db0b6;
+  color: var(--color-session-editor-editor-hint-color);
   font-size: 12px;
 }
 
@@ -611,7 +611,7 @@
 }
 
 .x11-assistant-detail {
-  color: #a8b8bd;
+  color: var(--color-session-editor-session-editor-tab-color);
 }
 
 .x11-assistant-error {
@@ -656,7 +656,7 @@
   margin-top: 0;
   padding: 12px 16px;
   border-top: 1px solid var(--color-border-panel-muted);
-  background: #13181b;
+  background: var(--color-session-editor-session-editor-tabstrip-background);
 }
 
 .session-editor-action-note {

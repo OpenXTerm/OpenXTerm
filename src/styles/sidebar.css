@@ -14,7 +14,7 @@
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: #90a1a7;
+  color: var(--color-sidebar-rail-button-color);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -102,17 +102,17 @@
 }
 
 .sidebar-icon-button.success {
-  color: #78d98c;
+  color: var(--color-sidebar-sidebar-icon-button-success-color);
 }
 
 .sidebar-icon-button.danger {
-  color: #eb7777;
+  color: var(--color-sidebar-sidebar-icon-button-danger-color);
 }
 
 .solid-button {
-  background: #21513f;
-  border-color: #2c6f56;
-  color: #dff7ed;
+  background: var(--color-sidebar-solid-button-background);
+  border-color: var(--color-sidebar-solid-button-border-color);
+  color: var(--color-files-file-drop-overlay-color);
 }
 
 .sidebar-list {
@@ -187,8 +187,8 @@
   flex: 0 0 auto;
   border: 1px solid var(--color-border-strong);
   border-radius: 6px;
-  background: #161a1d;
-  color: #cdd5d8;
+  background: var(--color-sidebar-sidebar-sftp-chip-background);
+  color: var(--color-sidebar-sidebar-sftp-chip-color);
   padding: 3px 7px;
   font-size: 11px;
 }
@@ -264,7 +264,7 @@
   gap: 8px;
   min-height: 34px;
   padding: 6px 9px;
-  border-bottom: 1px solid #1a2023;
+  border-bottom: 1px solid var(--color-table-line);
 }
 
 .sidebar-row {
@@ -330,7 +330,7 @@
   background: var(--color-table-header);
   color: var(--color-table-header-text);
   font-weight: 600;
-  box-shadow: inset 0 -1px 0 #363d40;
+  box-shadow: inset 0 -1px 0 var(--color-sidebar-file-row-header-box-shadow);
 }
 
 .sidebar-sftp-table-row:hover,
@@ -407,7 +407,7 @@
 
 .file-table-column-resizer:hover::after,
 .file-table-column-resizer:active::after {
-  background: #6cb996;
+  background: var(--color-sidebar-file-table-column-resizer-background);
 }
 
 .sidebar-sftp-name-cell {
@@ -433,7 +433,7 @@
 }
 
 .sidebar-folder-row {
-  color: #e4dfc5;
+  color: var(--color-sidebar-sidebar-folder-row-color);
 }
 
 .sidebar-row.dragging {
@@ -441,15 +441,15 @@
 }
 
 .sidebar-row.drop-target {
-  background: rgba(34, 73, 60, 0.72);
+  background: var(--color-sidebar-sidebar-row-drop-target-background);
   box-shadow: inset 0 0 0 1px var(--color-border-success);
 }
 
 .sidebar-root-drop-target {
   margin: 6px 8px 4px;
-  border: 1px dashed #355045;
+  border: 1px dashed var(--color-sidebar-sidebar-root-drop-target-border);
   border-radius: 6px;
-  background: rgba(19, 26, 29, 0.8);
+  background: var(--color-sidebar-sidebar-root-drop-target-background);
 }
 
 .sidebar-row-main,
@@ -476,7 +476,7 @@
   align-items: center;
   justify-content: center;
   width: 14px;
-  color: #81949b;
+  color: var(--color-sidebar-sidebar-tree-spacer-color);
 }
 
 .sidebar-row-copy,
@@ -512,15 +512,15 @@
 .sidebar-row-actions button {
   border: 0;
   background: transparent;
-  color: #92a3aa;
+  color: var(--color-sidebar-sidebar-row-actions-color);
   display: inline-flex;
   padding: 2px;
   border-radius: 4px;
 }
 
 .sidebar-row-actions button:hover {
-  background: #253036;
-  color: #f1f5f6;
+  background: var(--color-sidebar-sidebar-row-actions-background);
+  color: var(--color-sidebar-sidebar-row-actions-color-2);
 }
 
 .sidebar-row-actions button:disabled {
@@ -535,9 +535,9 @@
   justify-content: center;
   width: 20px;
   height: 20px;
-  border: 1px solid #2d3940;
+  border: 1px solid var(--color-sidebar-sidebar-row-drag-handle-border);
   border-radius: 4px;
-  background: #12181b;
+  background: var(--color-sidebar-sidebar-row-drag-handle-background);
   color: var(--color-info);
   cursor: grab;
   touch-action: none;
@@ -551,9 +551,9 @@
 }
 
 .sidebar-row-drag-handle:hover {
-  border-color: #426073;
-  background: #1a252b;
-  color: #b7dcff;
+  border-color: var(--color-sidebar-sidebar-row-drag-handle-border-color);
+  background: var(--color-sidebar-sidebar-row-drag-handle-background-2);
+  color: var(--color-sidebar-sidebar-row-drag-handle-color);
 }
 
 .sidebar-footer {
@@ -606,7 +606,7 @@
   min-width: 132px;
   padding: 4px;
   border-radius: 6px;
-  background: #111619;
+  background: var(--color-sidebar-sidebar-context-menu-background);
 }
 
 .sidebar-context-menu button,
@@ -634,7 +634,7 @@
 
 .sidebar-list.sidebar-drop-active {
   position: relative;
-  background: rgba(25, 57, 46, 0.18);
+  background: var(--color-sidebar-sidebar-list-sidebar-drop-active-background);
 }
 
 .sidebar-drop-overlay {
@@ -642,7 +642,7 @@
   inset: 10px;
   min-height: 78px;
   margin: 0;
-  background: rgba(18, 35, 29, 0.86);
+  background: var(--color-sidebar-sidebar-drop-overlay-background);
 }
 
 .sidebar-drop-overlay strong {

@@ -65,6 +65,148 @@
   --color-table-text: #d6dde0;
   --color-menu-hover-border: #2c5f4f;
   --color-menu-hover: #17352c;
+  --color-base-app-shell-background: rgba(7, 17, 16, 0.96);
+  --color-base-app-shell-background-2: rgba(14, 16, 18, 0.98);
+  --color-base-topbar-background: rgba(5, 15, 14, 0.95);
+  --color-base-topbar-menuitem-active-color: #eef3f4;
+  --color-base-topbar-dropdown-background: rgba(9, 18, 20, 0.98);
+  --color-base-sidebar-resizer-background: #111417;
+  --color-base-sidebar-resizer-background-2: #151a1d;
+  --color-base-sidebar-resizer-background-3: #17342d;
+  --color-base-sidebar-resizer-background-4: #1a3b33;
+  --color-files-file-pane-drop-active-background: rgba(25, 57, 46, 0.24);
+  --color-files-file-drop-overlay-color: #dff7ed;
+  --color-files-file-drop-overlay-background: rgba(18, 35, 29, 0.82);
+  --color-files-file-context-menu-box-shadow: rgba(0, 0, 0, 0.38);
+  --color-files-remote-properties-modal-border: #354046;
+  --color-files-remote-properties-modal-box-shadow: rgba(0, 0, 0, 0.56);
+  --color-files-remote-properties-window-titlebar-border-bottom: #2a3337;
+  --color-files-remote-properties-window-titlebar-background: #20262a;
+  --color-files-remote-properties-window-titlebar-color: #dfe6e8;
+  --color-files-remote-properties-window-titlebar-color-2: #aeb8bc;
+  --color-files-remote-properties-window-titlebar-color-3: #fff2f2;
+  --color-files-remote-properties-icon-background: #182024;
+  --color-files-remote-properties-section-border: #2b353a;
+  --color-files-remote-properties-section-color: #cdd7da;
+  --color-files-remote-properties-facts-color: #e5eaec;
+  --color-files-remote-permission-row-color: #c7d1d4;
+  --color-files-remote-permission-row-accent-color: #43c88d;
+  --color-files-file-conflict-modal-modal-header-color: #a7b4b9;
+  --color-files-file-conflict-rename-color: #edf3f4;
+  --color-files-remote-properties-modal-modal-actions-background: #14191c;
+  --color-files-modal-actions-primary-color: #eafff6;
+  --color-session-editor-modal-subtitle-color: #93a4aa;
+  --color-session-editor-editor-form-background: #9fb0b6;
+  --color-session-editor-session-editor-modal-modal-header-background: #171c1f;
+  --color-session-editor-session-editor-modal-modal-subtitle-color: #8fa1a7;
+  --color-session-editor-session-editor-kind-pill-active-border-color: rgba(90, 214, 166, 0.42);
+  --color-session-editor-session-editor-kind-pill-active-background: rgba(33, 83, 66, 0.38);
+  --color-session-editor-session-editor-tabstrip-border-bottom: #252e33;
+  --color-session-editor-session-editor-tabstrip-background: #13181b;
+  --color-session-editor-session-editor-tab-color: #a8b8bd;
+  --color-session-editor-session-editor-tab-active-background: rgba(62, 181, 137, 0.08);
+  --color-session-editor-session-editor-error-border: rgba(241, 97, 97, 0.55);
+  --color-session-editor-session-editor-error-background: rgba(241, 97, 97, 0.1);
+  --color-session-editor-session-editor-error-color: #ffb8b8;
+  --color-session-editor-session-auth-icon-background: #1b2327;
+  --color-session-editor-session-auth-icon-color: #89bdf0;
+  --color-session-editor-active-session-auth-icon-background: #1d4a3a;
+  --color-session-editor-font-picker-preview-color: #d8dadb;
+  --color-session-editor-terminal-preset-swatch-border: rgba(255, 255, 255, 0.08);
+  --color-session-editor-terminal-preview-swatch-border: rgba(255, 255, 255, 0.06);
+  --color-session-editor-editor-hint-color: #9db0b6;
+  --color-sidebar-rail-button-color: #90a1a7;
+  --color-sidebar-sidebar-icon-button-success-color: #78d98c;
+  --color-sidebar-sidebar-icon-button-danger-color: #eb7777;
+  --color-sidebar-solid-button-background: #21513f;
+  --color-sidebar-solid-button-border-color: #2c6f56;
+  --color-sidebar-sidebar-sftp-chip-background: #161a1d;
+  --color-sidebar-sidebar-sftp-chip-color: #cdd5d8;
+  --color-sidebar-file-row-header-box-shadow: #363d40;
+  --color-sidebar-file-table-column-resizer-background: #6cb996;
+  --color-sidebar-sidebar-folder-row-color: #e4dfc5;
+  --color-sidebar-sidebar-row-drop-target-background: rgba(34, 73, 60, 0.72);
+  --color-sidebar-sidebar-root-drop-target-border: #355045;
+  --color-sidebar-sidebar-root-drop-target-background: rgba(19, 26, 29, 0.8);
+  --color-sidebar-sidebar-tree-spacer-color: #81949b;
+  --color-sidebar-sidebar-row-actions-color: #92a3aa;
+  --color-sidebar-sidebar-row-actions-background: #253036;
+  --color-sidebar-sidebar-row-actions-color-2: #f1f5f6;
+  --color-sidebar-sidebar-row-drag-handle-border: #2d3940;
+  --color-sidebar-sidebar-row-drag-handle-background: #12181b;
+  --color-sidebar-sidebar-row-drag-handle-border-color: #426073;
+  --color-sidebar-sidebar-row-drag-handle-background-2: #1a252b;
+  --color-sidebar-sidebar-row-drag-handle-color: #b7dcff;
+  --color-sidebar-sidebar-context-menu-background: #111619;
+  --color-sidebar-sidebar-list-sidebar-drop-active-background: rgba(25, 57, 46, 0.18);
+  --color-sidebar-sidebar-drop-overlay-background: rgba(18, 35, 29, 0.86);
+  --color-statusbar-status-chip-border: #2e383c;
+  --color-statusbar-status-chip-background: #111719;
+  --color-statusbar-status-chip-color: #dfe5e7;
+  --color-statusbar-status-segment-icon-color: #91a0a4;
+  --color-statusbar-status-chip-accent-border-color: #2c6a50;
+  --color-statusbar-status-chip-accent-background: #10201a;
+  --color-statusbar-status-sparkline-border-left: #293438;
+  --color-statusbar-status-sparkline-bar-background: #57d797;
+  --color-statusbar-status-sparkline-memory-status-sparkline-bar-background: #65a7ff;
+  --color-statusbar-status-sparkline-download-status-sparkline-bar-background: #5de2ce;
+  --color-statusbar-status-sparkline-upload-status-sparkline-bar-background: #f2b15c;
+  --color-transfers-modal-backdrop-background: rgba(8, 10, 11, 0.78);
+  --color-transfers-app-lock-backdrop-background: rgba(6, 9, 10, 0.92);
+  --color-transfers-app-lock-backdrop-background-2: rgba(8, 11, 12, 0.96);
+  --color-transfers-app-lock-panel-border: #374247;
+  --color-transfers-app-lock-panel-box-shadow: rgba(0, 0, 0, 0.42);
+  --color-transfers-app-lock-panel-color: #aab5b9;
+  --color-transfers-app-lock-icon-border: #2d7b5e;
+  --color-transfers-app-lock-icon-background: #14352a;
+  --color-transfers-app-lock-error-color: #ff9c9c;
+  --color-transfers-modal-panel-border: #3a454a;
+  --color-transfers-modal-panel-background: #171b1e;
+  --color-transfers-transfer-backdrop-background: rgba(6, 8, 10, 0.34);
+  --color-transfers-transfer-window-embedded-background: #eff2f5;
+  --color-transfers-transfer-window-embedded-background-2: #dfe4e8;
+  --color-transfers-transfer-window-border: #b8bec4;
+  --color-transfers-transfer-window-box-shadow: rgba(0, 0, 0, 0.32);
+  --color-transfers-transfer-window-header-border-bottom: #c4ccd3;
+  --color-transfers-transfer-window-header-background: #f7f9fb;
+  --color-transfers-transfer-window-header-background-2: #e8edf1;
+  --color-transfers-transfer-window-header-color: #55626e;
+  --color-transfers-transfer-row-border-bottom: #d2d8de;
+  --color-transfers-transfer-row-actions-border: #c89090;
+  --color-transfers-transfer-row-actions-background: #fff1f1;
+  --color-transfers-transfer-row-actions-color: #9f3030;
+  --color-transfers-transfer-row-actions-background-2: #ffdede;
+  --color-transfers-transfer-row-actions-retry-border-color: #8caed3;
+  --color-transfers-transfer-row-actions-retry-background: #eef6ff;
+  --color-transfers-transfer-row-actions-retry-color: #2f6ca3;
+  --color-transfers-transfer-row-actions-retry-background-2: #dbeeff;
+  --color-transfers-transfer-row-state-completed-color: #2e9256;
+  --color-transfers-transfer-row-state-canceled-color: #7b8790;
+  --color-transfers-transfer-row-state-error-color: #c73f3f;
+  --color-transfers-transfer-progress-track-border: #93afca;
+  --color-transfers-transfer-progress-track-background: #ffffff;
+  --color-transfers-transfer-progress-track-box-shadow: rgba(0, 0, 0, 0.12);
+  --color-transfers-transfer-progress-fill-background: #82c2ff;
+  --color-transfers-transfer-progress-fill-background-2: #3d8de4;
+  --color-workspace-workspace-frame-background: #17191c;
+  --color-workspace-workspace-tab-close-color: #8fa0a7;
+  --color-workspace-home-card-header-border: #293236;
+  --color-workspace-home-card-header-color: #f0f3f4;
+  --color-workspace-home-subtitle-color: #9daaae;
+  --color-workspace-home-empty-row-border: #303a3f;
+  --color-workspace-home-empty-row-color: #dce2e4;
+  --color-workspace-home-empty-row-background: #1d2529;
+  --color-workspace-home-recent-background: #121619;
+  --color-workspace-home-recent-heading-border-bottom: #242c30;
+  --color-workspace-home-recent-heading-color: #9eaaaf;
+  --color-workspace-home-session-icon-background: #17211f;
+  --color-workspace-home-session-main-color: #edf1f2;
+  --color-workspace-home-session-meta-color: #87969b;
+  --color-workspace-file-preview-border: #2c3438;
+  --color-workspace-file-preview-background: #171a1d;
+  --color-workspace-file-preview-color: #d7dbdd;
+  --color-workspace-terminal-search-bar-background: rgba(12, 16, 18, 0.96);
+  --color-workspace-terminal-search-bar-box-shadow: rgba(0, 0, 0, 0.35);
   --shadow-context-menu: 0 14px 34px rgba(0, 0, 0, 0.34);
   --shadow-floating-panel: 0 18px 40px rgba(0, 0, 0, 0.34);
   --focus-accent-outline: 2px solid rgba(84, 204, 153, 0.24);
@@ -107,7 +249,7 @@ button {
   flex-direction: column;
   height: 100%;
   background:
-    linear-gradient(180deg, rgba(7, 17, 16, 0.96) 0%, rgba(14, 16, 18, 0.98) 14%, var(--color-bg) 100%);
+    linear-gradient(180deg, var(--color-base-app-shell-background) 0%, var(--color-base-app-shell-background-2) 14%, var(--color-bg) 100%);
 }
 
 .boot-screen {
@@ -121,7 +263,7 @@ button {
 
 .topbar {
   border-bottom: 1px solid var(--color-border);
-  background: rgba(5, 15, 14, 0.95);
+  background: var(--color-base-topbar-background);
 }
 
 .topbar-menubar {
@@ -163,7 +305,7 @@ button {
 
 .topbar-menuitem.active {
   background: var(--color-hover);
-  color: #eef3f4;
+  color: var(--color-base-topbar-menuitem-active-color);
 }
 
 .chrome-action {
@@ -183,7 +325,7 @@ button {
   padding: 6px;
   border: 1px solid var(--color-border);
   border-radius: 10px;
-  background: rgba(9, 18, 20, 0.98);
+  background: var(--color-base-topbar-dropdown-background);
   box-shadow: var(--shadow-floating-panel);
   z-index: 120;
 }
@@ -250,11 +392,11 @@ button {
   width: 6px;
   min-height: 0;
   cursor: col-resize;
-  background: linear-gradient(180deg, #111417 0%, #151a1d 100%);
+  background: linear-gradient(180deg, var(--color-base-sidebar-resizer-background) 0%, var(--color-base-sidebar-resizer-background-2) 100%);
   border-left: 1px solid var(--color-hover);
   border-right: 1px solid var(--color-hover);
 }
 
 .sidebar-resizer:hover {
-  background: linear-gradient(180deg, #17342d 0%, #1a3b33 100%);
+  background: linear-gradient(180deg, var(--color-base-sidebar-resizer-background-3) 0%, var(--color-base-sidebar-resizer-background-4) 100%);
 }

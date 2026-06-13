@@ -12,8 +12,8 @@
   display: flex;
   gap: 4px;
   padding: 0 16px;
-  border-bottom: 1px solid #252e33;
-  background: #13181b;
+  border-bottom: 1px solid var(--color-session-editor-session-editor-tabstrip-border-bottom);
+  background: var(--color-session-editor-session-editor-tabstrip-background);
 }
 
 .app-settings-tab {
@@ -41,7 +41,7 @@
 .app-settings-tab.active {
   color: var(--color-text-strong);
   border-color: var(--color-accent-bright);
-  background: rgba(62, 181, 137, 0.08);
+  background: var(--color-session-editor-session-editor-tab-active-background);
 }
 
 .app-settings-tab-meta {
@@ -194,7 +194,7 @@
   margin-top: 0;
   padding: 12px 16px;
   border-top: 1px solid var(--color-border-panel-muted);
-  background: #13181b;
+  background: var(--color-session-editor-session-editor-tabstrip-background);
 }
 
 @media (max-width: 620px) {
