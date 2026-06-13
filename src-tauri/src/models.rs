@@ -79,17 +79,24 @@ pub struct SessionFolderDefinition {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MacroDefinition {
+    #[serde(default)]
     pub id: String,
+    #[serde(default)]
     pub name: String,
+    #[serde(default)]
     pub command: String,
+    #[serde(default)]
     pub created_at: String,
+    #[serde(default)]
     pub updated_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UiPreferences {
+    #[serde(default = "default_theme")]
     pub theme: String,
+    #[serde(default = "default_active_sidebar")]
     pub active_sidebar: String,
     #[serde(default)]
     pub sidebar_width: Option<u16>,
@@ -99,6 +106,27 @@ pub struct UiPreferences {
     pub status_bar_size: String,
     #[serde(default = "default_status_bar_metrics")]
     pub status_bar_metrics: StatusBarMetrics,
+}
+
+impl Default for UiPreferences {
+    fn default() -> Self {
+        Self {
+            theme: default_theme(),
+            active_sidebar: default_active_sidebar(),
+            sidebar_width: Some(252),
+            status_bar_visible: default_status_bar_visible(),
+            status_bar_size: default_status_bar_size(),
+            status_bar_metrics: default_status_bar_metrics(),
+        }
+    }
+}
+
+fn default_theme() -> String {
+    "dark".into()
+}
+
+fn default_active_sidebar() -> String {
+    "sessions".into()
 }
 
 fn default_status_bar_visible() -> bool {
@@ -114,15 +142,21 @@ fn default_status_bar_metric_visible() -> bool {
 }
 
 fn default_status_bar_metrics() -> StatusBarMetrics {
-    StatusBarMetrics {
-        host: true,
-        user: true,
-        cpu: true,
-        memory: true,
-        disk: true,
-        network_down: true,
-        network_up: true,
-        uptime: true,
+    StatusBarMetrics::default()
+}
+
+impl Default for StatusBarMetrics {
+    fn default() -> Self {
+        Self {
+            host: true,
+            user: true,
+            cpu: true,
+            memory: true,
+            disk: true,
+            network_down: true,
+            network_up: true,
+            uptime: true,
+        }
     }
 }
 
@@ -152,11 +186,60 @@ pub struct StatusBarMetrics {
 pub struct StorageModel {
     #[serde(default = "current_storage_schema_version")]
     pub schema_version: u32,
+    #[serde(default)]
     pub sessions: Vec<SessionDefinition>,
     #[serde(default)]
     pub session_folders: Vec<SessionFolderDefinition>,
+    #[serde(default)]
     pub macros: Vec<MacroDefinition>,
+    #[serde(default)]
     pub preferences: UiPreferences,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MacroDefinition, StorageModel, UiPreferences, CURRENT_STORAGE_SCHEMA_VERSION};
+
+    #[test]
+    fn macro_definition_defaults_missing_fields() {
+        let value = serde_json::json!({ "name": "Disk usage", "command": "df -h" });
+        let macro_definition: MacroDefinition =
+            serde_json::from_value(value).expect("macro defaults should decode");
+
+        assert_eq!(macro_definition.id, "");
+        assert_eq!(macro_definition.name, "Disk usage");
+        assert_eq!(macro_definition.command, "df -h");
+        assert_eq!(macro_definition.created_at, "");
+        assert_eq!(macro_definition.updated_at, "");
+    }
+
+    #[test]
+    fn ui_preferences_default_missing_fields() {
+        let preferences: UiPreferences =
+            serde_json::from_value(serde_json::json!({})).expect("preferences defaults decode");
+
+        assert_eq!(preferences.theme, "dark");
+        assert_eq!(preferences.active_sidebar, "sessions");
+        assert_eq!(preferences.sidebar_width, None);
+        assert!(preferences.status_bar_visible);
+        assert_eq!(preferences.status_bar_size, "regular");
+        assert!(preferences.status_bar_metrics.host);
+        assert!(preferences.status_bar_metrics.uptime);
+    }
+
+    #[test]
+    fn storage_model_defaults_missing_sections() {
+        let storage: StorageModel =
+            serde_json::from_value(serde_json::json!({})).expect("storage defaults should decode");
+
+        assert_eq!(storage.schema_version, CURRENT_STORAGE_SCHEMA_VERSION);
+        assert!(storage.sessions.is_empty());
+        assert!(storage.session_folders.is_empty());
+        assert!(storage.macros.is_empty());
+        assert_eq!(storage.preferences.theme, "dark");
+        assert_eq!(storage.preferences.active_sidebar, "sessions");
+        assert_eq!(storage.preferences.sidebar_width, Some(252));
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

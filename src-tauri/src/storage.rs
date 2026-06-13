@@ -289,7 +289,7 @@ fn normalize_v1_preferences(object: &mut Map<String, Value>) -> Result<(), Strin
         .entry("statusBarSize")
         .or_insert_with(|| Value::String("regular".into()));
     preferences.entry("statusBarMetrics").or_insert_with(|| {
-        serde_json::to_value(seed_status_bar_metrics())
+        serde_json::to_value(StatusBarMetrics::default())
             .unwrap_or_else(|_| Value::Object(Map::new()))
     });
 
@@ -483,27 +483,7 @@ fn seed_macros() -> Vec<MacroDefinition> {
 }
 
 fn seed_preferences() -> UiPreferences {
-    UiPreferences {
-        theme: "dark".into(),
-        active_sidebar: "sessions".into(),
-        sidebar_width: Some(252),
-        status_bar_visible: true,
-        status_bar_size: "regular".into(),
-        status_bar_metrics: seed_status_bar_metrics(),
-    }
-}
-
-fn seed_status_bar_metrics() -> StatusBarMetrics {
-    StatusBarMetrics {
-        host: true,
-        user: true,
-        cpu: true,
-        memory: true,
-        disk: true,
-        network_down: true,
-        network_up: true,
-        uptime: true,
-    }
+    UiPreferences::default()
 }
 
 #[cfg(test)]
@@ -582,6 +562,25 @@ mod tests {
             result.storage.schema_version,
             CURRENT_STORAGE_SCHEMA_VERSION
         );
+    }
+
+    #[test]
+    fn accepts_partial_current_storage_with_model_defaults() {
+        let raw = r#"{
+          "schemaVersion": 2,
+          "preferences": { "activeSidebar": "macros" },
+          "macros": [{ "name": "Who am I", "command": "whoami" }]
+        }"#;
+
+        let result = migrate_storage_json(raw, &test_storage_path()).expect("decode succeeds");
+
+        assert!(!result.migrated);
+        assert!(result.storage.sessions.is_empty());
+        assert!(result.storage.session_folders.is_empty());
+        assert_eq!(result.storage.preferences.theme, "dark");
+        assert_eq!(result.storage.preferences.active_sidebar, "macros");
+        assert_eq!(result.storage.macros[0].id, "");
+        assert_eq!(result.storage.macros[0].created_at, "");
     }
 
     #[test]
