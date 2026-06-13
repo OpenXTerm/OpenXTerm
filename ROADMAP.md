@@ -73,6 +73,10 @@ OpenXTerm is independent software. It is not affiliated with, endorsed by, or co
 - Trimmed avoidable Rust string clones in transfer progress emission and embedded SSH interactive login setup while preserving thread/Arc ownership clones.
 - Introduced a shared Rust transfer lifecycle helper for queued/running/completed/error emission plus cancel/retry cleanup in upload/download paths.
 - Hardened SFTP/file-transfer failure handling with shared permission/no-space/connection/not-found error classification, explicit remote directory creation errors, and safer cleanup for failed local file/folder downloads.
+- Completed the CSS color token migration so core surfaces use shared color variables instead of hard-coded color values.
+- Split the X11 proxy and runtime diagnostics into focused modules.
+- Hardened storage deserialization with safer default fallbacks for partial/legacy state files.
+- Added a Docker-backed SSH integration test suite covering password, OpenSSH key, PPK, remote-exec, SFTP, failure, and timeout paths.
 
 ### Closed Refactor Audit Items
 
@@ -108,6 +112,9 @@ The documentation/code audit items from the May 2026 cleanup pass are closed. Fu
 - Serial terminal sessions.
 - SSH sessions without saved username can prompt for login in the terminal.
 - Windows prompt-wrapper support for SSH profiles without saved username.
+- SSH private key authentication with OpenSSH and PuTTY PPK key support.
+- Native file dialog for selecting SSH private keys in the session editor.
+- Automatic SSH legacy/modern compatibility detection from the private key type.
 - Restart/save prompt when terminal sessions stop.
 - Clear and reset actions for terminal tabs.
 - Linked SFTP sidebar discovery for live SSH tabs.
@@ -136,6 +143,7 @@ The documentation/code audit items from the May 2026 cleanup pass are closed. Fu
 - Clickable non-macOS topbar menus.
 - Error-only frontend console logging for operational failures.
 - Macros with create, edit, run, and delete.
+- Fresh installs no longer seed demo/example macros.
 - MIT license.
 - Agent documentation in `AGENTS.md`.
 - Public README refresh.
@@ -236,6 +244,9 @@ Goal: terminal sessions and linked SFTP should become predictable enough for dai
 - Local-session working-directory support.
 - SFTP password reuse through active SSH sessions via embedded helper.
 - Migrated live terminal SSH to embedded `libssh-rs` backend.
+- OpenSSH and PuTTY PPK private key authentication.
+- Native SSH private key file picker.
+- Automatic legacy/modern SSH algorithm selection from the key type.
 
 ### In Progress
 
@@ -319,6 +330,7 @@ Goal: credentials and host trust should be release-worthy.
 
 - Optional app lock through system authentication where supported.
 - Password/key fields exist in session definitions.
+- OpenSSH and PuTTY PPK private key authentication with a native key file picker.
 
 ### In Progress
 
