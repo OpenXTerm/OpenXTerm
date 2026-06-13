@@ -19,7 +19,7 @@ use super::{
     metadata::is_directory,
     paths::{
         download_target_path, drag_cache_path, join_remote_path, remote_file_name,
-        sanitize_transfer_name,
+        safe_local_download_child, sanitize_transfer_name,
     },
     sftp::{open_sftp, sftp_directory_total_size},
     state::{remember_transfer_retry, stop_if_transfer_cancelled, TransferRetryOperation},
@@ -379,7 +379,7 @@ fn download_sftp_directory_recursive(
         }
 
         let remote_path = join_remote_path(remote_dir, name);
-        let local_path = local_dir.join(name);
+        let local_path = safe_local_download_child(local_dir, name)?;
 
         if is_directory(entry.file_type()) {
             fs::create_dir_all(&local_path).map_err(|error| {

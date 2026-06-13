@@ -114,6 +114,41 @@ pub(super) fn sanitize_transfer_name(file_name: &str) -> String {
     }
 }
 
+pub(super) fn safe_local_download_child(parent: &Path, name: &str) -> Result<PathBuf, String> {
+    if name.is_empty() || name == "." || name == ".." {
+        return Err("remote entry has an unsafe empty or relative name".into());
+    }
+    if name.chars().any(char::is_control) || sanitize_file_name(name) != name {
+        return Err(format!(
+            "remote entry name is unsafe for download: {name:?}"
+        ));
+    }
+
+    let child = Path::new(name);
+    if child.is_absolute() || child.components().count() != 1 {
+        return Err(format!(
+            "remote entry name is unsafe for download: {name:?}"
+        ));
+    }
+
+    let local_path = parent.join(child);
+    if !local_path.starts_with(parent) {
+        return Err(format!(
+            "remote entry escapes the download directory: {name:?}"
+        ));
+    }
+    if fs::symlink_metadata(&local_path)
+        .map(|metadata| metadata.file_type().is_symlink())
+        .unwrap_or(false)
+    {
+        return Err(format!(
+            "remote entry would overwrite a local symbolic link: {name:?}"
+        ));
+    }
+
+    Ok(local_path)
+}
+
 pub(super) fn drag_cache_path(file_name: &str) -> PathBuf {
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -162,4 +197,42 @@ fn sanitize_file_name(file_name: &str) -> String {
             _ => ch,
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::safe_local_download_child;
+    use std::path::Path;
+
+    #[test]
+    fn accepts_a_single_remote_name_component() {
+        let parent = Path::new("/tmp/openxterm-download");
+
+        assert_eq!(
+            safe_local_download_child(parent, "report 2026.txt").unwrap(),
+            parent.join("report 2026.txt")
+        );
+    }
+
+    #[test]
+    fn rejects_remote_names_that_can_escape_the_target_directory() {
+        let parent = Path::new("/tmp/openxterm-download");
+
+        for name in [
+            "",
+            ".",
+            "..",
+            "../outside",
+            "folder/file",
+            "..\\outside",
+            "C:\\outside",
+            "alternate:stream",
+            "line\nbreak",
+        ] {
+            assert!(
+                safe_local_download_child(parent, name).is_err(),
+                "expected {name:?} to be rejected"
+            );
+        }
+    }
 }
