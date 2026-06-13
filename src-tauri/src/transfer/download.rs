@@ -15,7 +15,7 @@ use super::{
     errors::{describe_local_io_error, describe_remote_error},
     ftp::run_ftp_download,
     generate_transfer_id,
-    lifecycle::TransferLifecycle,
+    lifecycle::{init_transfer, TransferInit},
     metadata::is_directory,
     paths::{
         download_target_path, drag_cache_path, join_remote_path, remote_file_name,
@@ -151,28 +151,25 @@ pub fn download_remote_entry_to_path(
         );
     }
 
-    let transfer_id = transfer_id.unwrap_or_else(|| generate_transfer_id("download"));
     let local_path = save_path.display().to_string();
     let conflict_action = conflict_action.unwrap_or_else(|| "error".into());
-    let lifecycle = TransferLifecycle::new(
+    let queued_message = if purpose == "drag-export" {
+        "Preparing local drag folder"
+    } else {
+        "Queued folder download"
+    };
+    let (transfer_id, lifecycle) = init_transfer(TransferInit {
         app,
-        &transfer_id,
+        transfer_id,
+        id_prefix: "download",
         file_name,
         remote_path,
-        "download",
+        direction: "download",
         purpose,
-        Some(local_path.as_str()),
-    );
-    lifecycle.reset_cancel();
-
-    lifecycle.queued(
-        None,
-        if purpose == "drag-export" {
-            "Preparing local drag folder"
-        } else {
-            "Queued folder download"
-        },
-    );
+        local_path: Some(local_path.as_str()),
+        total_bytes: None,
+        queued_message,
+    });
 
     let target_existed_before = save_path.exists();
     let result = match session.kind.as_str() {
@@ -241,28 +238,25 @@ pub fn download_remote_file_to_path(
     transfer_id: Option<String>,
     conflict_action: Option<String>,
 ) -> Result<FileDownloadResult, String> {
-    let transfer_id = transfer_id.unwrap_or_else(|| generate_transfer_id("download"));
     let local_path = save_path.display().to_string();
     let conflict_action = conflict_action.unwrap_or_else(|| "error".into());
-    let lifecycle = TransferLifecycle::new(
+    let queued_message = if purpose == "drag-export" {
+        "Preparing local drag copy"
+    } else {
+        "Queued for download"
+    };
+    let (_, lifecycle) = init_transfer(TransferInit {
         app,
-        &transfer_id,
+        transfer_id,
+        id_prefix: "download",
         file_name,
         remote_path,
-        "download",
+        direction: "download",
         purpose,
-        Some(local_path.as_str()),
-    );
-    lifecycle.reset_cancel();
-
-    lifecycle.queued(
-        None,
-        if purpose == "drag-export" {
-            "Preparing local drag copy"
-        } else {
-            "Queued for download"
-        },
-    );
+        local_path: Some(local_path.as_str()),
+        total_bytes: None,
+        queued_message,
+    });
 
     let target_existed_before = save_path.exists();
     let result = match session.kind.as_str() {

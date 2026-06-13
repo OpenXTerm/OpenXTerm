@@ -16,8 +16,7 @@ use super::{
     emit_transfer,
     errors::{describe_local_io_error, describe_remote_error},
     ftp::run_ftp_upload,
-    generate_transfer_id,
-    lifecycle::TransferLifecycle,
+    lifecycle::{init_transfer, TransferInit},
     paths::{
         join_remote_path, local_directory_total_size, sanitize_transfer_name, temp_upload_path,
     },
@@ -45,18 +44,18 @@ pub fn upload_remote_file(
     let remote_path = join_remote_path(remote_dir, &file_name);
     let total_bytes = bytes.len() as u64;
     let conflict_action = conflict_action.unwrap_or_else(|| "error".into());
-    let transfer_id = transfer_id.unwrap_or_else(|| generate_transfer_id("upload"));
-    let lifecycle = TransferLifecycle::new(
+    let (transfer_id, lifecycle) = init_transfer(TransferInit {
         app,
-        &transfer_id,
-        &file_name,
-        &remote_path,
-        "upload",
-        "upload",
-        None,
-    );
-    lifecycle.reset_cancel();
-    lifecycle.queued(Some(total_bytes), "Queued for upload");
+        transfer_id,
+        id_prefix: "upload",
+        file_name: &file_name,
+        remote_path: &remote_path,
+        direction: "upload",
+        purpose: "upload",
+        local_path: None,
+        total_bytes: Some(total_bytes),
+        queued_message: "Queued for upload",
+    });
 
     let result = match session.kind.as_str() {
         "sftp" => {
@@ -147,18 +146,19 @@ pub fn upload_local_file(
     };
     let remote_path = join_remote_path(remote_dir, &file_name);
     let conflict_action = conflict_action.unwrap_or_else(|| "error".into());
-    let transfer_id = transfer_id.unwrap_or_else(|| generate_transfer_id("upload"));
     let local_path_label = local_path.display().to_string();
-    let lifecycle = TransferLifecycle::new(
+    let (transfer_id, lifecycle) = init_transfer(TransferInit {
         app,
-        &transfer_id,
-        &file_name,
-        &remote_path,
-        "upload",
-        "upload",
-        Some(&local_path_label),
-    );
-    lifecycle.reset_cancel();
+        transfer_id,
+        id_prefix: "upload",
+        file_name: &file_name,
+        remote_path: &remote_path,
+        direction: "upload",
+        purpose: "upload",
+        local_path: Some(&local_path_label),
+        total_bytes: Some(total_bytes),
+        queued_message: "Queued for upload",
+    });
     remember_transfer_retry(
         &transfer_id,
         TransferRetryOperation::UploadLocalFile {
@@ -169,9 +169,6 @@ pub fn upload_local_file(
             conflict_action: conflict_action.clone(),
         },
     );
-
-    lifecycle.queued(Some(total_bytes), "Queued for upload");
-
     let result = match session.kind.as_str() {
         "sftp" => {
             lifecycle.check_cancel()?;
