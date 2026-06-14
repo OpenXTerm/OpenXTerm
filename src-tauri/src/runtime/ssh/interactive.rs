@@ -233,6 +233,7 @@ impl EmbeddedSshController {
                 .lock()
                 .unwrap_or_else(|poison| poison.into_inner()),
             x11_config.as_ref(),
+            Some(&self.stop_flag),
         ) {
             Ok((channel, x11_warning)) => {
                 let shared_channel = Arc::new(Mutex::new(channel));

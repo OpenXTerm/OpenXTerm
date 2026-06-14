@@ -262,6 +262,14 @@ pub fn resize_terminal_session(
 }
 
 #[tauri::command]
+pub fn resolve_ssh_host_key(request_id: String, decision: String) -> Result<(), String> {
+    let decision = crate::runtime::HostKeyDecision::from_wire(&decision)
+        .ok_or_else(|| format!("unknown host key decision: {decision}"))?;
+    crate::runtime::resolve_host_key(&request_id, decision);
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn list_remote_directory(
     session: SessionDefinition,
     path: Option<String>,

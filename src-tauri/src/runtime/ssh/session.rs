@@ -1,3 +1,4 @@
+use std::sync::{atomic::AtomicBool, Arc};
 use std::{fs, io::Read};
 
 use std::time::Duration;
@@ -31,6 +32,7 @@ use super::super::{expand_tilde, shell_quote};
 use super::{
     auth::{ssh_runtime_password, ssh_runtime_username, ssh_runtime_username_path_for_tab},
     guidance::{humanize_ssh_error_message, windows_credential_reuse_message},
+    host_key,
     ppk::load_private_key_for_libssh,
 };
 
@@ -91,12 +93,14 @@ pub(in crate::runtime) fn open_embedded_ssh_channel(
     password_override: Option<&str>,
     terminal_size: (u16, u16),
     x11_config: Option<&X11ForwardConfig>,
+    abort: Option<&Arc<AtomicBool>>,
 ) -> Result<(LibsshChannel, Option<String>), String> {
     let ssh = connect_embedded_ssh_session_with_username(
         session,
         username,
         password_override,
         "interactive session",
+        abort,
     )?;
 
     match open_interactive_session_channel(
@@ -491,6 +495,7 @@ fn connect_embedded_ssh_session_with_username(
     username: &str,
     password_override: Option<&str>,
     context: &str,
+    abort: Option<&Arc<AtomicBool>>,
 ) -> Result<LibsshSession, String> {
     let ssh = LibsshSession::new()
         .map_err(|error| format!("failed to create embedded SSH {context}: {error}"))?;
@@ -506,7 +511,8 @@ fn connect_embedded_ssh_session_with_username(
         .map_err(|error| format!("failed to configure embedded SSH username: {error}"))?;
     ssh.set_option(SshOption::Timeout(EMBEDDED_SSH_TIMEOUT))
         .map_err(|error| format!("failed to configure embedded SSH timeout: {error}"))?;
-    ssh.set_option(SshOption::KnownHosts(None))
+    let known_hosts_option = host_key::known_hosts_path().map(|path| path.to_string_lossy().to_string());
+    ssh.set_option(SshOption::KnownHosts(known_hosts_option))
         .map_err(|error| format!("failed to configure embedded SSH known_hosts path: {error}"))?;
     ssh.set_option(SshOption::GlobalKnownHosts(None))
         .map_err(|error| {
@@ -538,6 +544,14 @@ fn connect_embedded_ssh_session_with_username(
             session,
         )
     })?;
+
+    // Verify the server host key before any credentials leave the client.
+    let session_label = if session.name.trim().is_empty() {
+        host
+    } else {
+        session.name.trim()
+    };
+    host_key::verify_connected_server(&ssh, host, session.port, session_label, abort)?;
 
     match session.auth_type.as_str() {
         "password" => {
@@ -674,7 +688,7 @@ pub(crate) fn connect_embedded_ssh_session(
 ) -> Result<LibsshSession, String> {
     let username = ssh_helper_username(session, runtime_tab_id)?;
     let secret = ssh_helper_secret(session, runtime_tab_id);
-    connect_embedded_ssh_session_with_username(session, &username, secret.as_deref(), context)
+    connect_embedded_ssh_session_with_username(session, &username, secret.as_deref(), context, None)
 }
 
 pub(crate) fn open_embedded_sftp(

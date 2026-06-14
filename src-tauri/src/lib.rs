@@ -14,6 +14,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(runtime::AppRuntime::default())
         .setup(|app| {
+            runtime::init_host_key(&app.handle());
             platform::menu::install_macos_menu(&app.handle())?;
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -49,6 +50,7 @@ pub fn run() {
             commands::read_clipboard_text,
             commands::stop_terminal_session,
             commands::resize_terminal_session,
+            commands::resolve_ssh_host_key,
             commands::list_remote_directory,
             commands::create_remote_directory,
             commands::delete_remote_entry,

@@ -9,6 +9,8 @@ import type {
   AppBootstrap,
   DownloadTargetInspection,
   FileDownloadResult,
+  HostKeyDecision,
+  HostKeyPromptPayload,
   LibsshProbePayload,
   LocalX11Support,
   MacroDefinition,
@@ -786,6 +788,24 @@ export async function listenTerminalExit(handler: (payload: TerminalExitPayload)
   return listen<TerminalExitPayload>('openxterm://terminal-exit', (event) => {
     handler(event.payload)
   })
+}
+
+export async function listenSshHostKeyPrompt(handler: (payload: HostKeyPromptPayload) => void) {
+  if (!isTauriRuntime()) {
+    return () => {}
+  }
+
+  return listen<HostKeyPromptPayload>('openxterm://ssh-host-key-prompt', (event) => {
+    handler(event.payload)
+  })
+}
+
+export async function resolveSshHostKey(requestId: string, decision: HostKeyDecision) {
+  if (!isTauriRuntime()) {
+    return
+  }
+
+  await invoke<void>('resolve_ssh_host_key', { requestId, decision })
 }
 
 export async function listenSessionStatus(handler: (payload: SessionStatusPayload) => void) {

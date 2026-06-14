@@ -32,6 +32,7 @@ pub(in crate::runtime) use ssh::guidance::{
     SshRuntimeGuidanceState,
 };
 pub(crate) use ssh::open_embedded_sftp;
+pub(crate) use ssh::{init_host_key, resolve_host_key, HostKeyDecision};
 pub(in crate::runtime) use ssh::{
     cleanup_ssh_runtime_metadata, clear_ssh_runtime_auth, lock_embedded_ssh_channel,
     run_remote_ssh_script_with_label,
